@@ -1,0 +1,12 @@
+# A to-do list: a wide tile with the next tasks, and a page to add,
+# finish and copy them. Ctrl+Alt+Y opens it from anywhere.
+id = "todo"
+name = "To-do"
+icon = "check-square"
+size = "wide"
+run = ["python", "main.py"]
+hotkey = "ctrl+alt+KeyY"
+accepts_files = true
+description = "Tasks saved in the plugin's data folder; drop files on the page to add them as tasks."
+author = "Nook"
+version = "1.0.0"

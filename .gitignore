@@ -1,0 +1,6 @@
+/target
+*.log
+# Plugin helpers keep data here when run outside Nook.
+.data/
+__pycache__/
+node_modules/

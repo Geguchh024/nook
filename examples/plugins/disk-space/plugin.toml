@@ -1,0 +1,13 @@
+# Poll mode: Nook runs the script every 60 seconds (and whenever you click
+# something) and draws whatever it prints. Plain Windows PowerShell, so it
+# works on any Windows machine with nothing to install.
+id = "disk-space"
+name = "Disk space"
+icon = "hard-drives"
+size = "wide"
+mode = "poll"
+interval = 60
+run = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "disk.ps1"]
+description = "Free space on every drive. Click a drive on the page to open it."
+author = "Nook"
+version = "1.0.0"

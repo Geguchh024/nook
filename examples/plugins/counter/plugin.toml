@@ -1,0 +1,9 @@
+# The smallest useful plugin: a number and two buttons.
+id = "counter"
+name = "Counter"
+icon = "hash"
+size = "small"
+run = ["python", "main.py"]
+description = "Click to count. Shows the basics: a view, events, a badge."
+author = "Nook"
+version = "1.0.0"

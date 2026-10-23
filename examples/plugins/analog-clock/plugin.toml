@@ -1,0 +1,11 @@
+# A canvas plugin: draws an analog clock face with shapes, once a second.
+# Large tile, Node.js.
+id = "analog-clock"
+name = "Analog clock"
+icon = "clock"
+size = "large"
+run = ["node", "main.js"]
+page_size = [568, 300]
+description = "Canvas drawing and live updates. Click the face to switch styles; the page shows world clocks."
+author = "Nook"
+version = "1.0.0"

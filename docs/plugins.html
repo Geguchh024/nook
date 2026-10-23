@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nook Plugin Guide</title>
+<meta name="description" content="How to build plugins for Nook, the floating notch for Windows: any language, JSON lines, declarative views.">
+<style>
+:root {
+  --bg: #f6f6f8;
+  --surface: #ffffff;
+  --surface-2: #eeeef2;
+  --text: #18181c;
+  --dim: #5c5c68;
+  --faint: #9696a0;
+  --rim: rgba(0,0,0,.08);
+  --accent: #6a4cf0;
+  --accent-soft: rgba(106,76,240,.10);
+  --code-bg: #15151a;
+  --code-text: #e8e8ee;
+  --code-dim: #8c8c9c;
+  --k: #b9a6ff;
+  --s: #8fd8a8;
+  --n: #ffc27a;
+  --ok: #1f9d55;
+  --warn: #b7791f;
+  --radius: 14px;
+  --mono: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f0f12; --surface: #18181d; --surface-2: #212128; --text: #f0f0f4;
+    --dim: #a8a8b4; --faint: #6e6e7a; --rim: rgba(255,255,255,.08);
+    --accent: #9b85ff; --accent-soft: rgba(155,133,255,.12); --code-bg: #0b0b0e;
+    --ok: #4ade80; --warn: #fbbf24; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f0f12; --surface: #18181d; --surface-2: #212128; --text: #f0f0f4;
+  --dim: #a8a8b4; --faint: #6e6e7a; --rim: rgba(255,255,255,.08);
+  --accent: #9b85ff; --accent-soft: rgba(155,133,255,.12); --code-bg: #0b0b0e;
+  --ok: #4ade80; --warn: #fbbf24; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 16px; display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 48px; }
+nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 40px 0 24px; }
+nav.toc .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; margin-bottom: 20px; color: var(--text); }
+nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+nav.toc li a { display: block; padding: 5px 10px; border-radius: 8px; color: var(--dim); font-size: 14px; }
+nav.toc li a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+nav.toc li a.on { background: var(--accent-soft); color: var(--accent); }
+main { padding: 40px 0 120px; min-width: 0; }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px;
+  border-radius: 99px; background: #111114; color: #f4f4f6; font-size: 12px; font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 6px 20px rgba(0,0,0,.18);
+}
+.pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: inline-block; }
+h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; letter-spacing: -.02em; margin: 22px 0 14px; }
+h2 { font-size: 24px; letter-spacing: -.01em; margin: 64px 0 12px; padding-top: 8px; }
+h3 { font-size: 17px; margin: 30px 0 8px; }
+p, li { color: var(--text); }
+.lead { font-size: 18px; color: var(--dim); max-width: 680px; }
+.muted { color: var(--dim); }
+code { font: 13px/1.5 var(--mono); background: var(--surface-2); padding: 1px 6px; border-radius: 6px; }
+pre {
+  position: relative; margin: 14px 0 18px; padding: 16px 18px; background: var(--code-bg); color: var(--code-text);
+  border-radius: var(--radius); overflow-x: auto; font: 13px/1.6 var(--mono); border: 1px solid var(--rim);
+}
+pre code { background: none; padding: 0; color: inherit; font: inherit; }
+pre .c { color: var(--code-dim); } pre .k { color: var(--k); } pre .s { color: var(--s); } pre .n { color: var(--n); }
+pre[data-label]::before {
+  content: attr(data-label); display: block; color: var(--code-dim); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px;
+}
+.copy {
+  position: absolute; top: 10px; right: 10px; font: 600 11px var(--sans); color: var(--code-dim);
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 8px;
+  padding: 4px 9px; cursor: pointer; opacity: 0; transition: opacity .15s;
+}
+pre:hover .copy, .copy:focus { opacity: 1; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 18px 0; }
+.card {
+  background: var(--surface); border: 1px solid var(--rim); border-radius: var(--radius); padding: 16px 18px;
+}
+.card b { display: block; margin-bottom: 4px; }
+.card p { margin: 0; color: var(--dim); font-size: 14px; }
+.steps { counter-reset: step; list-style: none; padding: 0; margin: 18px 0; }
+.steps > li { position: relative; padding: 0 0 18px 44px; }
+.steps > li::before {
+  counter-increment: step; content: counter(step); position: absolute; left: 0; top: 0;
+  width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+  display: grid; place-items: center; font-weight: 700; font-size: 13px;
+}
+.table-wrap { overflow-x: auto; margin: 14px 0 20px; border: 1px solid var(--rim); border-radius: var(--radius); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--rim); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 600; background: var(--surface-2); }
+tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 16px 0; }
+.note.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.diagram { background: var(--surface); border: 1px solid var(--rim); border-radius: var(--radius); padding: 18px; margin: 18px 0; }
+.diagram svg { width: 100%; height: auto; display: block; }
+.diagram text { font-family: var(--sans); }
+.ideas { columns: 2 260px; column-gap: 28px; padding-left: 18px; }
+.ideas li { break-inside: avoid; margin-bottom: 6px; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--surface-2); color: var(--dim); margin-left: 6px; vertical-align: 2px; }
+.theme-btn { margin-top: 20px; font: 13px var(--sans); color: var(--dim); background: var(--surface); border: 1px solid var(--rim); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+footer { margin-top: 80px; color: var(--faint); font-size: 13px; }
+@media (max-width: 860px) {
+  .wrap { grid-template-columns: minmax(0,1fr); gap: 0; }
+  nav.toc { position: static; height: auto; padding: 24px 0 0; }
+  nav.toc ol { display: flex; flex-wrap: wrap; gap: 4px; }
+  nav.toc li a { padding: 4px 10px; background: var(--surface); border: 1px solid var(--rim); font-size: 13px; }
+  .theme-btn { display: none; }
+  h2 { margin-top: 48px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <a class="brand" href="#top"><span class="pill"><i></i>Nook</span> Plugins</a>
+    <ol>
+      <li><a href="#quick-start">Quick start</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#manifest">plugin.toml</a></li>
+      <li><a href="#modes">Live and poll modes</a></li>
+      <li><a href="#views">Views</a></li>
+      <li><a href="#components">Components</a></li>
+      <li><a href="#canvas">Canvas</a></li>
+      <li><a href="#messages">Messages</a></li>
+      <li><a href="#sdk">SDKs and languages</a></li>
+      <li><a href="#dev">Develop and debug</a></li>
+      <li><a href="#share">Share a plugin</a></li>
+      <li><a href="#ideas">Ideas</a></li>
+      <li><a href="#core">Built-in modules (Rust)</a></li>
+    </ol>
+    <button class="theme-btn" type="button" id="theme">Toggle theme</button>
+  </nav>
+
+  <main id="top">
+    <span class="pill"><i></i>Plugin protocol v1</span>
+    <h1>Build anything for the notch</h1>
+    <p class="lead">A Nook plugin is a folder with a small manifest and a program, written in any language. Your program
+      prints JSON describing its tile, Nook draws it in the notch's glass style and sends back clicks, typing, hotkeys and
+      dropped files. You don't need Rust and you don't rebuild Nook.</p>
+
+    <div class="cards">
+      <div class="card"><b>Any language</b><p>Python, Node, PowerShell, Go, C#, Rust, a .bat file. If it can read and
+        write lines, it can be a plugin.</p></div>
+      <div class="card"><b>Looks native</b><p>Describe what to show (text, rings, lists, buttons, a canvas), and Nook
+        draws it with its own springs, theme and accent color.</p></div>
+      <div class="card"><b>Safe to crash</b><p>Each plugin runs in its own process. If it crashes, it restarts and the
+        notch keeps running.</p></div>
+    </div>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="quick-start">Quick start</h2>
+    <ol class="steps">
+      <li>Make a folder in <code>%APPDATA%\Nook\plugins\</code>, for example <code>hello</code>.</li>
+      <li>Add <code>plugin.toml</code>:
+<pre data-label="plugin.toml"><code>id   = <span class="s">"hello"</span>
+name = <span class="s">"Hello"</span>
+icon = <span class="s">"hand-waving"</span>        <span class="c"># any icon from phosphoricons.com</span>
+size = <span class="s">"wide"</span>               <span class="c"># small | wide | large</span>
+run  = [<span class="s">"python"</span>, <span class="s">"main.py"</span>]</code></pre></li>
+      <li>Add <code>main.py</code>. It prints one JSON object per line and reads one per line:
+<pre data-label="main.py"><code><span class="k">import</span> json, sys
+
+<span class="k">def</span> send(msg):
+    print(json.dumps(msg), flush=<span class="k">True</span>)
+
+clicks = <span class="n">0</span>
+<span class="k">def</span> draw():
+    send({<span class="s">"type"</span>: <span class="s">"tile"</span>, <span class="s">"view"</span>: {
+        <span class="s">"type"</span>: <span class="s">"row"</span>, <span class="s">"align"</span>: <span class="s">"center"</span>, <span class="s">"children"</span>: [
+            {<span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"text"</span>: f<span class="s">"Hello x{clicks}"</span>, <span class="s">"size"</span>: <span class="s">"title"</span>},
+            {<span class="s">"type"</span>: <span class="s">"spacer"</span>},
+            {<span class="s">"type"</span>: <span class="s">"button"</span>, <span class="s">"id"</span>: <span class="s">"wave"</span>, <span class="s">"icon"</span>: <span class="s">"hand-waving"</span>},
+        ]}})
+
+draw()
+<span class="k">for</span> line <span class="k">in</span> sys.stdin:                 <span class="c"># Nook's messages, one per line</span>
+    msg = json.loads(line)
+    <span class="k">if</span> msg[<span class="s">"type"</span>] == <span class="s">"event"</span> <span class="k">and</span> msg[<span class="s">"id"</span>] == <span class="s">"wave"</span>:
+        clicks += <span class="n">1</span>
+        draw()</code></pre></li>
+      <li>Turn on <b>Plugin dev mode</b> in Nook's Settings. Nook loads a new plugin folder within a few seconds without a restart, and with dev mode on it also
+        restarts your plugin every time you save. The tile is added after the built-in ones. Use the pencil in the grid to
+        move or resize it.</li>
+    </ol>
+    <p class="muted">That's the whole protocol. The rest of this page lists everything else you can use. For ready-made examples, see
+      <code>examples/plugins/</code> in the repository: a counter, a to-do list, a PowerShell disk monitor and an analog
+      clock drawn on a canvas.</p>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="how">How it works</h2>
+    <div class="diagram" role="img" aria-label="Nook starts your program, sends hello and events on stdin, and reads views and actions from stdout.">
+      <svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+        <rect x="10" y="40" width="220" height="150" rx="18" fill="var(--surface-2)" stroke="var(--rim)"/>
+        <rect x="50" y="62" width="140" height="28" rx="14" fill="#111114"/>
+        <circle cx="70" cy="76" r="4" fill="var(--accent)"/>
+        <text x="84" y="81" font-size="12" fill="#f4f4f6" font-weight="600">Nook</text>
+        <text x="120" y="122" text-anchor="middle" font-size="13" fill="var(--text)" font-weight="600">Draws your views</text>
+        <text x="120" y="142" text-anchor="middle" font-size="12" fill="var(--dim)">theme · springs · layout</text>
+        <text x="120" y="160" text-anchor="middle" font-size="12" fill="var(--dim)">badge in the pill</text>
+
+        <rect x="530" y="40" width="220" height="150" rx="18" fill="var(--surface-2)" stroke="var(--rim)"/>
+        <text x="640" y="86" text-anchor="middle" font-size="13" fill="var(--text)" font-weight="600">Your program</text>
+        <text x="640" y="108" text-anchor="middle" font-size="12" fill="var(--dim)">python · node · pwsh · go · …</text>
+        <text x="640" y="142" text-anchor="middle" font-size="12" fill="var(--dim)">keeps its own state,</text>
+        <text x="640" y="160" text-anchor="middle" font-size="12" fill="var(--dim)">calls any API it likes</text>
+
+        <line x1="240" y1="90" x2="520" y2="90" stroke="var(--accent)" stroke-width="2" marker-end="url(#ah)"/>
+        <text x="380" y="78" text-anchor="middle" font-size="12" fill="var(--text)">stdin: hello, event, hotkey, files …</text>
+        <line x1="520" y1="145" x2="240" y2="145" stroke="var(--accent)" stroke-width="2" marker-end="url(#ah)"/>
+        <text x="380" y="168" text-anchor="middle" font-size="12" fill="var(--text)">stdout: tile, page, badge, copy, open …</text>
+        <text x="380" y="215" text-anchor="middle" font-size="11" fill="var(--faint)">one JSON object per line, UTF-8</text>
+      </svg>
+    </div>
+    <ul>
+      <li>Nook looks for plugin folders when it starts, starts each plugin's program in that plugin's own folder, and sends it a <code>hello</code> message.</li>
+      <li>Your program sends <b>views</b>: trees of components such as <code>row</code>, <code>text</code>, <code>button</code>
+        and <code>ring</code>. Send a new tree whenever something changes, and the latest one replaces the previous one.</li>
+      <li>When the user interacts with a control, Nook sends an <code>event</code> with that control's <code>id</code>.</li>
+      <li>A plugin has a <b>tile</b> in the grid and, if it wants one, a full <b>page</b> that opens when the tile is clicked.</li>
+      <li>Your program can also put a badge in the collapsed pill, light its tile, open the notch, copy text or open a URL.</li>
+    </ul>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="manifest">plugin.toml</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>id</code></td><td>required</td><td>Unique, 1–48 chars of <code>a-z 0-9 - _</code>. Nook stores it as <code>plugin:&lt;id&gt;</code> in its config.</td></tr>
+        <tr><td><code>name</code></td><td>required</td><td>Shown in the page header and the tile editor.</td></tr>
+        <tr><td><code>run</code></td><td>required</td><td>Program and arguments, e.g. <code>["node", "main.js"]</code>. Runs in the plugin folder. A path like <code>"bin/tool.exe"</code> is resolved inside the folder; other names come from <code>PATH</code>.</td></tr>
+        <tr><td><code>icon</code></td><td><code>"puzzle-piece"</code></td><td>A <a href="https://phosphoricons.com">Phosphor</a> icon name. Shown in the tile editor and on the default tile.</td></tr>
+        <tr><td><code>size</code></td><td><code>"small"</code></td><td><code>small</code> (1×1), <code>wide</code> (2×1) or <code>large</code> (2×2). Users can resize the tile anyway.</td></tr>
+        <tr><td><code>mode</code></td><td><code>"live"</code></td><td><code>live</code>: one long-running process. <code>poll</code>: run again every <code>interval</code> seconds. See <a href="#modes">modes</a>.</td></tr>
+        <tr><td><code>interval</code></td><td><code>60</code></td><td>Seconds between runs in poll mode (minimum 1).</td></tr>
+        <tr><td><code>hotkey</code></td><td>none</td><td>A global shortcut, e.g. <code>"ctrl+alt+KeyY"</code>. Pressing it sends you <code>hotkey</code>.</td></tr>
+        <tr><td><code>accepts_files</code></td><td><code>false</code></td><td>While your page is open, files dropped on the notch are sent to you as <code>files</code>.</td></tr>
+        <tr><td><code>page_size</code></td><td>panel size</td><td><code>[width, height]</code> in points. The panel grows to this size while your page is open.</td></tr>
+        <tr><td><code>description</code>, <code>author</code>, <code>version</code></td><td>""</td><td>Information only. The version is written to Nook's log.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted">Nook doesn't know the space of a tile until it draws it, so it tells you in a <code>layout</code> message. The usual content sizes are about
+      <b>44×44</b> (small), <b>104×36</b> (wide), <b>104×104</b> (large) and <b>536×168</b> for a page.</p>
+
+    <h3>Environment</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Variable</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td><code>NOOK_PLUGIN_ID</code></td><td>Your id.</td></tr>
+        <tr><td><code>NOOK_PLUGIN_DIR</code></td><td>Your folder (also the working directory).</td></tr>
+        <tr><td><code>NOOK_DATA_DIR</code></td><td><code>%APPDATA%\Nook\plugin-data\&lt;id&gt;</code>. Save settings and data here, not in the plugin folder, so updates don't overwrite them.</td></tr>
+        <tr><td><code>NOOK_THEME</code>, <code>NOOK_ACCENT</code></td><td><code>dark</code> or <code>light</code>, and the accent color as <code>#RRGGBB</code>.</td></tr>
+        <tr><td><code>NOOK_MODE</code>, <code>NOOK_PROTOCOL</code>, <code>NOOK_VERSION</code></td><td><code>live</code> or <code>poll</code>, <code>1</code>, and Nook's version.</td></tr>
+        <tr><td><code>NOOK_EVENT</code></td><td>Poll mode only: the event that caused this run, as JSON.</td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="modes">Live and poll modes</h2>
+    <div class="cards">
+      <div class="card"><b>live <span class="tag">default</span></b><p>Nook starts your program once and keeps it running.
+        Your program reads messages from stdin and writes to stdout whenever it wants. Use it for timers, sockets, animation,
+        or anything that keeps state. If the program exits, Nook restarts it up to three times a minute.</p></div>
+      <div class="card"><b>poll</b><p>Nook runs your program, reads everything it printed, and waits. It runs it again
+        after <code>interval</code> seconds, or right away when the user clicks something (the event is in
+        <code>NOOK_EVENT</code>). Use it for small scripts that report something. Each run gets 30 seconds.</p></div>
+    </div>
+    <pre data-label="Poll mode in 6 lines of PowerShell"><code><span class="c"># plugin.toml: mode = "poll", interval = 30,</span>
+<span class="c">#   run = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "battery.ps1"]</span>
+$b = Get-CimInstance Win32_Battery
+@{ type = <span class="s">'ring'</span>; value = $b.EstimatedChargeRemaining / <span class="n">100</span>
+   label = <span class="s">"$($b.EstimatedChargeRemaining)%"</span>; tooltip = <span class="s">'Battery'</span> } |
+  ConvertTo-Json -Compress</code></pre>
+    <p class="muted">If you print a single component (anything without a <code>tile</code>/<code>page</code>/… type), Nook uses
+      it as the tile, which is handy for small scripts. In poll mode the output can be one JSON document, even pretty-printed, or one message per line.</p>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="views">Views</h2>
+    <p>A view is a tree of components. Every component has a <code>type</code> and can have a <code>tooltip</code>.
+      Layout is simple:</p>
+    <ul>
+      <li><code>column</code> stacks its children downward and <code>row</code> places them left to right. <code>gap</code> sets the space between them (default 6).</li>
+      <li>A <code>spacer</code> with no <code>size</code> pushes everything after it to the far end. For example,
+        <code>[title, spacer, button]</code> puts the button on the right.</li>
+      <li><code>align</code> (<code>start</code>, <code>center</code>, <code>end</code>) aligns children on the other axis. On a column,
+        <code>justify</code> places the whole column at the top, middle or bottom of the available space.</li>
+      <li>Add <code>"scroll": true</code> to a column on a page when it may be taller than the space.</li>
+    </ul>
+    <pre data-label="A wide weather tile"><code>{ <span class="s">"type"</span>: <span class="s">"tile"</span>, <span class="s">"view"</span>:
+  { <span class="s">"type"</span>: <span class="s">"row"</span>, <span class="s">"align"</span>: <span class="s">"center"</span>, <span class="s">"gap"</span>: <span class="n">10</span>, <span class="s">"children"</span>: [
+    { <span class="s">"type"</span>: <span class="s">"icon"</span>, <span class="s">"icon"</span>: <span class="s">"cloud-sun"</span>, <span class="s">"size"</span>: <span class="n">28</span>, <span class="s">"color"</span>: <span class="s">"accent"</span> },
+    { <span class="s">"type"</span>: <span class="s">"column"</span>, <span class="s">"gap"</span>: <span class="n">0</span>, <span class="s">"children"</span>: [
+      { <span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"text"</span>: <span class="s">"Tbilisi"</span>, <span class="s">"size"</span>: <span class="s">"small"</span>, <span class="s">"color"</span>: <span class="s">"dim"</span> },
+      { <span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"text"</span>: <span class="s">"21°  Sunny"</span>, <span class="s">"size"</span>: <span class="s">"title"</span> } ] } ] } }</code></pre>
+
+    <h3>Colors</h3>
+    <p>Theme names follow the user's light or dark theme and accent color: <code>text</code>, <code>dim</code>, <code>faint</code>,
+      <code>accent</code>, <code>on_accent</code>. Fixed colors: <code>red orange yellow green teal blue purple pink white black transparent</code>.
+      You can also use <code>#RGB</code>, <code>#RRGGBB</code> or <code>#RRGGBBAA</code>. Prefer the theme names so your plugin looks right in both themes.</p>
+    <h3>Icons</h3>
+    <p>Use any of the 1,500 <a href="https://phosphoricons.com">Phosphor</a> names, such as <code>"cloud-sun"</code>, <code>"cloud_sun"</code>
+      or <code>"CloudSun"</code>. <code>"fill": true</code> draws the filled style. An unknown name shows a question mark.</p>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="components">Components</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>type</th><th>Fields</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td colspan="3"><b>Layout</b></td></tr>
+        <tr><td><code>column</code></td><td><code>children gap align justify scroll</code></td><td>Top to bottom.</td></tr>
+        <tr><td><code>row</code></td><td><code>children gap align</code></td><td>Left to right.</td></tr>
+        <tr><td><code>grid</code></td><td><code>columns children gap</code></td><td>Equal-width cells. Good for dashboards.</td></tr>
+        <tr><td><code>card</code></td><td><code>children padding gap</code></td><td>A glass panel that groups its children.</td></tr>
+        <tr><td><code>spacer</code></td><td><code>size?</code></td><td>A fixed gap, or with no size, pushes what follows to the end.</td></tr>
+        <tr><td><code>divider</code></td><td></td><td>A thin line.</td></tr>
+        <tr><td colspan="3"><b>Content</b></td></tr>
+        <tr><td><code>text</code></td><td><code>text size color bold wrap mono</code></td><td><code>size</code>: <code>small body title big huge</code>. Long text ends in “…” unless <code>wrap</code>.</td></tr>
+        <tr><td><code>icon</code></td><td><code>icon size color fill</code></td><td>Default size 18.</td></tr>
+        <tr><td><code>image</code></td><td><code>path | base64, width height rounding</code></td><td>PNG, JPG or BMP. Nook reloads it when the file changes. Images larger than 1024 px are scaled down.</td></tr>
+        <tr><td><code>progress</code></td><td><code>value color width</code></td><td>A thin bar. <code>value</code> is 0–1.</td></tr>
+        <tr><td><code>ring</code></td><td><code>value label size color</code></td><td>A circular progress ring with a short label inside.</td></tr>
+        <tr><td><code>sparkline</code></td><td><code>values max color width height</code></td><td>An area chart. The newest value is on the right.</td></tr>
+        <tr><td><code>list</code></td><td><code>items: [{id title subtitle icon trailing selected}]</code></td><td>Clickable rows. A click sends an event with the item's <code>id</code>.</td></tr>
+        <tr><td><code>canvas</code></td><td><code>height width id shapes</code></td><td>Free drawing. See <a href="#canvas">Canvas</a>.</td></tr>
+        <tr><td colspan="3"><b>Controls</b> (each sends events with its <code>id</code>)</td></tr>
+        <tr><td><code>button</code></td><td><code>id label icon primary width</code></td><td>Sends <code>click</code>. With no label it's a round icon button. <code>width: 0</code> fills the row.</td></tr>
+        <tr><td><code>toggle</code></td><td><code>id value label</code></td><td>Sends <code>change</code> with <code>true</code> or <code>false</code>.</td></tr>
+        <tr><td><code>slider</code></td><td><code>id value min max step width</code></td><td>Sends <code>change</code> while dragging and <code>commit</code> when released.</td></tr>
+        <tr><td><code>input</code></td><td><code>id value hint width live</code></td><td>Sends <code>submit</code> on Enter. With <code>live</code> it also sends <code>change</code> on every edit.</td></tr>
+        <tr><td><code>chips</code></td><td><code>id options selected</code></td><td>Sends <code>change</code> with <code>{"index", "label"}</code>.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b>Controls update right away.</b> A toggle flips and an input keeps what the user typed before your
+      program answers. If you later send a different <code>value</code> for the same <code>id</code>, your value replaces the user's.
+      Keep ids stable across redraws.</div>
+    <p class="muted">Nook draws unknown component types as nothing. A plugin written for a newer Nook still works in an older one.</p>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="canvas">Canvas</h2>
+    <p>When the built-in components aren't enough, draw your own: gauges, games, clocks, maps or visualizers. Coordinates are
+      points from the canvas's top-left corner. Give the canvas an <code>id</code> and each click sends <code>{"x", "y"}</code>.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Shape</th><th>Fields</th></tr></thead>
+      <tbody>
+        <tr><td><code>rect</code></td><td><code>x y w h radius fill stroke width</code></td></tr>
+        <tr><td><code>circle</code></td><td><code>x y r fill stroke width</code></td></tr>
+        <tr><td><code>line</code></td><td><code>points: [[x,y], …] color width closed</code></td></tr>
+        <tr><td><code>polygon</code></td><td><code>points fill</code> (convex)</td></tr>
+        <tr><td><code>arc</code></td><td><code>x y r start end color width</code>. Degrees, clockwise from 12 o'clock.</td></tr>
+        <tr><td><code>text</code></td><td><code>x y text size color anchor bold</code>. <code>anchor</code> is <code>start</code>, <code>center</code> or <code>end</code>.</td></tr>
+        <tr><td><code>icon</code></td><td><code>x y icon size color fill</code></td></tr>
+      </tbody>
+    </table></div>
+    <pre data-label="A gauge"><code>{ <span class="s">"type"</span>: <span class="s">"canvas"</span>, <span class="s">"width"</span>: <span class="n">104</span>, <span class="s">"height"</span>: <span class="n">104</span>, <span class="s">"id"</span>: <span class="s">"gauge"</span>, <span class="s">"shapes"</span>: [
+  { <span class="s">"type"</span>: <span class="s">"arc"</span>, <span class="s">"x"</span>: <span class="n">52</span>, <span class="s">"y"</span>: <span class="n">56</span>, <span class="s">"r"</span>: <span class="n">40</span>, <span class="s">"start"</span>: <span class="n">-120</span>, <span class="s">"end"</span>: <span class="n">120</span>, <span class="s">"color"</span>: <span class="s">"faint"</span>, <span class="s">"width"</span>: <span class="n">6</span> },
+  { <span class="s">"type"</span>: <span class="s">"arc"</span>, <span class="s">"x"</span>: <span class="n">52</span>, <span class="s">"y"</span>: <span class="n">56</span>, <span class="s">"r"</span>: <span class="n">40</span>, <span class="s">"start"</span>: <span class="n">-120</span>, <span class="s">"end"</span>: <span class="n">30</span>,  <span class="s">"color"</span>: <span class="s">"accent"</span>, <span class="s">"width"</span>: <span class="n">6</span> },
+  { <span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"x"</span>: <span class="n">52</span>, <span class="s">"y"</span>: <span class="n">56</span>, <span class="s">"text"</span>: <span class="s">"62"</span>, <span class="s">"size"</span>: <span class="n">24</span>, <span class="s">"anchor"</span>: <span class="s">"center"</span>, <span class="s">"bold"</span>: <span class="k">true</span> } ] }</code></pre>
+    <p class="muted">To animate, send a new tree each frame from a live plugin. About 30 updates a second works well for a
+      tile. When nothing is moving, send nothing: Nook uses no CPU while idle, and your plugin shouldn't either.</p>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="messages">Messages</h2>
+    <h3>Your program → Nook (stdout)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>type</th><th>Fields</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>tile</code></td><td><code>view</code></td><td>Replaces the tile.</td></tr>
+        <tr><td><code>page</code></td><td><code>view actions?</code></td><td>Replaces the page. Once you send a page, clicking the tile opens it. <code>actions</code> are round header buttons: <code>[{id, icon, tooltip}]</code>.</td></tr>
+        <tr><td><code>badge</code></td><td><code>badge</code></td><td>Shows something in the collapsed pill: <code>{"kind":"ring","progress":0.4,"label":"12:00"}</code>, <code>{"kind":"glyph","icon":"bell"}</code> or <code>{"kind":"pulse"}</code>. <code>null</code> clears it.</td></tr>
+        <tr><td><code>active</code></td><td><code>active</code></td><td>Lights the tile with the accent color.</td></tr>
+        <tr><td><code>open_page</code> / <code>close_page</code></td><td></td><td>Opens or closes your page (if the panel is open).</td></tr>
+        <tr><td><code>show</code></td><td></td><td>Opens the notch, pinned, on your page. Use it for alerts.</td></tr>
+        <tr><td><code>copy</code></td><td><code>text</code></td><td>Puts text on the clipboard.</td></tr>
+        <tr><td><code>open</code></td><td><code>target</code></td><td>Opens a URL, file or folder with its default app.</td></tr>
+        <tr><td><code>log</code></td><td><code>level message</code></td><td>Writes to Nook's log (<code>debug info warn error</code>).</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>Nook → your program (stdin, live mode)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>type</th><th>Fields</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td><code>hello</code></td><td><code>protocol nook_version plugin_id data_dir theme{dark,accent}</code></td><td>First, right after your program starts.</td></tr>
+        <tr><td><code>event</code></td><td><code>id kind value?</code></td><td>A control was used. <code>kind</code> is <code>click change submit commit</code>.</td></tr>
+        <tr><td><code>tile_click</code></td><td></td><td>The tile was clicked somewhere other than one of your controls.</td></tr>
+        <tr><td><code>page_open</code> / <code>page_close</code></td><td></td><td>Your page appeared or went away. Do expensive work only while it's open.</td></tr>
+        <tr><td><code>layout</code></td><td><code>target size width height</code></td><td>The space available for your tile or page, in points. Sent again when it changes, e.g. after a resize.</td></tr>
+        <tr><td><code>theme</code></td><td><code>dark accent</code></td><td>The user changed the theme or accent color.</td></tr>
+        <tr><td><code>hotkey</code></td><td></td><td>Your manifest's <code>hotkey</code> was pressed.</td></tr>
+        <tr><td><code>files</code></td><td><code>paths</code></td><td>Files were dropped on your open page (needs <code>accepts_files</code>).</td></tr>
+        <tr><td><code>shutdown</code></td><td></td><td>Nook is quitting or reloading. Save your state now. Your program is killed 0.4 s later.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">Ignore message types you don't know. Future versions of Nook will add more.</div>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="sdk">SDKs and languages</h2>
+    <p>The repository has two optional, dependency-free helpers in <code>sdk/</code>. Copy the file next to your program.</p>
+    <pre data-label="Python · sdk/python/nook.py"><code><span class="k">import</span> nook
+
+app = nook.Plugin()
+tasks = app.load(<span class="s">"tasks"</span>, [])              <span class="c"># JSON in NOOK_DATA_DIR</span>
+
+<span class="k">def</span> draw():
+    app.tile(nook.row([nook.ring(<span class="n">0.3</span>, label=str(len(tasks))), nook.text(<span class="s">"Tasks"</span>)], align=<span class="s">"center"</span>))
+    app.page(nook.column([
+        nook.text_input(<span class="s">"new"</span>, hint=<span class="s">"Add a task"</span>),
+        nook.list_view([nook.item(str(i), t) <span class="k">for</span> i, t <span class="k">in</span> enumerate(tasks)]),
+    ], scroll=<span class="k">True</span>))
+
+@app.on(<span class="s">"new"</span>)
+<span class="k">def</span> add(e):
+    <span class="k">if</span> e[<span class="s">"kind"</span>] == <span class="s">"submit"</span>:
+        tasks.append(e[<span class="s">"value"</span>]); app.save(<span class="s">"tasks"</span>, tasks); draw()
+
+@app.every(<span class="n">60</span>)
+<span class="k">def</span> tick(): draw()
+
+draw()
+app.run()</code></pre>
+    <pre data-label="Node.js · sdk/node/nook.js"><code><span class="k">const</span> nook = require(<span class="s">"./nook"</span>);
+<span class="k">const</span> app = <span class="k">new</span> nook.Plugin();
+<span class="k">let</span> on = <span class="k">false</span>;
+<span class="k">const</span> draw = () =&gt; app.setTile(nook.row([
+  nook.icon(<span class="s">"lightbulb"</span>, { fill: on, color: on ? <span class="s">"yellow"</span> : <span class="s">"dim"</span> }),
+  nook.spacer(),
+  nook.toggle(<span class="s">"light"</span>, on),
+], { align: <span class="s">"center"</span> }));
+app.on(<span class="s">"light"</span>, (e) =&gt; { on = e.value; draw(); <span class="c">/* call your smart-home API here */</span> });
+draw();</code></pre>
+    <h3>Any other language</h3>
+    <p>There's nothing else to it. Read lines from stdin, write lines to stdout, and flush after each line. Some reminders:</p>
+    <ul>
+      <li><b>Flush</b> after every line. Python and Node get <code>PYTHONUNBUFFERED</code> set and line-flush on their own. In C, Go, Rust or C#, flush stdout yourself.</li>
+      <li>Write <b>UTF-8</b>, one JSON object per line, with no newlines inside the object.</li>
+      <li>stderr goes to Nook's log, and the last lines appear on the tile if your plugin stops. Use stderr for debug prints.</li>
+      <li>A compiled plugin can include its binary: <code>run = ["bin/my-plugin.exe"]</code>.</li>
+    </ul>
+    <pre data-label="Go"><code>out := bufio.NewWriter(os.Stdout)
+send := <span class="k">func</span>(v any) { b, _ := json.Marshal(v); out.Write(append(b, <span class="s">'\n'</span>)); out.Flush() }
+send(map[<span class="k">string</span>]any{<span class="s">"type"</span>: <span class="s">"tile"</span>, <span class="s">"view"</span>: map[<span class="k">string</span>]any{<span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"text"</span>: <span class="s">"Hi from Go"</span>}})
+sc := bufio.NewScanner(os.Stdin)
+<span class="k">for</span> sc.Scan() { <span class="c">/* json.Unmarshal(sc.Bytes(), &amp;msg) … */</span> }</code></pre>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="dev">Develop and debug</h2>
+    <ol class="steps">
+      <li><b>Keep your plugin where you work on it.</b> Point Nook at the folder that contains it, then run Nook from a terminal:
+<pre data-label="PowerShell"><code>$env:NOOK_PLUGIN_PATH = <span class="s">"C:\code\my-plugins"</span>     <span class="c"># ; separates folders</span>
+$env:NOOK_PLUGIN_DEV  = <span class="s">"1"</span>                       <span class="c"># dev mode, without touching Settings</span>
+cargo run --release -- --pinned --page=plugin:hello</code></pre>
+        In dev mode (Settings, or <code>NOOK_PLUGIN_DEV=1</code> / <code>--plugin-dev</code> for one run), saving any file in
+        your plugin's folder restarts it and re-reads <code>plugin.toml</code>. Plugin folders that appear or go are loaded or unloaded live
+        either way. <code>--page=plugin:&lt;id&gt;</code> opens on your page.</li>
+      <li><b>Test without Nook.</b> Your plugin is just a program, so send it messages yourself:
+<pre data-label="PowerShell"><code><span class="s">'{"type":"event","id":"wave","kind":"click"}'</span> | python main.py</code></pre></li>
+      <li><b>Read the log.</b> <code>%APPDATA%\Nook\nook.log</code> has every plugin's stderr, <code>log</code> messages and any
+        line Nook couldn't parse, with the reason (for example <code>bad "button" view: missing field `id`</code>).</li>
+      <li><b>When it crashes</b>, Nook restarts the plugin up to three times a minute. After that the tile shows
+        <i>Stopped · click to restart</i>, and hovering over it shows the error and the last lines of stderr.</li>
+    </ol>
+    <p>Plugins are searched for in this order: <code>%APPDATA%\Nook\plugins</code>, <code>plugins\</code> next to
+      <code>nook.exe</code>, then each folder in <code>NOOK_PLUGIN_PATH</code>. If two plugins have the same id, the first one found is used.</p>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="share">Share a plugin</h2>
+    <ul>
+      <li>A plugin is a folder, so share it as a zip or a Git repository. Users unzip it into <code>%APPDATA%\Nook\plugins\</code>.</li>
+      <li>Add a README that says which runtime your plugin needs (Python 3.8+, Node 18+, …). For zero setup, use PowerShell or
+        ship a compiled binary.</li>
+      <li>Tag your repository <code>nook-plugin</code> on GitHub so others can find it.</li>
+      <li>Keep your plugin's data in <code>NOOK_DATA_DIR</code>, so updating the plugin folder never deletes it.</li>
+    </ul>
+    <div class="note warn"><b>Plugins are programs.</b> A plugin runs with the same rights as Nook, just like any app you
+      install. Only install plugins whose code you've read or whose author you trust. Nook makes no network calls itself.
+      If a plugin needs the internet, the plugin makes those calls, and its README should say what it sends and where.</div>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="ideas">Ideas</h2>
+    <p>Some ideas to get started:</p>
+    <ul class="ideas">
+      <li>Weather and rain radar for your city</li>
+      <li>CI status: a red ring when the build breaks</li>
+      <li>Stock or crypto ticker with a sparkline</li>
+      <li>Pomodoro that dims the pill between sessions</li>
+      <li>GitHub notifications, with a badge pulse when one arrives</li>
+      <li>Spotify / Home Assistant / Hue controls</li>
+      <li>Ping and latency to your servers</li>
+      <li>Next meeting countdown from an .ics feed</li>
+      <li>Translate the clipboard (send it to your favorite API)</li>
+      <li>Habit tracker with a week of dots on a canvas</li>
+      <li>Docker containers: start, stop, logs</li>
+      <li>A tiny game: Snake or 2048 on a large tile</li>
+      <li>Local LLM prompt box (Ollama, LM Studio)</li>
+      <li>Drop images to compress or convert them</li>
+      <li>Word of the day, quote, NASA picture of the day</li>
+      <li>Battery health and charge history</li>
+      <li>Steam friends online</li>
+      <li>World clocks for your team (see the analog clock example)</li>
+    </ul>
+
+    <!-- ───────────────────────────────── -->
+    <h2 id="core">Built-in modules (Rust)</h2>
+    <p>Plugins cover most ideas. Write a built-in module instead when you need to draw with egui directly, hook into Windows
+      APIs inside the process, or run every frame. Built-ins implement the <code>Module</code> trait in
+      <code>crates/ui/src/module.rs</code>:</p>
+    <pre data-label="crates/modules/src/my_tile.rs"><code><span class="k">use</span> nook_ui::module::{Module, TileCtx, TileSize};
+<span class="k">use</span> nook_ui::icons;
+
+<span class="k">#[derive(Default)]</span>
+<span class="k">pub struct</span> MyTile { clicks: <span class="k">u32</span> }
+
+<span class="k">impl</span> Module <span class="k">for</span> MyTile {
+    <span class="k">fn</span> id(&amp;<span class="k">self</span>) -&gt; &amp;<span class="k">'static str</span> { <span class="s">"my_tile"</span> }
+    <span class="k">fn</span> name(&amp;<span class="k">self</span>) -&gt; &amp;<span class="k">str</span> { <span class="s">"My tile"</span> }
+    <span class="k">fn</span> icon(&amp;<span class="k">self</span>) -&gt; &amp;<span class="k">'static str</span> { icons::SPARKLE }
+    <span class="k">fn</span> size_hint(&amp;<span class="k">self</span>) -&gt; TileSize { TileSize::Small }
+    <span class="k">fn</span> ui_tile(&amp;<span class="k">mut self</span>, ui: &amp;<span class="k">mut</span> egui::Ui, _ctx: &amp;<span class="k">mut</span> TileCtx&lt;'_&gt;) {
+        <span class="k">if</span> ui.button(format!(<span class="s">"{}"</span>, <span class="k">self</span>.clicks)).clicked() { <span class="k">self</span>.clicks += <span class="n">1</span>; }
+    }
+}</code></pre>
+    <p>Register it in <code>crates/modules/src/lib.rs</code> (<code>register_all</code>) and open a pull request. Follow the rules the
+      rest of the codebase follows: nothing in <code>ui_tile</code> may block (do work on a thread and drain a channel in
+      <code>on_tick</code>), return <code>None</code> from <code>next_repaint</code> when idle, no <code>unwrap()</code>
+      outside tests, and keep <code>cargo clippy --workspace --all-targets -- -D warnings</code> clean. The plugin host
+      itself is in <code>crates/modules/src/plugins/</code>, if you want to add a component type or message.</p>
+
+    <footer>Nook is MIT licensed. This guide covers plugin protocol version 1. It ships as <code>docs/plugins.html</code>; suggest edits with a pull request.</footer>
+  </main>
+</div>
+<script>
+  // Copy buttons on code blocks.
+  document.querySelectorAll("pre").forEach((pre) => {
+    const b = document.createElement("button");
+    b.className = "copy"; b.type = "button"; b.textContent = "Copy";
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(pre.querySelector("code").innerText); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1400);
+    });
+    pre.appendChild(b);
+  });
+  // Highlight the section in view.
+  const links = [...document.querySelectorAll("nav.toc a[href^='#']")].filter((a) => a.getAttribute("href") !== "#top");
+  const byId = new Map(links.map((a) => [a.getAttribute("href").slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      if (e.isIntersecting) { links.forEach((a) => a.classList.remove("on")); byId.get(e.target.id)?.classList.add("on"); }
+    });
+  }, { rootMargin: "0px 0px -70% 0px" });
+  byId.forEach((_, id) => { const el = document.getElementById(id); if (el) io.observe(el); });
+  // Theme toggle (per-viewer convenience).
+  const root = document.documentElement;
+  try { const t = localStorage.getItem("nook-docs-theme"); if (t) root.dataset.theme = t; } catch {}
+  document.getElementById("theme").addEventListener("click", () => {
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("nook-docs-theme", root.dataset.theme); } catch {}
+  });
+</script>
+</body>
+</html>

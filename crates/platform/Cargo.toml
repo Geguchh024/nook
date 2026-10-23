@@ -1,0 +1,71 @@
+[package]
+name = "nook-platform"
+description = "Thin, error-checked wrappers over the Win32/DWM APIs Nook needs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+image.workspace = true
+windows-core = "0.62"
+windows-numerics = "0.3"
+candle-core = "0.9"
+candle-nn = "0.9"
+serde_json = "1.0.154"
+
+[dependencies.windows]
+workspace = true
+features = [
+  "Foundation",
+  "Foundation_Numerics",
+  "Foundation_Collections",
+  "Globalization",
+  "Graphics",
+  "Graphics_Imaging",
+  "Media_Control",
+  "Media_Ocr",
+  "Storage_Streams",
+  "System",
+  "UI",
+  "UI_Composition",
+  "UI_Composition_Desktop",
+  "Win32_Foundation",
+  "Win32_Graphics_Direct2D",
+  "Win32_Graphics_Direct2D_Common",
+  "Win32_System_WinRT",
+  "Win32_System_WinRT_Composition",
+  "Win32_System_WinRT_Graphics_Direct2D",
+  "Win32_Graphics_Dwm",
+  "Win32_Globalization",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_System_DataExchange",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_IO",
+  "Win32_System_Ole",
+  "Win32_System_Pipes",
+  "Win32_System_Power",
+  "Win32_System_ProcessStatus",
+  "Win32_System_SystemInformation",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_Media",
+  "Win32_Media_Audio",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
+  "Win32_Networking_WinSock",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_Security",
+  "Win32_UI_Controls",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+  "Win32_UI_WindowsAndMessaging",
+]

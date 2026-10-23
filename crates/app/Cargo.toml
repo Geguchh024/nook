@@ -1,0 +1,32 @@
+[package]
+name = "nook-app"
+description = "Nook: a floating notch utility hub for Windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nook"
+path = "src/main.rs"
+
+[features]
+default = []
+# Shows frame time and repaint causes in a small overlay.
+debug-overlay = []
+
+[dependencies]
+eframe.workspace = true
+egui.workspace = true
+egui-phosphor.workspace = true
+tray-icon.workspace = true
+global-hotkey.workspace = true
+serde.workspace = true
+toml.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+crossbeam-channel.workspace = true
+raw-window-handle = "0.6"
+nook-ui.workspace = true
+nook-platform.workspace = true
+nook-modules.workspace = true

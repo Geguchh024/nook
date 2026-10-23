@@ -1,0 +1,11 @@
+[package]
+name = "nook-ui"
+description = "Theme tokens, spring animator, notch shell geometry and tile components"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+egui.workspace = true
+egui-phosphor.workspace = true
+serde.workspace = true
