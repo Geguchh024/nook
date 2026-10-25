@@ -11,6 +11,14 @@ exceptions happen only when you use them: Lens search (your browser sends
 the area you selected to Google Lens), and installing a plugin from the
 website (Nook downloads it from GitHub).
 
+## Download
+
+Get `Nook-Setup-<version>.exe` from
+[GitHub Releases](https://github.com/Geguchh024/nook/releases/latest) and run
+it. Windows 10 or 11, 64-bit; no admin rights needed. The installer isn't
+code-signed yet, so SmartScreen may say "Windows protected your PC": click
+**More info**, then **Run anyway**.
+
 ## Build and run
 
 Requirements:
@@ -49,6 +57,37 @@ frame, the interval between frames and why egui repainted.
 
 Dev flags: `--pinned` starts expanded and pinned. `--settings` opens the
 settings page, `--page=<module id>` a module's page (e.g. `--page=phone_link`).
+
+### Installer
+
+`installer\build.ps1` builds `nook.exe` and packs it into
+`dist\Nook-Setup-<version>.exe` with [Inno Setup](https://jrsoftware.org/isinfo.php)
+6.7 or newer:
+
+```bash
+winget install --id JRSoftware.InnoSetup -e
+```
+
+```bash
+powershell -ExecutionPolicy Bypass -File installer\build.ps1
+```
+
+Setup installs for the current user without an admin prompt (all users is
+offered too), adds a Start menu entry, optionally a desktop shortcut and
+launch at sign-in, and registers `nook://` links. Uninstall removes those
+and asks before deleting `%APPDATA%\Nook`. The icon and the wizard art are
+drawn by `installer\make_assets.py`; run it after changing the mark.
+
+To publish a release, bump `version` in `[workspace.package]` of
+`Cargo.toml`, run `build.ps1`, then upload the installer under the tag
+`v<version>`:
+
+```bash
+gh release create v0.1.0 dist/Nook-Setup-0.1.0.exe --title "Nook 0.1.0"
+```
+
+The website's download buttons point at that asset, so bump `VERSION` (and
+`SIZE`) in `site/lib/release.ts` to match.
 
 ### Using it
 
@@ -238,6 +277,8 @@ crates/
   modules/    one file per utility (timer, media, coffee, clipboard, color picker, draw,
               text extractor, lens, QR code, calculator, calendar, ...), kit.rs for
               the controls the tool pages share, plugins/ for the plugin host
+assets/icon/  the app icon (nook.ico, embedded in nook.exe) and PNG sizes
+installer/    Inno Setup script, build script, and the generator for the icon and wizard art
 docs/NOTES.md the egui/Windows limitations hit and the workaround for each
 docs/plugins.html  the plugin developer guide
 examples/plugins/  sample plugins in Python, Node and PowerShell
