@@ -87,7 +87,7 @@ gh release create v0.1.0 dist/Nook-Setup-0.1.0.exe --title "Nook 0.1.0"
 ```
 
 The website's download buttons point at that asset, so bump `VERSION` (and
-`SIZE`) in `site/lib/release.ts` to match.
+`SIZE`) in `lib/release.ts` of the website repository to match.
 
 ### Using it
 
@@ -282,8 +282,6 @@ installer/    Inno Setup script, build script, and the generator for the icon an
 docs/NOTES.md the egui/Windows limitations hit and the workaround for each
 docs/plugins.html  the plugin developer guide
 examples/plugins/  sample plugins in Python, Node and PowerShell
-site/         the website: landing page, plugin marketplace, admin queue and docs
-              (Next.js + Convex, see site/README.md)
 sdk/          optional one-file plugin helpers for Python and Node
 ```
 
