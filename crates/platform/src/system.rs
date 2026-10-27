@@ -5,8 +5,9 @@ use crate::registry::{self, Hive};
 use crate::{Result, Win32Context};
 use windows::Win32::Graphics::Dwm::DwmGetColorizationColor;
 use windows::Win32::System::Diagnostics::Debug::MessageBeep;
+use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
 use windows::Win32::UI::WindowsAndMessaging::{
-    MB_ICONASTERISK, SPI_GETCLIENTAREAANIMATION, SPI_GETDESKWALLPAPER,
+    MB_ICONASTERISK, SM_CXSMICON, SPI_GETCLIENTAREAANIMATION, SPI_GETDESKWALLPAPER,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
 };
 use windows::core::BOOL;
@@ -21,6 +22,13 @@ pub fn apps_use_light_theme() -> bool {
 /// "Transparency effects" toggle in Settings > Personalization > Colors.
 pub fn transparency_enabled() -> bool {
     registry::read_dword(Hive::CurrentUser, PERSONALIZE, "EnableTransparency").unwrap_or(1) != 0
+}
+
+/// Pixel size of a small icon (the notification area's) at the system DPI.
+pub fn small_icon_size() -> u32 {
+    // SAFETY: plain metric queries with no pointers.
+    let px = unsafe { GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem()) };
+    if px > 0 { px as u32 } else { 16 }
 }
 
 /// "Animation effects" (Settings > Accessibility > Visual effects).

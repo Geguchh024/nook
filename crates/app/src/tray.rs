@@ -12,14 +12,22 @@ pub enum TrayCommand {
     TogglePin,
     ToggleOnTop,
     ToggleStartup,
+    /// Download and install the release offered in the menu.
+    Update,
     Quit,
 }
 
 pub struct Tray {
     _icon: TrayIcon,
+    menu: Menu,
     pin: CheckMenuItem,
     on_top: CheckMenuItem,
     startup: CheckMenuItem,
+    /// "Update to x.y.z", at the top of the menu while an update is offered.
+    update: MenuItem,
+    update_sep: PredefinedMenuItem,
+    /// Version the update item currently shows.
+    update_shown: Option<String>,
 }
 
 impl Tray {
@@ -53,6 +61,7 @@ impl Tray {
                 "pin" => TrayCommand::TogglePin,
                 "ontop" => TrayCommand::ToggleOnTop,
                 "startup" => TrayCommand::ToggleStartup,
+                "update" => TrayCommand::Update,
                 "quit" => TrayCommand::Quit,
                 _ => return,
             };
@@ -62,17 +71,45 @@ impl Tray {
         }));
 
         let icon = TrayIconBuilder::new()
-            .with_menu(Box::new(menu))
+            .with_menu(Box::new(menu.clone()))
             .with_tooltip("Nook")
-            .with_icon(tray_glyph()?)
+            .with_icon(tray_icon()?)
             .build()
             .context("creating tray icon")?;
         Ok(Self {
             _icon: icon,
+            menu,
             pin,
             on_top,
             startup,
+            update: MenuItem::with_id("update", "Update", true, None),
+            update_sep: PredefinedMenuItem::separator(),
+            update_shown: None,
         })
+    }
+
+    /// Shows "Update to `version`" at the top of the menu, or removes it.
+    pub fn set_update(&mut self, version: Option<&str>) {
+        if self.update_shown.as_deref() == version {
+            return;
+        }
+        let was_shown = self.update_shown.is_some();
+        match version {
+            Some(v) => {
+                self.update.set_text(format!("Update to {v}"));
+                if !was_shown
+                    && let Err(e) = self.menu.insert_items(&[&self.update, &self.update_sep], 0)
+                {
+                    tracing::warn!("tray update item: {e}");
+                    return;
+                }
+            }
+            None => {
+                let _ = self.menu.remove(&self.update);
+                let _ = self.menu.remove(&self.update_sep);
+            }
+        }
+        self.update_shown = version.map(str::to_owned);
     }
 
     pub fn set_pinned(&self, pinned: bool) {
@@ -88,8 +125,24 @@ impl Tray {
     }
 }
 
-/// A small white pill on a transparent background, drawn in code so the
-/// binary needs no icon assets.
+/// Resource id of the app icon `build.rs` embeds (winresource's default).
+const APP_ICON_RESOURCE: u16 = 1;
+
+/// The app icon embedded in nook.exe, picked at the notification area's
+/// size so it stays sharp at any scale. Falls back to a drawn pill if the
+/// resource is missing (a build without it).
+fn tray_icon() -> Result<Icon> {
+    let px = nook_platform::system::small_icon_size();
+    match Icon::from_resource(APP_ICON_RESOURCE, Some((px, px))) {
+        Ok(icon) => Ok(icon),
+        Err(e) => {
+            tracing::warn!("tray icon resource: {e}; using the drawn glyph");
+            tray_glyph()
+        }
+    }
+}
+
+/// A small white pill on a transparent background, drawn in code.
 fn tray_glyph() -> Result<Icon> {
     const N: u32 = 32;
     let pill = Squircle::new(

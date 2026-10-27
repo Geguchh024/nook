@@ -7,7 +7,9 @@ mod config;
 #[cfg(feature = "debug-overlay")]
 mod overlay;
 mod settings;
+mod stats;
 mod tray;
+mod update;
 mod watcher;
 
 use anyhow::{Context, Result};

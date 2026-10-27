@@ -9,7 +9,7 @@ use egui::{
     TextureHandle, TextureId, TextureOptions, TextureWrapMode, pos2, vec2,
 };
 
-const NOISE_SIZE: usize = 96;
+const NOISE_SIZE: usize = 128;
 
 /// Vertical-gradient fill of a convex outline (fan triangulation from the
 /// centroid; colors are linear in y, so the interpolation is exact).
@@ -36,12 +36,23 @@ pub fn fill_gradient(painter: &Painter, outline: &[Pos2], top: Color32, bottom: 
 }
 
 /// Film-grain overlay clipped to the outline, using a tiling noise texture.
-pub fn fill_noise(painter: &Painter, outline: &[Pos2], texture: TextureId, alpha: u8) {
+///
+/// The texture is mapped in physical pixels (one texel covers `grain_px`
+/// screen pixels), so the grain stays fine at any display scaling instead
+/// of growing into blotches at 150-200%.
+pub fn fill_noise(
+    painter: &Painter,
+    outline: &[Pos2],
+    texture: TextureId,
+    alpha: u8,
+    grain_px: f32,
+) {
     if outline.len() < 3 || alpha == 0 {
         return;
     }
     let tint = Color32::from_white_alpha(alpha);
-    let uv = |p: Pos2| pos2(p.x / NOISE_SIZE as f32, p.y / NOISE_SIZE as f32);
+    let scale = painter.ctx().pixels_per_point() / (NOISE_SIZE as f32 * grain_px.max(1.0));
+    let uv = |p: Pos2| pos2(p.x * scale, p.y * scale);
     let mut mesh = Mesh::with_texture(texture);
     let center = centroid(outline);
     mesh.vertices.push(Vertex {
@@ -86,6 +97,7 @@ pub fn glass(
         outline,
         noise.id(),
         (theme.noise_alpha as f32 * opacity) as u8,
+        theme.grain_px,
     );
     if !fill {
         return;
@@ -200,20 +212,33 @@ fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 }
 
 /// Lazily created tiling grain texture (deterministic, generated once).
+///
+/// Each texel is a light or a dark speck (premultiplied white or black)
+/// whose alpha follows a triangular distribution around zero, so the grain
+/// adds texture without washing the glass lighter.
 pub fn noise_texture(ctx: &Context) -> TextureHandle {
     let key = egui::Id::NULL.with("nook-noise");
     if let Some(tex) = ctx.data(|d| d.get_temp::<TextureHandle>(key)) {
         return tex;
     }
     let mut seed: u32 = 0x9E37_79B9;
-    let mut pixels = Vec::with_capacity(NOISE_SIZE * NOISE_SIZE);
-    for _ in 0..NOISE_SIZE * NOISE_SIZE {
+    let mut next = || {
         // xorshift32
         seed ^= seed << 13;
         seed ^= seed >> 17;
         seed ^= seed << 5;
-        let v = (seed >> 24) as u8;
-        pixels.push(Color32::from_gray(v));
+        (seed >> 24) as i32
+    };
+    let mut pixels = Vec::with_capacity(NOISE_SIZE * NOISE_SIZE);
+    for _ in 0..NOISE_SIZE * NOISE_SIZE {
+        // Difference of two uniforms: -255..=255, mostly near zero.
+        let v = next() - next();
+        let a = v.unsigned_abs().min(255) as u8;
+        pixels.push(if v >= 0 {
+            Color32::from_rgba_premultiplied(a, a, a, a)
+        } else {
+            Color32::from_rgba_premultiplied(0, 0, 0, a)
+        });
     }
     let image = ColorImage::new([NOISE_SIZE, NOISE_SIZE], pixels);
     let tex = ctx.load_texture(

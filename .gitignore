@@ -8,3 +8,6 @@ node_modules/
 .wrangler/
 # The website is its own private repository, checked out here.
 /site/
+
+# Private dashboard link for the stats Worker.
+/telemetry/.stats-url

@@ -906,7 +906,8 @@ impl Module for Wallpaper {
             ui.id().with("wallpaper-tile"),
             Sense::click(),
         );
-        let current = self.current.clone();
+        // Until a folder is chosen the tile keeps its plain icon.
+        let current = self.folder.as_ref().and(self.current.clone());
         let tex = current.as_deref().and_then(|p| {
             self.request_thumb(p);
             self.thumb(p).cloned()

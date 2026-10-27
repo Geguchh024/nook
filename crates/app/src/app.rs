@@ -4,7 +4,9 @@
 
 use crate::config::{AccentSource, Config, Material, MonitorMode};
 use crate::settings::{self, SETTINGS_ID, SettingsTile};
+use crate::stats::{self, Stats};
 use crate::tray::{Tray, TrayCommand};
+use crate::update::{self, Updater};
 use crate::watcher::{self, SystemState, WatcherControl};
 use anyhow::{Context as _, Result};
 use crossbeam_channel::{Receiver, unbounded};
@@ -116,6 +118,10 @@ pub struct NookApp {
     /// Window rect in physical pixels: (x, y, w, h).
     anchor: Option<(i32, i32, i32, i32)>,
     activatable: bool,
+    /// GitHub release checks and the in-place update.
+    updater: Updater,
+    /// The anonymous daily usage ping.
+    stats: Stats,
     _instance: InstanceGuard,
     #[cfg(feature = "debug-overlay")]
     overlay: crate::overlay::DebugOverlay,
@@ -209,6 +215,16 @@ impl NookApp {
         if flag("--pinned") || page != Page::Bento {
             shell.state.set_pinned(true, 0.0);
         }
+        let updater = Updater::start(ctx.clone(), cfg.check_updates);
+        // A missing id means a new install (or a config from before stats).
+        let new_install = !stats::valid_id(&cfg.install_id);
+        if new_install {
+            cfg.install_id = stats::new_install_id();
+            if let Err(e) = cfg.save() {
+                tracing::error!("saving config: {e:#}");
+            }
+        }
+        let stats = Stats::start(cfg.install_id.clone(), new_install, cfg.usage_stats);
         Ok(Self {
             cfg,
             hwnd,
@@ -243,6 +259,8 @@ impl NookApp {
             trimmed: false,
             anchor: None,
             activatable: false,
+            updater,
+            stats,
             _instance: instance,
             #[cfg(feature = "debug-overlay")]
             overlay: Default::default(),
@@ -367,6 +385,7 @@ impl NookApp {
                 self.cfg.launch_at_startup = !self.cfg.launch_at_startup;
                 self.apply_startup();
             }
+            TrayCommand::Update => self.updater.install(),
             TrayCommand::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         }
     }
@@ -570,7 +589,7 @@ impl NookApp {
         let m = self.shell.metrics;
         let want = match self.page {
             Page::Bento => return None,
-            Page::Settings => m.expanded + vec2(0.0, settings::EXTRA_HEIGHT),
+            Page::Settings => m.expanded + vec2(0.0, settings::extra_height(ctx, m.expanded.y)),
             Page::Module(id) => self.registry.all().find(|m| m.id() == id)?.page_size()?,
         };
         let fit = self.sys.monitor.map_or(want, |mon| {
@@ -971,7 +990,12 @@ impl eframe::App for NookApp {
         #[cfg(feature = "debug-overlay")]
         self.overlay.begin();
         let ctx = ui.ctx().clone();
-        let theme = Theme::new(self.dark(), self.accent(), self.material.translucent());
+        let theme = Theme::styled(
+            self.dark(),
+            self.accent(),
+            self.material.translucent(),
+            &self.cfg.look(),
+        );
         let hidden = self.cfg.hide_in_fullscreen && self.sys.fullscreen;
 
         let mut clicked = None;
@@ -979,6 +1003,8 @@ impl eframe::App for NookApp {
         let mut module_back = false;
         let mut settings_out = settings::PageOutput::default();
         let mut grid_out = bento::BentoOutput::default();
+        let mut update_clicked = false;
+        let update_status = self.updater.status();
         let editing = self.editing;
         let page = self.page;
         let badges: Vec<Badge> = self
@@ -1007,6 +1033,20 @@ impl eframe::App for NookApp {
                     let mut tiles = registry.grid_mut(editing);
                     grid_out = bento::show(ui, cctx, &theme, &mut tiles, editing);
                     clicked = grid_out.clicked;
+                    // The Update chip sits in the middle of the bottom
+                    // gutter, between the pencil and the page dots.
+                    if !editing && cctx.alpha > 0.5 {
+                        let grid = bento::grid_rect(cctx.panel);
+                        let y = grid.max.y + (cctx.panel.max.y - grid.max.y) * 0.5 - 1.0;
+                        update_clicked = update::chip(
+                            ui,
+                            pos2(grid.center().x, y),
+                            egui::Align2::CENTER_CENTER,
+                            &update_status,
+                            &theme,
+                        )
+                        .is_some_and(|c| c.clicked);
+                    }
                     page_request = tiles
                         .iter_mut()
                         .filter(|t| !t.hidden)
@@ -1031,7 +1071,7 @@ impl eframe::App for NookApp {
                     }
                 }
                 Page::Settings => {
-                    settings_out = settings::page(ui, cctx, &theme, cfg);
+                    settings_out = settings::page(ui, cctx, &theme, cfg, &update_status);
                 }
             },
         );
@@ -1060,11 +1100,25 @@ impl eframe::App for NookApp {
         if settings_out.startup_toggled {
             self.apply_startup();
         }
+        if update_clicked || settings_out.install_update {
+            self.updater.install();
+        }
+        if settings_out.check_update {
+            self.updater.check_now();
+        }
+        if let Some(t) = &mut self.tray {
+            t.set_update(update_status.offer().map(|r| r.version.as_str()));
+        }
+        // Setup is running and will start the new version; get out of its way.
+        if update_status == update::Status::Installing {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         if settings_out.changed {
             self.shell.timings = timings(&self.cfg);
             self.shell.placement = self.cfg.placement;
             self.watcher.set_monitor_mode(self.cfg.monitor);
             nook_modules::plugins::set_dev_mode(self.cfg.plugin_dev);
+            self.stats.set_enabled(self.cfg.usage_stats);
             // Re-sample now so a monitor switch does not wait for the watcher.
             self.sys.monitor =
                 watcher::sample(self.hwnd, self.cfg.monitor == MonitorMode::Cursor).monitor;

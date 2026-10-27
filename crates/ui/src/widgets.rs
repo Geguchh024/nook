@@ -1,5 +1,5 @@
 //! Small custom controls in the Nook style: spring toggle, segmented
-//! control and round icon button.
+//! control, slider, color swatches and round icon button.
 
 use crate::anim;
 use crate::geometry::Squircle;
@@ -137,6 +137,108 @@ pub fn segmented(ui: &mut Ui, options: &[&str], selected: &mut usize, theme: &Th
     resp
 }
 
+/// Horizontal slider over `0..=1` with an accent fill and a white knob.
+/// `steps > 0` snaps the value to that many intervals.
+pub fn slider(ui: &mut Ui, value: &mut f32, width: f32, steps: u32, theme: &Theme) -> Response {
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(width, 22.0), Sense::click_and_drag());
+    let inset = 8.0;
+    if (resp.dragged() || resp.clicked())
+        && let Some(p) = resp.interact_pointer_pos()
+    {
+        let mut t = ((p.x - rect.min.x - inset) / (rect.width() - 2.0 * inset)).clamp(0.0, 1.0);
+        if steps > 0 {
+            t = (t * steps as f32).round() / steps as f32;
+        }
+        if (t - *value).abs() > f32::EPSILON {
+            *value = t;
+            resp.mark_changed();
+        }
+    }
+    let t = value.clamp(0.0, 1.0);
+    let hover = anim::tween(
+        ui.ctx(),
+        resp.id.with("hover"),
+        resp.hovered() || resp.dragged(),
+        0.12,
+    );
+    let painter = ui.painter();
+    let track = egui::Rect::from_center_size(rect.center(), vec2(rect.width() - 2.0 * inset, 4.0));
+    let empty = if theme.dark {
+        Color32::from_white_alpha(30)
+    } else {
+        Color32::from_black_alpha(22)
+    };
+    painter.rect_filled(track, 2.0, empty);
+    let fill = egui::Rect::from_min_max(
+        track.min,
+        pos2(track.min.x + track.width() * t, track.max.y),
+    );
+    painter.rect_filled(fill, 2.0, theme.accent);
+    let knob = pos2(track.min.x + track.width() * t, rect.center().y);
+    let r = 7.0 + hover;
+    painter.circle_filled(
+        knob + vec2(0.0, 1.0),
+        r + 0.5,
+        Color32::from_black_alpha(if theme.dark { 70 } else { 40 }),
+    );
+    painter.circle_filled(knob, r, Color32::WHITE);
+    resp
+}
+
+/// A row of round color swatches; `None` is drawn as a "no color" swatch.
+/// `selected` is the index of the chosen swatch, if any.
+pub fn swatches(
+    ui: &mut Ui,
+    colors: &[Option<Color32>],
+    selected: &mut Option<usize>,
+    theme: &Theme,
+) -> Response {
+    const D: f32 = 16.0;
+    const GAP: f32 = 6.0;
+    let n = colors.len() as f32;
+    let size = vec2(n * D + (n - 1.0).max(0.0) * GAP, 22.0);
+    let (rect, mut resp) = ui.allocate_exact_size(size, Sense::click());
+    let hovered = resp
+        .hover_pos()
+        .map(|p| (((p.x - rect.min.x) / (D + GAP)) as usize).min(colors.len() - 1));
+    if resp.clicked()
+        && let Some(i) = hovered
+        && *selected != Some(i)
+    {
+        *selected = Some(i);
+        resp.mark_changed();
+    }
+    let painter = ui.painter();
+    let rim = if theme.dark {
+        Color32::from_white_alpha(40)
+    } else {
+        Color32::from_black_alpha(30)
+    };
+    for (i, color) in colors.iter().enumerate() {
+        let c = pos2(rect.min.x + D * 0.5 + i as f32 * (D + GAP), rect.center().y);
+        let grow = if hovered == Some(i) { 1.0 } else { 0.0 };
+        let r = D * 0.5 + grow;
+        match color {
+            Some(color) => {
+                painter.circle_filled(c, r, *color);
+            }
+            None => {
+                // Neutral swatch with a diagonal slash.
+                let [r8, g8, b8, _] =
+                    mix(theme.glass_top, theme.glass_bottom, 0.5).to_srgba_unmultiplied();
+                painter.circle_filled(c, r, Color32::from_rgb(r8, g8, b8));
+                let d = vec2(r * 0.6, -r * 0.6);
+                painter.line_segment([c - d, c + d], Stroke::new(1.5, theme.text_dim));
+            }
+        }
+        painter.circle_stroke(c, r, Stroke::new(1.0, rim));
+        if *selected == Some(i) {
+            painter.circle_stroke(c, r + 2.5, Stroke::new(1.5, theme.text));
+        }
+    }
+    resp
+}
+
 /// Round icon button with a hover wash and press scale.
 pub fn icon_button(
     ui: &mut Ui,
@@ -185,6 +287,78 @@ pub fn icon_button(
         color,
         active,
     );
+    resp
+}
+
+/// Clickable header of a collapsible card: icon, title, a dim summary and a
+/// chevron that turns as `open` (the section's 0..1 reveal) moves. `rect` is
+/// the whole header strip; returns its response (clicked = toggle).
+pub fn disclosure_header(
+    ui: &mut Ui,
+    rect: egui::Rect,
+    glyph: &'static str,
+    title: &str,
+    summary: &str,
+    open: f32,
+    theme: &Theme,
+) -> Response {
+    let resp = ui.interact(rect, ui.id().with(("disclosure", title)), Sense::click());
+    let hover = anim::tween(ui.ctx(), resp.id.with("hover"), resp.hovered(), 0.12);
+    let painter = ui.painter();
+    if hover > 0.01 {
+        let wash = if theme.dark {
+            Color32::from_white_alpha(8)
+        } else {
+            Color32::from_black_alpha(6)
+        };
+        let s = Squircle::new(rect.shrink(1.0), crate::theme::TILE_RADIUS - 1.0);
+        painter.add(egui::epaint::PathShape::convex_polygon(
+            s.outline(),
+            with_alpha(wash, hover),
+            Stroke::NONE,
+        ));
+    }
+    let cy = rect.center().y;
+    let x = rect.min.x + 14.0;
+    paint::icon(
+        painter,
+        pos2(x + 10.0, cy),
+        glyph,
+        crate::theme::SIZE_ICON,
+        mix(theme.text_dim, theme.accent, open.clamp(0.0, 1.0)),
+        false,
+    );
+    let title_g = painter.layout_no_wrap(
+        title.to_owned(),
+        Theme::font(crate::theme::SIZE_BODY),
+        theme.text,
+    );
+    let tx = x + 30.0;
+    let title_w = title_g.size().x;
+    painter.galley(pos2(tx, cy - title_g.size().y * 0.5), title_g, theme.text);
+    // The summary fades out as the section opens: the controls say it then.
+    painter.text(
+        pos2(tx + title_w + 10.0, cy),
+        Align2::LEFT_CENTER,
+        summary,
+        Theme::font(SIZE_LABEL),
+        with_alpha(theme.text_faint, 1.0 - open.clamp(0.0, 1.0)),
+    );
+    // Chevron: a caret drawn as two strokes, rotating from right to down.
+    let c = pos2(rect.max.x - 22.0, cy);
+    let angle = (1.0 - open) * -std::f32::consts::FRAC_PI_2;
+    let rot = egui::emath::Rot2::from_angle(angle);
+    let arm = 4.0;
+    let pts = [
+        vec2(-arm, -arm * 0.5),
+        vec2(0.0, arm * 0.5),
+        vec2(arm, -arm * 0.5),
+    ]
+    .map(|p| c + rot * p);
+    painter.add(egui::epaint::PathShape::line(
+        pts.to_vec(),
+        egui::epaint::PathStroke::new(1.5, mix(theme.text_dim, theme.text, hover)),
+    ));
     resp
 }
 

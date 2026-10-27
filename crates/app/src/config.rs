@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use nook_ui::module::TileSize;
 use nook_ui::shell::Placement;
-use nook_ui::theme::ThemeMode;
+use nook_ui::theme::{Look, ThemeMode, parse_hex};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -38,6 +38,28 @@ pub enum Material {
     Solid,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GrainSize {
+    /// One physical pixel per speck.
+    #[default]
+    Fine,
+    Medium,
+    Coarse,
+}
+
+impl GrainSize {
+    pub const ALL: [GrainSize; 3] = [GrainSize::Fine, GrainSize::Medium, GrainSize::Coarse];
+
+    pub fn pixels(self) -> f32 {
+        match self {
+            GrainSize::Fine => 1.0,
+            GrainSize::Medium => 2.0,
+            GrainSize::Coarse => 3.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModulesConfig {
@@ -57,6 +79,13 @@ pub struct Config {
     pub accent_hex: String,
     pub monitor: MonitorMode,
     pub material: Material,
+    /// Glass opacity over the blurred backdrop, in percent (Glass material).
+    pub glass_opacity: u8,
+    /// `#RRGGBB` the panel background is tinted toward; empty for neutral.
+    pub background_hex: String,
+    /// Film-grain strength in percent; 0 turns the grain off.
+    pub grain: u8,
+    pub grain_size: GrainSize,
     /// Top-left corner, top center or top-right corner.
     pub placement: Placement,
     /// Above all windows (true) or behind them.
@@ -71,6 +100,12 @@ pub struct Config {
     pub toggle_hotkey: String,
     /// Plugin dev mode: plugins restart when their files are saved.
     pub plugin_dev: bool,
+    /// Look for a new release on GitHub at start and every few hours.
+    pub check_updates: bool,
+    /// Send the anonymous daily "opened" ping (see `stats.rs`).
+    pub usage_stats: bool,
+    /// Random id the stats ping counts installs by; made on first run.
+    pub install_id: String,
     pub modules: ModulesConfig,
 }
 
@@ -82,6 +117,10 @@ impl Default for Config {
             accent_hex: "#7C5CFF".into(),
             monitor: MonitorMode::Primary,
             material: Material::Acrylic,
+            glass_opacity: DEFAULT_GLASS_OPACITY,
+            background_hex: String::new(),
+            grain: DEFAULT_GRAIN,
+            grain_size: GrainSize::Fine,
             placement: Placement::Center,
             on_top: true,
             hide_in_fullscreen: false,
@@ -90,6 +129,9 @@ impl Default for Config {
             launch_at_startup: false,
             toggle_hotkey: "ctrl+alt+N".into(),
             plugin_dev: false,
+            check_updates: true,
+            usage_stats: true,
+            install_id: String::new(),
             modules: ModulesConfig {
                 order: nook_modules::DEFAULT_ORDER
                     .iter()
@@ -99,6 +141,31 @@ impl Default for Config {
                 sizes: Default::default(),
             },
         }
+    }
+}
+
+pub const DEFAULT_GLASS_OPACITY: u8 = 70;
+pub const DEFAULT_GRAIN: u8 = 35;
+
+impl Config {
+    /// The styling settings as the theme takes them.
+    pub fn look(&self) -> Look {
+        Look {
+            glass_opacity: self.glass_opacity.clamp(20, 100) as f32 / 100.0,
+            tint: parse_hex(&self.background_hex),
+            grain: self.grain.min(100) as f32 / 100.0,
+            grain_px: self.grain_size.pixels(),
+        }
+    }
+
+    /// Puts the styling settings (not theme, accent or material) back to
+    /// their defaults.
+    pub fn reset_look(&mut self) {
+        let d = Config::default();
+        self.glass_opacity = d.glass_opacity;
+        self.background_hex = d.background_hex;
+        self.grain = d.grain;
+        self.grain_size = d.grain_size;
     }
 }
 
@@ -178,6 +245,22 @@ mod tests {
         let back: Config =
             toml::from_str(&toml::to_string_pretty(&cfg).expect("ser")).expect("parse");
         assert_eq!(cfg, back);
+    }
+
+    #[test]
+    fn look_settings_parse_and_map() {
+        let text =
+            "grain = 0\ngrain_size = \"coarse\"\nbackground_hex = \"#336699\"\nglass_opacity = 5";
+        let cfg: Config = toml::from_str(text).expect("parse");
+        let look = cfg.look();
+        assert_eq!(look.grain, 0.0);
+        assert_eq!(look.grain_px, 3.0);
+        assert!(look.tint.is_some());
+        // Clamped so the glass never disappears entirely.
+        assert_eq!(look.glass_opacity, 0.2);
+        let old: Config = toml::from_str("theme = \"dark\"").expect("parse");
+        assert_eq!(old.grain, DEFAULT_GRAIN);
+        assert_eq!(old.look().tint, None);
     }
 
     #[test]

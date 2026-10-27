@@ -6,7 +6,7 @@
 ; all users.
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
 #endif
 #define AppName "Nook"
 #define AppExe "nook.exe"
@@ -75,8 +75,17 @@ Root: HKCU; Subkey: "Software\Classes\nook\shell\open\command"; ValueType: strin
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; Nook's in-app updater runs Setup with /SILENT /RELAUNCH=1 and quits; this
+; starts the new version again (as the signed-in user, even after UAC).
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: ShouldRelaunch
 
 [Code]
+// True for a silent install started by Nook's updater.
+function ShouldRelaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:relaunch|0}') = '1');
+end;
+
 // Asks Nook to quit, then ends it if it is still running. Nook saves its
 // settings as they change, so a forced stop loses nothing.
 procedure StopNook;

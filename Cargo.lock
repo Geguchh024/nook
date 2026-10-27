@@ -2023,7 +2023,7 @@ checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
 name = "nook-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -2035,17 +2035,20 @@ dependencies = [
  "nook-platform",
  "nook-ui",
  "raw-window-handle",
+ "ring",
  "serde",
+ "serde_json",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "tray-icon",
+ "ureq",
  "winresource",
 ]
 
 [[package]]
 name = "nook-modules"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "egui",
@@ -2068,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "nook-platform"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "candle-core",
@@ -2084,7 +2087,7 @@ dependencies = [
 
 [[package]]
 name = "nook-ui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "egui",
  "egui-phosphor",

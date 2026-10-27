@@ -29,6 +29,35 @@ pub enum ThemeMode {
     Auto,
 }
 
+/// User styling on top of the built-in palette (see the settings page).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Look {
+    /// Opacity of the glass over the blurred backdrop, 0..1.
+    pub glass_opacity: f32,
+    /// Color the glass is tinted toward; `None` keeps the neutral glass.
+    pub tint: Option<Color32>,
+    /// Film-grain strength, 0..1.
+    pub grain: f32,
+    /// Size of one grain speck in physical pixels.
+    pub grain_px: f32,
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        Self {
+            glass_opacity: 0.70,
+            tint: None,
+            grain: 0.35,
+            grain_px: 1.0,
+        }
+    }
+}
+
+/// Grain alpha at full strength. The grain is two-sided (light and dark
+/// specks), so it reads at a lower alpha than a white-only one would.
+const GRAIN_MAX_DARK: f32 = 22.0;
+const GRAIN_MAX_LIGHT: f32 = 16.0;
+
 /// Resolved colors for one frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
@@ -42,6 +71,8 @@ pub struct Theme {
     /// 1 px inner highlight along the top edge.
     pub highlight: Color32,
     pub noise_alpha: u8,
+    /// Physical pixels per grain speck.
+    pub grain_px: f32,
     pub tile_top: Color32,
     pub tile_bottom: Color32,
     pub tile_rim: Color32,
@@ -62,7 +93,24 @@ impl Theme {
     /// `translucent` is true when a blurred backdrop (acrylic) sits behind
     /// the window; otherwise the glass is drawn nearly opaque.
     pub fn new(dark: bool, accent: Color32, translucent: bool) -> Self {
-        let glass_alpha = if translucent { 0.70 } else { 0.96 };
+        Self::styled(dark, accent, translucent, &Look::default())
+    }
+
+    /// [`Theme::new`] with the user's [`Look`] applied.
+    pub fn styled(dark: bool, accent: Color32, translucent: bool, look: &Look) -> Self {
+        let glass_alpha = if translucent {
+            look.glass_opacity.clamp(0.2, 1.0)
+        } else {
+            0.96
+        };
+        let grain = look.grain.clamp(0.0, 1.0);
+        let grain_px = look.grain_px.clamp(1.0, 4.0);
+        // The tint keeps the theme's lightness: a dark theme gets a deep
+        // shade of the color, a light theme a pale one, so text stays legible.
+        let tinted = |base: Color32, amount: f32| match look.tint {
+            Some(t) => mix(base, t, amount),
+            None => base,
+        };
         let ink_alpha = if translucent { 0.90 } else { 1.0 };
         let ink = Ink {
             pill_top: with_alpha(Color32::from_rgb(24, 24, 28), ink_alpha),
@@ -76,11 +124,12 @@ impl Theme {
             Self {
                 dark,
                 accent,
-                glass_top: with_alpha(Color32::from_rgb(34, 34, 40), glass_alpha),
-                glass_bottom: with_alpha(Color32::from_rgb(18, 18, 22), glass_alpha),
+                glass_top: with_alpha(tinted(Color32::from_rgb(34, 34, 40), 0.30), glass_alpha),
+                glass_bottom: with_alpha(tinted(Color32::from_rgb(18, 18, 22), 0.20), glass_alpha),
                 rim: Color32::from_rgba_unmultiplied(0, 0, 0, 110),
                 highlight: Color32::from_rgba_unmultiplied(255, 255, 255, 46),
-                noise_alpha: 7,
+                noise_alpha: (grain * GRAIN_MAX_DARK).round() as u8,
+                grain_px,
                 tile_top: Color32::from_rgba_unmultiplied(255, 255, 255, 18),
                 tile_bottom: Color32::from_rgba_unmultiplied(255, 255, 255, 8),
                 tile_rim: Color32::from_rgba_unmultiplied(255, 255, 255, 14),
@@ -93,11 +142,15 @@ impl Theme {
             Self {
                 dark,
                 accent,
-                glass_top: with_alpha(Color32::from_rgb(252, 252, 253), glass_alpha),
-                glass_bottom: with_alpha(Color32::from_rgb(236, 236, 240), glass_alpha),
+                glass_top: with_alpha(tinted(Color32::from_rgb(252, 252, 253), 0.14), glass_alpha),
+                glass_bottom: with_alpha(
+                    tinted(Color32::from_rgb(236, 236, 240), 0.20),
+                    glass_alpha,
+                ),
                 rim: Color32::from_rgba_unmultiplied(0, 0, 0, 40),
                 highlight: Color32::from_rgba_unmultiplied(255, 255, 255, 200),
-                noise_alpha: 5,
+                noise_alpha: (grain * GRAIN_MAX_LIGHT).round() as u8,
+                grain_px,
                 tile_top: Color32::from_rgba_unmultiplied(255, 255, 255, 150),
                 tile_bottom: Color32::from_rgba_unmultiplied(255, 255, 255, 90),
                 tile_rim: Color32::from_rgba_unmultiplied(0, 0, 0, 14),
@@ -181,6 +234,7 @@ impl Ink {
             rim: z,
             highlight: z,
             noise_alpha: 0,
+            grain_px: 1.0,
             tile_top: z,
             tile_bottom: z,
             tile_rim: z,
@@ -287,5 +341,26 @@ mod tests {
     fn alpha_and_mix() {
         assert_eq!(with_alpha(Color32::WHITE, 0.5).a(), 128);
         assert_eq!(mix(Color32::BLACK, Color32::WHITE, 1.0), Color32::WHITE);
+    }
+
+    #[test]
+    fn look_controls_grain_and_glass() {
+        let off = Look {
+            grain: 0.0,
+            ..Look::default()
+        };
+        assert_eq!(
+            Theme::styled(true, FALLBACK_ACCENT, true, &off).noise_alpha,
+            0
+        );
+        let clear = Look {
+            glass_opacity: 0.5,
+            ..Look::default()
+        };
+        let t = Theme::styled(true, FALLBACK_ACCENT, true, &clear);
+        assert_eq!(t.glass_top.to_srgba_unmultiplied()[3], 128);
+        // The solid material ignores the opacity setting.
+        let t = Theme::styled(true, FALLBACK_ACCENT, false, &clear);
+        assert_eq!(t.glass_top.to_srgba_unmultiplied()[3], 245);
     }
 }

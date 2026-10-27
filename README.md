@@ -83,11 +83,43 @@ To publish a release, bump `version` in `[workspace.package]` of
 `v<version>`:
 
 ```bash
-gh release create v0.1.0 dist/Nook-Setup-0.1.0.exe --title "Nook 0.1.0"
+gh release create v0.2.0 dist/Nook-Setup-0.2.0.exe --title "Nook 0.2.0"
 ```
 
 The website's download buttons point at that asset, so bump `VERSION` (and
 `SIZE`) in `lib/release.ts` of the website repository to match.
+
+Installed copies update themselves from the same release. Nook asks GitHub
+for the latest release 20 seconds after start and every 6 hours. When the
+tag is newer than the running version, an **Update to x.y.z** button
+appears in the panel's bottom gutter, in the Settings header and in the
+tray menu. Clicking it downloads the `Nook-Setup-*.exe` asset, checks its
+size and SHA-256, and runs it with `/SILENT /RELAUNCH=1`. Setup replaces the
+files and starts Nook again. Keep the `v<version>` tag and the
+`Nook-Setup-<version>.exe` asset name, or the updater won't find the
+release. Drafts and pre-releases are never offered. Set
+`check_updates = false` in `config.toml` to turn the automatic checks off.
+Settings > Check for updates still works with checks off. Copies that
+Setup didn't install, such as `cargo run` builds, never check by
+themselves, and their Update button opens the release page instead.
+
+### Usage stats
+
+Nook counts installs and daily opens anonymously, so we know how many
+people actually use it. On first run it makes a random install id. Once a
+day while it's open, it sends that id, the Nook version and the Windows
+build number to a Cloudflare Worker (`telemetry/`). Nothing else is sent,
+and the Worker never stores IP addresses. Settings > **Anonymous usage
+stats** turns it off. Copies Setup didn't install never send anything.
+
+The dashboard shows total installs, daily, weekly and monthly actives, new
+installs per day and the versions in use. Its link, with its private key,
+is in `telemetry/.stats-url`, which git ignores. To change the Worker,
+edit `telemetry/src/index.js` and deploy it from that folder:
+
+```bash
+npx wrangler@4.153.0 deploy
+```
 
 ### Using it
 

@@ -1,0 +1,12 @@
+# Anonymous install / daily-open counter for Nook. Deploy from this folder:
+#   npx wrangler@4.153.0 deploy
+# The dashboard key is a Worker secret (STATS_KEY), not stored here.
+name = "nook-stats"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nook-stats"
+database_id = "5f06382f-9846-44b7-9e08-c0b6c3daba9a"
