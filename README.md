@@ -8,9 +8,9 @@ Built in Rust with eframe/egui (OpenGL), the `windows` crate (Win32, DWM,
 Windows.UI.Composition, Windows.Media.Ocr), `tray-icon` and `global-hotkey`.
 Your clipboard, screenshots, notes and files stay on your machine. Nook
 goes online for only these: checking GitHub for updates, a once-a-day
-anonymous usage count (a random install id, the Nook version and the
-Windows build; on by default, off in Settings > Advanced, see
-[Usage stats](#usage-stats)), Lens search when you use it (your browser
+anonymous usage count (a random install id, the Nook version, the Windows
+build, panel opens and minutes, and uses of each built-in tool; on by
+default, off in Settings > Advanced, see [Usage stats](#usage-stats)), Lens search when you use it (your browser
 sends the area you selected to Google Lens), and installing a plugin from
 the website (Nook downloads it from GitHub).
 
@@ -108,20 +108,38 @@ themselves, and their Update button opens the release page instead.
 
 ### Usage stats
 
-Nook counts installs and daily opens anonymously, so we know how many
-people actually use it. On first run it makes a random install id. Once a
-day while it's open, it sends that id, the Nook version and the Windows
-build number to a Cloudflare Worker (`telemetry/`). Nothing else is sent,
-and the Worker never stores IP addresses. Settings > **Anonymous usage
-stats** turns it off. Copies Setup didn't install never send anything.
+Nook counts installs and usage anonymously, so we know how many people
+use it and which tools matter. On first run it makes a random install id.
+Once a day while it's open, it sends a Cloudflare Worker (`telemetry/`):
+
+- that id, the Nook version and the Windows build number,
+- how many times the panel opened and how many minutes it was open since
+  the previous ping,
+- how many times each built-in tool was used (tile click or hotkey).
+  Plugin names are never sent.
+
+The counts wait in `%APPDATA%\Nook\usage.json` until a ping goes through.
+The Worker never stores IP addresses, and it keeps tool counts as per-day
+totals with no install id. Settings > **Anonymous usage stats** turns it
+all off and deletes waiting counts. Copies Setup didn't install never send
+anything.
 
 The dashboard shows total installs, daily, weekly and monthly actives, new
-installs per day and the versions in use. Its link, with its private key,
-is in `telemetry/.stats-url`, which git ignores. To change the Worker,
-edit `telemetry/src/index.js` and deploy it from that folder:
+installs per day, the versions in use, average panel opens and minutes per
+day, and the most used tools. Its link, with its private key, is in
+`telemetry/.stats-url`, which git ignores. To change the Worker, edit
+`telemetry/src/index.js` and deploy it from that folder:
 
 ```bash
 npx wrangler@4.153.0 deploy
+```
+
+A database change goes in `telemetry/migrations/` (and in `schema.sql`
+for fresh databases). Apply it to the live database once, before deploying
+the Worker that uses it:
+
+```bash
+npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage.sql
 ```
 
 ### Using it

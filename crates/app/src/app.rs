@@ -178,6 +178,12 @@ impl NookApp {
         let mut registry = Registry::default();
         nook_modules::register_all(&mut registry);
         registry.register(Box::new(SettingsTile));
+        // Tools that ship with Nook; usage stats count only these by name.
+        let builtin = registry
+            .all()
+            .map(|m| m.id())
+            .filter(|id| !id.starts_with(nook_modules::plugins::ID_PREFIX))
+            .collect();
         registry.arrange(&cfg.modules.order, &cfg.modules.disabled);
         registry.set_sizes(&cfg.modules.sizes);
         for m in registry.all_mut() {
@@ -224,7 +230,12 @@ impl NookApp {
                 tracing::error!("saving config: {e:#}");
             }
         }
-        let stats = Stats::start(cfg.install_id.clone(), new_install, cfg.usage_stats);
+        let stats = Stats::start(
+            cfg.install_id.clone(),
+            new_install,
+            cfg.usage_stats,
+            builtin,
+        );
         Ok(Self {
             cfg,
             hwnd,
@@ -920,6 +931,7 @@ impl eframe::App for NookApp {
                 } else if let Some((_, id)) = hk.modules.iter().find(|(k, _)| k.id() == e.id)
                     && let Some(m) = self.registry.get_mut(id)
                 {
+                    self.stats.tool(id);
                     m.on_hotkey();
                 }
             }
@@ -1076,6 +1088,10 @@ impl eframe::App for NookApp {
             },
         );
 
+        if let Some(id) = clicked {
+            self.stats.tool(id);
+        }
+        self.stats.panel(self.shell.state.is_open());
         if clicked == Some(SETTINGS_ID) {
             self.page = Page::Settings;
         }

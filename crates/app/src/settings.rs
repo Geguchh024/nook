@@ -625,7 +625,7 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
     }
     hint(
         &mut rui,
-        "Install id, version and Windows build, daily",
+        "Daily: version, opens, minutes, tools used",
         theme,
     );
 }
