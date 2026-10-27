@@ -6,10 +6,13 @@ utilities. Move away and it folds back. It idles at 0% CPU.
 
 Built in Rust with eframe/egui (OpenGL), the `windows` crate (Win32, DWM,
 Windows.UI.Composition, Windows.Media.Ocr), `tray-icon` and `global-hotkey`.
-No network calls and no telemetry: everything stays on your machine. The
-exceptions happen only when you use them: Lens search (your browser sends
-the area you selected to Google Lens), and installing a plugin from the
-website (Nook downloads it from GitHub).
+Your clipboard, screenshots, notes and files stay on your machine. Nook
+goes online for only these: checking GitHub for updates, a once-a-day
+anonymous usage count (a random install id, the Nook version and the
+Windows build; on by default, off in Settings > Advanced, see
+[Usage stats](#usage-stats)), Lens search when you use it (your browser
+sends the area you selected to Google Lens), and installing a plugin from
+the website (Nook downloads it from GitHub).
 
 ## Download
 
