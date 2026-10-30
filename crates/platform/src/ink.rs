@@ -159,6 +159,83 @@ struct Stroke {
     width: f32,
 }
 
+/// One undoable step.
+enum Action {
+    Draw,
+    /// Strokes removed by one eraser drag, with the index each had when it
+    /// was removed; put back in reverse order they land where they were.
+    Erase(Vec<(usize, Stroke)>),
+    Clear(Vec<Stroke>),
+}
+
+/// The strokes and the history that undo walks back through: drawing,
+/// erasing and clearing are each one step.
+#[derive(Default)]
+struct Ink {
+    strokes: Vec<Stroke>,
+    history: Vec<Action>,
+    /// Strokes erased by the drag in progress.
+    erasing: Vec<(usize, Stroke)>,
+}
+
+impl Ink {
+    fn draw(&mut self, stroke: Stroke) {
+        self.strokes.push(stroke);
+        self.history.push(Action::Draw);
+    }
+
+    /// Removes the strokes under `p`. True if any was removed.
+    fn erase_at(&mut self, p: (f32, f32), radius: f32) -> bool {
+        let mut removed = false;
+        let mut i = 0;
+        while i < self.strokes.len() {
+            if self.strokes[i].hits(p, radius) {
+                self.erasing.push((i, self.strokes.remove(i)));
+                removed = true;
+            } else {
+                i += 1;
+            }
+        }
+        removed
+    }
+
+    /// Ends an eraser drag: what it removed becomes one undo step.
+    fn end_erase(&mut self) {
+        if !self.erasing.is_empty() {
+            self.history.push(Action::Erase(std::mem::take(&mut self.erasing)));
+        }
+    }
+
+    fn clear(&mut self) -> bool {
+        self.end_erase();
+        if self.strokes.is_empty() {
+            return false;
+        }
+        self.history.push(Action::Clear(std::mem::take(&mut self.strokes)));
+        true
+    }
+
+    /// Reverts the last step. True if anything changed.
+    fn undo(&mut self) -> bool {
+        self.end_erase();
+        match self.history.pop() {
+            None => false,
+            Some(Action::Draw) => self.strokes.pop().is_some(),
+            Some(Action::Erase(removed)) => {
+                for (i, s) in removed.into_iter().rev() {
+                    let i = i.min(self.strokes.len());
+                    self.strokes.insert(i, s);
+                }
+                true
+            }
+            Some(Action::Clear(strokes)) => {
+                self.strokes = strokes;
+                true
+            }
+        }
+    }
+}
+
 impl Stroke {
     fn hits(&self, p: (f32, f32), radius: f32) -> bool {
         let r = radius + self.width * 0.5;
@@ -274,7 +351,7 @@ struct Canvas {
     bitmap: HBITMAP,
     old: HGDIOBJ,
     surface: Surface,
-    strokes: Vec<Stroke>,
+    ink: Ink,
     current: Option<Stroke>,
     erasing: bool,
     shared: Arc<Shared>,
@@ -364,7 +441,7 @@ impl Canvas {
                 bitmap,
                 old,
                 surface,
-                strokes: Vec::new(),
+                ink: Ink::default(),
                 current: None,
                 erasing: false,
                 shared,
@@ -415,7 +492,7 @@ impl Canvas {
     /// Repaints every stroke from scratch (after undo, erase or clear).
     fn redraw(&mut self) {
         self.surface.reset();
-        for s in &self.strokes {
+        for s in &self.ink.strokes {
             self.surface.begin_stroke();
             draw_points(&mut self.surface, &s.points, s.width, s.color);
         }
@@ -423,9 +500,13 @@ impl Canvas {
     }
 
     fn erase_at(&mut self, p: (f32, f32)) {
-        let before = self.strokes.len();
-        self.strokes.retain(|s| !s.hits(p, ERASER));
-        if self.strokes.len() != before {
+        if self.ink.erase_at(p, ERASER) {
+            self.redraw();
+        }
+    }
+
+    fn undo(&mut self) {
+        if self.ink.undo() {
             self.redraw();
         }
     }
@@ -475,8 +556,9 @@ impl Canvas {
         // SAFETY: releasing our own capture.
         let _ = unsafe { ReleaseCapture() };
         self.erasing = false;
+        self.ink.end_erase();
         if let Some(s) = self.current.take() {
-            self.strokes.push(s);
+            self.ink.draw(s);
         }
     }
 }
@@ -538,13 +620,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_LBUTTONDOWN => with_canvas(|c| c.down(point(lparam))),
         WM_MOUSEMOVE => with_canvas(|c| c.moved(point(lparam))),
         WM_LBUTTONUP => with_canvas(Canvas::up),
-        WM_UNDO => with_canvas(|c| {
-            c.strokes.pop();
-            c.redraw();
-        }),
+        WM_UNDO => with_canvas(Canvas::undo),
         WM_CLEAR => with_canvas(|c| {
-            c.strokes.clear();
-            c.redraw();
+            if c.ink.clear() {
+                c.redraw();
+            }
         }),
         WM_KEYDOWN if wparam.0 == usize::from(VK_ESCAPE.0) => {
             // SAFETY: our own window.
@@ -555,10 +635,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 // SAFETY: plain key state query.
                 && unsafe { GetKeyState(i32::from(VK_CONTROL.0)) } < 0 =>
         {
-            with_canvas(|c| {
-                c.strokes.pop();
-                c.redraw();
-            });
+            with_canvas(Canvas::undo);
         }
         WM_CLOSE => {
             // SAFETY: our own window.
@@ -609,6 +686,70 @@ mod tests {
         assert_eq!(center, 0xFFFF_FFFF);
         assert!(edge >> 24 > 0 && edge >> 24 < 255, "edge {edge:08X}");
         assert_eq!(outside, BACKGROUND);
+    }
+
+    fn line(y: f32) -> Stroke {
+        Stroke {
+            points: vec![(0.0, y), (100.0, y)],
+            color: 0,
+            width: 4.0,
+        }
+    }
+
+    fn ys(ink: &Ink) -> Vec<f32> {
+        ink.strokes.iter().map(|s| s.points[0].1).collect()
+    }
+
+    #[test]
+    fn undo_after_erase_brings_the_stroke_back() {
+        let mut ink = Ink::default();
+        for y in [0.0, 100.0, 200.0] {
+            ink.draw(line(y));
+        }
+        assert!(ink.erase_at((50.0, 100.0), 10.0));
+        ink.end_erase();
+        assert_eq!(ys(&ink), [0.0, 200.0]);
+        // The erased stroke returns in its place; the last drawn one stays.
+        assert!(ink.undo());
+        assert_eq!(ys(&ink), [0.0, 100.0, 200.0]);
+        // Then undo goes on through the drawing.
+        assert!(ink.undo());
+        assert_eq!(ys(&ink), [0.0, 100.0]);
+    }
+
+    #[test]
+    fn one_eraser_drag_is_one_undo_step() {
+        let mut ink = Ink::default();
+        for y in [0.0, 100.0, 200.0] {
+            ink.draw(line(y));
+        }
+        ink.erase_at((50.0, 0.0), 10.0);
+        ink.erase_at((50.0, 200.0), 10.0);
+        ink.end_erase();
+        assert_eq!(ys(&ink), [100.0]);
+        assert!(ink.undo());
+        assert_eq!(ys(&ink), [0.0, 100.0, 200.0]);
+    }
+
+    #[test]
+    fn clear_can_be_undone() {
+        let mut ink = Ink::default();
+        ink.draw(line(0.0));
+        ink.draw(line(100.0));
+        assert!(ink.clear());
+        assert!(ink.strokes.is_empty());
+        assert!(!ink.clear(), "clearing an empty canvas is not a step");
+        assert!(ink.undo());
+        assert_eq!(ys(&ink), [0.0, 100.0]);
+    }
+
+    #[test]
+    fn undo_on_empty_history_does_nothing() {
+        let mut ink = Ink::default();
+        assert!(!ink.undo());
+        assert!(!ink.erase_at((0.0, 0.0), 10.0));
+        ink.end_erase();
+        assert!(ink.history.is_empty());
     }
 
     #[test]

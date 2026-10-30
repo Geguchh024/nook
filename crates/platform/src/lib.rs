@@ -7,6 +7,7 @@
 pub mod audio;
 pub mod backdrop;
 pub mod capture;
+pub mod crash;
 pub mod clipboard;
 pub mod embed;
 pub mod files;

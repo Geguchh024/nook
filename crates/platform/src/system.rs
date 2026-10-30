@@ -57,6 +57,30 @@ pub fn windows_build() -> u32 {
     .unwrap_or(0)
 }
 
+/// "Windows 11 Pro 24H2 (26100.4061)" for the diagnostics log.
+pub fn windows_version() -> String {
+    const KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+    let read = |name| registry::read_string(Hive::LocalMachine, KEY, name).unwrap_or_default();
+    let build = windows_build();
+    let ubr = registry::read_dword(Hive::LocalMachine, KEY, "UBR").unwrap_or(0);
+    // ProductName still says "Windows 10" on Windows 11.
+    let product = read("ProductName");
+    let product = if build >= 22000 {
+        product.replacen("Windows 10", "Windows 11", 1)
+    } else {
+        product
+    };
+    format!("{product} {} ({build}.{ubr})", read("DisplayVersion"))
+}
+
+/// Battery saver / Energy saver is on (it also turns transparency off).
+pub fn battery_saver() -> bool {
+    use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut st = SYSTEM_POWER_STATUS::default();
+    // SAFETY: valid out pointer.
+    unsafe { GetSystemPowerStatus(&mut st) }.is_ok() && st.SystemStatusFlag == 1
+}
+
 /// The DWM colorization (accent) color as RGB.
 pub fn system_accent() -> Result<[u8; 3]> {
     let mut argb = 0u32;

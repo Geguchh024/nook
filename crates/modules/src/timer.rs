@@ -1,4 +1,5 @@
-//! Timer: a countdown (scroll or +/- to set the minutes) and a stopwatch.
+//! Timer: a countdown (scroll or +/- to set the minutes, or double-click the
+//! time to type one) and a stopwatch.
 //! The running time and its ring mirror into the collapsed pill, and the
 //! countdown plays the Windows notification sound when it ends.
 //!
@@ -6,7 +7,10 @@
 //! unit-tested without sleeping; the module feeds it seconds since start-up
 //! from a monotonic `Instant`.
 
-use egui::{Align2, Event, MouseWheelUnit, Rect, Response, Ui, UiBuilder, pos2, vec2};
+use egui::{
+    Align2, Event, Id, Key, MouseWheelUnit, Rect, Response, Sense, TextEdit, Ui, UiBuilder, pos2,
+    vec2,
+};
 use nook_platform::system;
 use nook_ui::bento::tile_header;
 use nook_ui::module::{Badge, Module, TileCtx, TileSize};
@@ -14,8 +18,8 @@ use nook_ui::theme::{Theme, with_alpha};
 use nook_ui::{icons, paint, widgets};
 use std::time::{Duration, Instant};
 
-const DEFAULT_MINUTES: u32 = 25;
-const MAX_MINUTES: u32 = 180;
+const DEFAULT_SECS: u32 = 25 * 60;
+const MAX_SECS: u32 = 180 * 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -42,8 +46,8 @@ pub enum Phase {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Clock {
     pub mode: Mode,
-    /// Countdown length in whole minutes.
-    pub minutes: u32,
+    /// Countdown length in seconds.
+    pub secs: u32,
     pub phase: Phase,
 }
 
@@ -51,7 +55,7 @@ impl Default for Clock {
     fn default() -> Self {
         Self {
             mode: Mode::Countdown,
-            minutes: DEFAULT_MINUTES,
+            secs: DEFAULT_SECS,
             phase: Phase::Idle,
         }
     }
@@ -59,7 +63,7 @@ impl Default for Clock {
 
 impl Clock {
     pub fn duration(&self) -> f64 {
-        f64::from(self.minutes) * 60.0
+        f64::from(self.secs)
     }
 
     /// Seconds counted so far in this run.
@@ -112,18 +116,24 @@ impl Clock {
         self.phase = Phase::Idle;
     }
 
-    /// Changes the countdown length by `delta` minutes (1..=180). While a
-    /// countdown runs this extends or shortens the current run.
+    /// Changes the countdown length by `delta` minutes (1 min to 3 h). While
+    /// a countdown runs this extends or shortens the current run.
     pub fn adjust(&mut self, delta: i32) {
-        self.minutes = self
-            .minutes
-            .saturating_add_signed(delta)
-            .clamp(1, MAX_MINUTES);
+        self.secs = self
+            .secs
+            .saturating_add_signed(delta.saturating_mul(60))
+            .clamp(60, MAX_SECS);
+    }
+
+    /// Sets a typed countdown length and goes back to idle.
+    pub fn set_secs(&mut self, secs: u32) {
+        self.secs = secs.clamp(1, MAX_SECS);
+        self.phase = Phase::Idle;
     }
 
     /// Restarts a finished countdown for one more minute.
     pub fn snooze(&mut self, now: f64) {
-        self.minutes = 1;
+        self.secs = 60;
         self.phase = Phase::Running {
             since: now,
             banked: 0.0,
@@ -179,11 +189,63 @@ pub fn format_secs(secs: f64, round_up: bool) -> String {
     }
 }
 
+/// Parses a typed countdown length into seconds: `25` (minutes), `5:30`
+/// (m:ss, like the display), `1:05:00` (h:mm:ss), or units such as `90s`,
+/// `45m`, `1h30m`, `1.5` (minutes). `None` if it is not a time or is out of
+/// range (1 s to 3 h).
+pub fn parse_duration(text: &str) -> Option<u32> {
+    let t: String = text.trim().to_ascii_lowercase().split_whitespace().collect();
+    if t.is_empty() {
+        return None;
+    }
+    let secs = if t.contains(':') {
+        let parts: Vec<u32> = t
+            .split(':')
+            .map(|p| p.parse().ok())
+            .collect::<Option<_>>()?;
+        match parts[..] {
+            [m, s] if s < 60 => m.checked_mul(60)?.checked_add(s)?,
+            [h, m, s] if m < 60 && s < 60 => h.checked_mul(3600)?.checked_add(m * 60 + s)?,
+            _ => return None,
+        }
+    } else if let Ok(minutes) = t.parse::<f64>() {
+        if !minutes.is_finite() || minutes < 0.0 {
+            return None;
+        }
+        (minutes * 60.0).round().min(f64::from(u32::MAX)) as u32
+    } else {
+        // Number + unit pairs: 1h30m, 90s, 2min.
+        let mut total: u32 = 0;
+        let mut rest = t.as_str();
+        while !rest.is_empty() {
+            let digits = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+            if digits == 0 {
+                return None;
+            }
+            let n: u32 = rest[..digits].parse().ok()?;
+            rest = &rest[digits..];
+            let unit_len = rest.find(|c: char| c.is_ascii_digit()).unwrap_or(rest.len());
+            let scale = match &rest[..unit_len] {
+                "h" | "hr" | "hrs" | "hour" | "hours" => 3600,
+                "m" | "min" | "mins" | "minute" | "minutes" | "" => 60,
+                "s" | "sec" | "secs" | "second" | "seconds" => 1,
+                _ => return None,
+            };
+            total = total.checked_add(n.checked_mul(scale)?)?;
+            rest = &rest[unit_len..];
+        }
+        total
+    };
+    (1..=MAX_SECS).contains(&secs).then_some(secs)
+}
+
 pub struct Timer {
     clock: Clock,
     epoch: Instant,
     /// Unspent wheel movement, in notches.
     wheel: f32,
+    /// Text typed into the time after a double-click, while editing.
+    editing: Option<String>,
 }
 
 impl Default for Timer {
@@ -192,6 +254,7 @@ impl Default for Timer {
             clock: Clock::default(),
             epoch: Instant::now(),
             wheel: 0.0,
+            editing: None,
         }
     }
 }
@@ -370,17 +433,68 @@ impl Module for Timer {
                 if dim { theme.text_dim } else { theme.text },
             )
         };
-        let size = if text.len() > 5 { 12.0 } else { 15.0 };
-        painter.text(
-            center,
-            Align2::CENTER_CENTER,
-            text,
-            Theme::font_semibold(size),
-            color,
-        );
+
+        // Double-click the time to type one (a countdown that is not running).
+        let editable = self.clock.mode == Mode::Countdown && !self.clock.is_running();
+        if !editable {
+            self.editing = None;
+        }
+        let edit_id = Id::new("nook-timer-edit");
+        let mut just_opened = false;
+        if editable && self.editing.is_none() {
+            let time_rect = Rect::from_center_size(center, vec2(radius * 2.0, radius * 2.0));
+            if ui
+                .interact(time_rect, Id::new("nook-timer-time"), Sense::click())
+                .on_hover_text("Double-click to type a time: 5, 5:30, 90s or 1h30m")
+                .double_clicked()
+            {
+                self.editing = Some(format_secs(self.clock.duration(), true));
+                ui.memory_mut(|m| m.request_focus(edit_id));
+                just_opened = true;
+            }
+        }
+        if let Some(input) = &mut self.editing {
+            let field = Rect::from_center_size(center, vec2(44.0, 22.0));
+            let mut child = ui.new_child(UiBuilder::new().max_rect(field));
+            let mut out = TextEdit::singleline(input)
+                .id(edit_id)
+                .font(Theme::font_semibold(14.0))
+                .text_color(theme.text)
+                .horizontal_align(egui::Align::Center)
+                .desired_width(field.width())
+                .char_limit(10)
+                .show(&mut child);
+            if just_opened {
+                // Select it all so typing replaces the old time.
+                let all = egui::text::CCursorRange::two(
+                    egui::text::CCursor::new(0),
+                    egui::text::CCursor::new(input.chars().count()),
+                );
+                out.state.cursor.set_char_range(Some(all));
+                out.state.store(ui.ctx(), edit_id);
+            }
+            if out.response.lost_focus() {
+                // Enter or a click elsewhere applies; Esc (or nonsense) keeps
+                // the old time.
+                let cancelled = ui.input(|i| i.key_pressed(Key::Escape));
+                if !cancelled && let Some(secs) = parse_duration(input) {
+                    self.clock.set_secs(secs);
+                }
+                self.editing = None;
+            }
+        } else {
+            let size = if text.len() > 5 { 12.0 } else { 15.0 };
+            ui.painter().text(
+                center,
+                Align2::CENTER_CENTER,
+                text,
+                Theme::font_semibold(size),
+                color,
+            );
+        }
 
         // Scroll over the tile to set the countdown.
-        if ctx.hovered && self.clock.mode == Mode::Countdown && !finished {
+        if ctx.hovered && self.clock.mode == Mode::Countdown && !finished && self.editing.is_none() {
             let steps = self.wheel_steps(ui);
             if steps != 0 {
                 self.clock.adjust(steps);
@@ -459,7 +573,7 @@ mod tests {
     #[test]
     fn countdown_runs_pauses_and_finishes() {
         let mut c = Clock {
-            minutes: 1,
+            secs: 60,
             ..Clock::default()
         };
         assert_eq!(c.display_secs(0.0), 60.0);
@@ -489,9 +603,9 @@ mod tests {
     fn adjust_clamps_and_mode_switch_resets() {
         let mut c = Clock::default();
         c.adjust(-1000);
-        assert_eq!(c.minutes, 1);
+        assert_eq!(c.secs, 60);
         c.adjust(1000);
-        assert_eq!(c.minutes, MAX_MINUTES);
+        assert_eq!(c.secs, MAX_SECS);
         c.toggle(0.0);
         c.set_mode(Mode::Stopwatch);
         assert_eq!(c.phase, Phase::Idle);
@@ -513,6 +627,38 @@ mod tests {
         let wait = c.until_next_second(3.25).unwrap_or_default();
         assert!((wait - 0.75).abs() < 1e-9);
         assert_eq!(Clock::default().until_next_second(1.0), None);
+    }
+
+    #[test]
+    fn typed_durations() {
+        assert_eq!(parse_duration("25"), Some(25 * 60));
+        assert_eq!(parse_duration(" 5:30 "), Some(330));
+        assert_eq!(parse_duration("0:45"), Some(45));
+        assert_eq!(parse_duration("1:05:00"), Some(3900));
+        assert_eq!(parse_duration("1.5"), Some(90));
+        assert_eq!(parse_duration("90s"), Some(90));
+        assert_eq!(parse_duration("45m"), Some(45 * 60));
+        assert_eq!(parse_duration("1h30m"), Some(5400));
+        assert_eq!(parse_duration("1h 30m 15s"), Some(5415));
+        assert_eq!(parse_duration("2 min"), Some(120));
+        // What the field shows when it opens parses back unchanged.
+        assert_eq!(parse_duration(&format_secs(1500.0, true)), Some(1500));
+        for bad in ["", "abc", "5:75", "0", "0:00", "4h", "-3", "1x", "1:2:3:4", "::"] {
+            assert_eq!(parse_duration(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn typed_time_resets_a_paused_countdown() {
+        let mut c = Clock::default();
+        c.toggle(0.0);
+        c.toggle(10.0);
+        c.set_secs(330);
+        assert_eq!(c.phase, Phase::Idle);
+        assert_eq!(c.display_secs(50.0), 330.0);
+        // +/- still step whole minutes from a typed time.
+        c.adjust(1);
+        assert_eq!(c.secs, 390);
     }
 
     #[test]

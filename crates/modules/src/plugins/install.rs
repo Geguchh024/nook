@@ -9,6 +9,11 @@
 //! command it will run. Sources are limited to the examples built
 //! into Nook and public GitHub repositories.
 //!
+//! A plugin `.zip` or `.7z` dropped on the notch ([`submit_archive`])
+//! installs too: every folder in it with a `plugin.toml` is one plugin, so a
+//! bundle of several installs in one drop. Dropping the file is the person's go-ahead, so
+//! these install without a second confirmation.
+//!
 //! Downloads and extraction run on worker threads; the app applies a
 //! finished install on the UI thread ([`super::apply_changes`]), which swaps
 //! the folder and loads the plugin without a restart.
@@ -38,6 +43,9 @@ pub enum Source {
         git_ref: String,
         path: String,
     },
+    /// A `.zip` or `.7z` on this PC, and the folder in it holding
+    /// `plugin.toml` (empty when it sits at the top).
+    Archive { file: PathBuf, folder: String },
 }
 
 impl Source {
@@ -60,12 +68,23 @@ impl Source {
                 }
                 s
             }
+            Source::Archive { file, folder } => {
+                let name = file.file_name().map_or_else(
+                    || file.display().to_string(),
+                    |n| n.to_string_lossy().into_owned(),
+                );
+                if folder.is_empty() {
+                    format!("{name} (dropped on Nook)")
+                } else {
+                    format!("{name} \u{203a} {folder} (dropped on Nook)")
+                }
+            }
         }
     }
 
     pub fn web_url(&self) -> Option<String> {
         match self {
-            Source::Example(_) => None,
+            Source::Example(_) | Source::Archive { .. } => None,
             Source::GitHub {
                 owner,
                 repo,
@@ -219,16 +238,87 @@ pub(super) fn finish(request: u64, result: Result<String, String>) {
 
 /// Takes a `nook://install?...` link: queues it and reads its manifest.
 pub fn submit_url(url: &str) {
-    let parsed = parse_url(url);
-    let id = installer().next.fetch_add(1, Ordering::Relaxed) + 1;
-    let (source, expect, state) = match parsed {
-        Ok((s, e)) => (s, e, State::Loading),
+    match parse_url(url) {
+        Ok((source, expect)) => submit(source, expect),
         Err(e) => {
             tracing::warn!("install link {url:?}: {e}");
-            (Source::Example(String::new()), None, State::Failed(e))
+            queue(Source::Example(String::new()), None, State::Failed(e));
         }
+    }
+}
+
+/// True for the archive types plugins can be dropped as.
+pub fn is_archive(file: &Path) -> bool {
+    file.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| ARCHIVES.iter().any(|a| e.eq_ignore_ascii_case(a)))
+}
+
+const ARCHIVES: [&str; 2] = ["zip", "7z"];
+
+/// Installs the plugins in a dropped `.zip` or `.7z`: one, or every folder
+/// of a bundle that has a `plugin.toml`. False (and nothing queued) when the
+/// file is not an archive or holds no plugin, so the drop can go elsewhere.
+pub fn submit_archive(file: &Path) -> bool {
+    match plugins_in_archive(file) {
+        Ok(folders) if !folders.is_empty() => {
+            queue_archive(file, folders);
+            true
+        }
+        Ok(_) => {
+            tracing::info!("{}: no plugin.toml inside, not a plugin", file.display());
+            false
+        }
+        Err(e) => {
+            tracing::info!("{}: not a plugin archive ({e})", file.display());
+            false
+        }
+    }
+}
+
+/// For a drop on the Plugins page, where every file is meant as a plugin:
+/// installs it, or shows on the page why it could not.
+pub fn submit_dropped(file: &Path) {
+    let reason = match plugins_in_archive(file) {
+        Ok(folders) if !folders.is_empty() => return queue_archive(file, folders),
+        Ok(_) => "it has no plugin.toml, so it isn't a Nook plugin".to_owned(),
+        Err(e) => e,
     };
-    let loading = matches!(state, State::Loading);
+    let name = file
+        .file_name()
+        .map_or_else(|| file.display().to_string(), |n| n.to_string_lossy().into_owned());
+    tracing::info!("{}: not installed: {reason}", file.display());
+    queue(
+        Source::Archive {
+            file: file.to_path_buf(),
+            folder: String::new(),
+        },
+        None,
+        State::Failed(format!("{name}: {reason}")),
+    );
+}
+
+fn queue_archive(file: &Path, folders: Vec<String>) {
+    tracing::info!(
+        "{}: installing {} plugin(s) from {folders:?}",
+        file.display(),
+        folders.len()
+    );
+    for folder in folders {
+        submit(
+            Source::Archive {
+                file: file.to_path_buf(),
+                folder,
+            },
+            None,
+        );
+    }
+}
+
+/// Adds a request to the list. `None` when the same source is already
+/// waiting (a double click), which only shows it again.
+fn queue(source: Source, expect: Option<String>, state: State) -> Option<u64> {
+    let id = installer().next.fetch_add(1, Ordering::Relaxed) + 1;
     if let Ok(mut rs) = installer().requests.lock() {
         // The same link twice (a double click) only shows once.
         if rs
@@ -237,38 +327,45 @@ pub fn submit_url(url: &str) {
         {
             installer().arrived.store(true, Ordering::Relaxed);
             wake();
-            return;
+            return None;
         }
         rs.push(Request {
             id,
-            source: source.clone(),
-            expect: expect.clone(),
+            source,
+            expect,
             state,
         });
     }
     installer().arrived.store(true, Ordering::Relaxed);
     wake();
-    if loading {
-        // The examples ship inside Nook, so they install without asking;
-        // code from GitHub waits on the Plugins page for the person's yes.
-        let built_in = matches!(source, Source::Example(_));
-        spawn(move || {
-            let state = match preview(&source, expect.as_deref()) {
-                Ok(manifest) => {
-                    let installed = installed_version(&manifest.id);
-                    State::Ready {
-                        manifest: Box::new(manifest),
-                        installed,
-                    }
+    Some(id)
+}
+
+/// Queues `source` and reads its manifest.
+fn submit(source: Source, expect: Option<String>) {
+    let Some(id) = queue(source.clone(), expect.clone(), State::Loading) else {
+        return;
+    };
+    // The examples ship inside Nook and a dropped archive was the person's
+    // own choice, so both install without asking; code from GitHub waits on
+    // the Plugins page for the person's yes.
+    let built_in = matches!(source, Source::Example(_) | Source::Archive { .. });
+    spawn(move || {
+        let state = match preview(&source, expect.as_deref()) {
+            Ok(manifest) => {
+                let installed = installed_version(&manifest.id);
+                State::Ready {
+                    manifest: Box::new(manifest),
+                    installed,
                 }
-                Err(e) => State::Failed(e),
-            };
-            update(id, state);
-            if built_in {
-                confirm(id);
             }
-        });
-    }
+            Err(e) => State::Failed(e),
+        };
+        update(id, state);
+        if built_in {
+            confirm(id);
+        }
+    });
 }
 
 /// Starts the download and unpacking after the person said yes.
@@ -479,6 +576,20 @@ fn preview(source: &Source, expect: Option<&str>) -> Result<Manifest, String> {
             let bytes = get(&url, 64 * 1024).map_err(|e| format!("plugin.toml: {e}"))?;
             String::from_utf8(bytes).map_err(|_| "plugin.toml is not UTF-8".to_owned())?
         }
+        Source::Archive { file, folder } => {
+            let name = if folder.is_empty() {
+                "plugin.toml".to_owned()
+            } else {
+                format!("{folder}/plugin.toml")
+            };
+            let entries = read_archive(file)?;
+            let entry = entries
+                .iter()
+                .find(|e| e.name == name)
+                .ok_or_else(|| format!("the archive has no {name}"))?;
+            String::from_utf8(entry.data.clone())
+                .map_err(|_| "plugin.toml is not UTF-8".to_owned())?
+        }
     };
     let m = Manifest::parse(&text).map_err(|e| format!("plugin.toml: {e}"))?;
     check_id(&m, expect)?;
@@ -545,7 +656,10 @@ fn fetch(source: &Source, id: &str) -> Result<PathBuf, String> {
                     &format!("https://github.com/{owner}/{repo}/archive/{git_ref}.zip"),
                     MAX_DOWNLOAD,
                 )?;
-                unpack(&zip, path, &staging)?;
+                unpack(&zip, path, &staging, true)?;
+            }
+            Source::Archive { file, folder } => {
+                write_folder(&read_archive(file)?, folder, &staging)?;
             }
         }
         let text = std::fs::read_to_string(staging.join("plugin.toml"))
@@ -563,9 +677,178 @@ fn fetch(source: &Source, id: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// Extracts `path` (a folder inside the repository, or all of it) from a
-/// GitHub archive, whose entries sit under one top folder `repo-ref/`.
-fn unpack(zip: &[u8], path: &str, into: &Path) -> Result<(), String> {
+/// One file from a dropped archive. `name` uses `/` whatever the tool that
+/// made it wrote (Windows' own tools store `a\b`).
+struct Entry {
+    name: String,
+    data: Vec<u8>,
+}
+
+/// Reads every file of a dropped `.zip` or `.7z` into memory, within the
+/// same limits as a GitHub download.
+fn read_archive(file: &Path) -> Result<Vec<Entry>, String> {
+    let len = std::fs::metadata(file)
+        .map_err(|e| format!("reading {}: {e}", file.display()))?
+        .len();
+    if len > MAX_DOWNLOAD {
+        return Err(format!(
+            "the archive is larger than {} MB",
+            MAX_DOWNLOAD / 1024 / 1024
+        ));
+    }
+    let ext = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let mut out: Vec<Entry> = Vec::new();
+    let mut total = 0u64;
+    let mut add = |name: &str, reader: &mut dyn Read| -> Result<(), String> {
+        if out.len() >= MAX_FILES {
+            return Err("the archive has too many files to be a plugin".into());
+        }
+        let mut data = Vec::new();
+        reader
+            .take(MAX_UNPACKED - total + 1)
+            .read_to_end(&mut data)
+            .map_err(|e| format!("reading {name}: {e}"))?;
+        total += data.len() as u64;
+        if total > MAX_UNPACKED {
+            return Err("the plugin is too large to install".into());
+        }
+        out.push(Entry {
+            name: name.replace('\\', "/"),
+            data,
+        });
+        Ok(())
+    };
+    match ext.as_str() {
+        "zip" => {
+            let bytes =
+                std::fs::read(file).map_err(|e| format!("reading {}: {e}", file.display()))?;
+            let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+                .map_err(|e| format!("not a valid zip: {e}"))?;
+            for i in 0..archive.len() {
+                let mut entry = archive
+                    .by_index(i)
+                    .map_err(|e| format!("reading the zip: {e}"))?;
+                if entry.is_dir() {
+                    continue;
+                }
+                let name = entry.name().to_owned();
+                add(&name, &mut entry)?;
+            }
+        }
+        "7z" => {
+            let mut reader =
+                sevenz_rust2::ArchiveReader::open(file, sevenz_rust2::Password::empty())
+                    .map_err(|e| format!("not a valid 7z (or it has a password): {e}"))?;
+            // Refuse a decompression bomb before inflating anything.
+            let declared: u64 = reader.archive().files.iter().map(|f| f.size()).sum();
+            if declared > MAX_UNPACKED {
+                return Err("the plugin is too large to install".into());
+            }
+            let mut failed = None;
+            reader
+                .for_each_entries(|entry, data| {
+                    if entry.is_directory() {
+                        return Ok(true);
+                    }
+                    match add(entry.name(), data) {
+                        Ok(()) => Ok(true),
+                        Err(e) => {
+                            failed = Some(e);
+                            Ok(false)
+                        }
+                    }
+                })
+                .map_err(|e| format!("reading the 7z: {e}"))?;
+            if let Some(e) = failed {
+                return Err(e);
+            }
+        }
+        _ => return Err("only .zip and .7z files can hold plugins".into()),
+    }
+    Ok(out)
+}
+
+/// The folders in an archive that hold a `plugin.toml` (`""` for the top),
+/// each one plugin.
+pub fn plugins_in_archive(file: &Path) -> Result<Vec<String>, String> {
+    if !is_archive(file) {
+        return Err("only .zip and .7z files can hold plugins".into());
+    }
+    let entries = read_archive(file)?;
+    Ok(plugin_folders(entries.iter().map(|e| e.name.as_str())))
+}
+
+/// Writes the files under `folder` (all of them for `""`) into `into`.
+/// Names that could leave `into` (`..`, drive letters, rooted paths) are
+/// refused.
+fn write_folder(entries: &[Entry], folder: &str, into: &Path) -> Result<(), String> {
+    let prefix = if folder.is_empty() {
+        String::new()
+    } else {
+        format!("{folder}/")
+    };
+    let mut written = 0usize;
+    for e in entries {
+        let Some(rel) = e.name.strip_prefix(&prefix) else {
+            continue;
+        };
+        let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
+        if parts.is_empty() {
+            continue;
+        }
+        if e.name.starts_with('/') || parts.iter().any(|p| *p == ".." || p.contains(':')) {
+            return Err(format!("the archive has an unsafe path: {}", e.name));
+        }
+        let out = parts.iter().fold(into.to_path_buf(), |dir, p| dir.join(p));
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| format!("creating {}: {err}", parent.display()))?;
+        }
+        std::fs::write(&out, &e.data).map_err(|err| format!("writing {rel}: {err}"))?;
+        written += 1;
+    }
+    if written == 0 {
+        return Err(format!("the archive has no folder \"{folder}\""));
+    }
+    Ok(())
+}
+
+/// Plugin folders among archive entry names. A `plugin.toml` inside another
+/// plugin's folder is part of that plugin, not a plugin of its own.
+fn plugin_folders<'a>(names: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut folders: Vec<String> = names
+        .map(|n| n.replace('\\', "/"))
+        .filter(|n| !n.starts_with("__MACOSX/"))
+        .filter_map(|n| {
+            let folder = n.strip_suffix("plugin.toml")?;
+            // Only a file named exactly plugin.toml, not "my-plugin.toml".
+            if !(folder.is_empty() || folder.ends_with('/')) {
+                return None;
+            }
+            let folder = folder.trim_end_matches('/');
+            (!folder.split('/').any(|p| p == "..")).then(|| folder.to_owned())
+        })
+        .collect();
+    folders.sort_by_key(|f| (f.matches('/').count(), f.clone()));
+    let mut out: Vec<String> = Vec::new();
+    for f in folders {
+        let nested = out
+            .iter()
+            .any(|o| o.is_empty() || *o == f || f.starts_with(&format!("{o}/")));
+        if !nested {
+            out.push(f);
+        }
+    }
+    out
+}
+
+/// Extracts `path` (a folder inside the archive, or all of it). GitHub
+/// archives (`strip_top`) put every entry under one top folder `repo-ref/`.
+fn unpack(zip: &[u8], path: &str, into: &Path, strip_top: bool) -> Result<(), String> {
     let mut archive = zip::ZipArchive::new(Cursor::new(zip))
         .map_err(|e| format!("the download isn't a zip: {e}"))?;
     let mut files = 0usize;
@@ -579,7 +862,9 @@ fn unpack(zip: &[u8], path: &str, into: &Path) -> Result<(), String> {
             continue;
         };
         let mut parts = name.components();
-        parts.next(); // the archive's top folder
+        if strip_top {
+            parts.next(); // the archive's top folder
+        }
         let rel: PathBuf = parts.collect();
         let rel = if path.is_empty() {
             rel
@@ -798,11 +1083,147 @@ mod tests {
         }
         let dir = std::env::temp_dir().join(format!("nook-unpack-test-{}", stamp()));
         std::fs::create_dir_all(&dir).unwrap();
-        unpack(buf.get_ref(), "plugins/w", &dir).unwrap();
+        unpack(buf.get_ref(), "plugins/w", &dir, true).unwrap();
         assert!(dir.join("plugin.toml").is_file());
         assert!(dir.join("lib").join("util.py").is_file());
         assert!(!dir.join("README.md").exists());
-        assert!(unpack(buf.get_ref(), "plugins/missing", &dir).is_err());
+        assert!(unpack(buf.get_ref(), "plugins/missing", &dir, true).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finds_one_plugin_or_a_bundle() {
+        let folders = |names: &[&str]| plugin_folders(names.iter().copied());
+        // A single plugin zipped from inside its folder, or as its folder.
+        assert_eq!(folders(&["plugin.toml", "main.py"]), [""]);
+        assert_eq!(folders(&["timer/plugin.toml", "timer/main.py"]), ["timer"]);
+        // A bundle, at any depth, with Windows separators and macOS junk.
+        assert_eq!(
+            folders(&[
+                "bundle/a/plugin.toml",
+                "bundle\\b\\plugin.toml",
+                "c/plugin.toml",
+                "__MACOSX/c/plugin.toml",
+                "README.md",
+            ]),
+            ["c", "bundle/a", "bundle/b"]
+        );
+        // A plugin.toml inside a plugin (a template, say) is its own file.
+        assert_eq!(
+            folders(&["a/plugin.toml", "a/templates/plugin.toml"]),
+            ["a"]
+        );
+        assert_eq!(folders(&["plugin.toml", "x/plugin.toml"]), [""]);
+        // Not plugins.
+        assert!(folders(&["my-plugin.toml", "notes.txt"]).is_empty());
+        assert!(folders(&["../evil/plugin.toml"]).is_empty());
+    }
+
+    #[test]
+    fn installs_each_plugin_of_a_dropped_bundle() {
+        use std::io::Write as _;
+        let file = std::env::temp_dir().join(format!("nook-bundle-test-{}.zip", stamp()));
+        {
+            let mut z = zip::ZipWriter::new(std::fs::File::create(&file).unwrap());
+            let o = zip::write::SimpleFileOptions::default();
+            for (name, body) in [
+                ("pack/one/plugin.toml", "id = \"one\"\nname = \"One\"\nrun = [\"a\"]"),
+                ("pack/one/main.py", "print(1)"),
+                // Windows' Compress-Archive writes backslash paths.
+                ("pack\\two\\plugin.toml", "id = \"two\"\nname = \"Two\"\nrun = [\"b\"]"),
+                ("pack\\two\\lib\\x.py", "pass"),
+            ] {
+                z.start_file(name, o).unwrap();
+                z.write_all(body.as_bytes()).unwrap();
+            }
+            z.finish().unwrap();
+        }
+        let found = plugins_in_archive(&file).unwrap();
+        assert_eq!(found, ["pack/one", "pack/two"]);
+        for (folder, id, file_in_it) in [("pack/one", "one", "main.py"), ("pack/two", "two", "lib/x.py")] {
+            let source = Source::Archive {
+                file: file.clone(),
+                folder: folder.into(),
+            };
+            assert_eq!(preview(&source, None).unwrap().id, id);
+            let staging = fetch(&source, id).unwrap();
+            assert!(staging.join("plugin.toml").is_file());
+            assert!(staging.join(file_in_it).is_file(), "{id}: {file_in_it}");
+            // Only this plugin's files, not its neighbour's.
+            assert!(!staging.join("one").exists() && !staging.join("two").exists());
+            let _ = std::fs::remove_dir_all(&staging);
+        }
+        // An id that does not match what the folder was read as is refused.
+        let source = Source::Archive {
+            file: file.clone(),
+            folder: "pack/one".into(),
+        };
+        assert!(fetch(&source, "two").is_err());
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn installs_a_7z_bundle() {
+        let root = std::env::temp_dir().join(format!("nook-7z-test-{}", stamp()));
+        let src = root.join("bundle");
+        for (rel, body) in [
+            ("one/plugin.toml", "id = \"one\"\nname = \"One\"\nrun = [\"a\"]"),
+            ("one/main.py", "print(1)"),
+            ("two/plugin.toml", "id = \"two\"\nname = \"Two\"\nrun = [\"b\"]"),
+            ("two/lib/x.py", "pass"),
+        ] {
+            let path = src.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        }
+        let file = root.join("bundle.7z");
+        sevenz_rust2::compress_to_path(&src, &file).unwrap();
+        assert!(is_archive(&file));
+        let found = plugins_in_archive(&file).unwrap();
+        assert_eq!(found.len(), 2, "{found:?}");
+        for (folder, id) in found.iter().zip(["one", "two"]) {
+            let source = Source::Archive {
+                file: file.clone(),
+                folder: folder.clone(),
+            };
+            assert_eq!(preview(&source, None).unwrap().id, id);
+            let staging = fetch(&source, id).unwrap();
+            assert!(staging.join("plugin.toml").is_file());
+            let _ = std::fs::remove_dir_all(&staging);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Checks a real archive: `NOOK_PLUGIN_ARCHIVE=path cargo test -- --ignored`.
+    #[test]
+    #[ignore = "reads the archive named by NOOK_PLUGIN_ARCHIVE"]
+    fn reads_a_real_archive() {
+        let file = PathBuf::from(std::env::var("NOOK_PLUGIN_ARCHIVE").expect("set NOOK_PLUGIN_ARCHIVE"));
+        let folders = plugins_in_archive(&file).unwrap();
+        println!("plugin folders: {folders:?}");
+        assert!(!folders.is_empty(), "no plugin.toml in {}", file.display());
+        for folder in folders {
+            let m = preview(&Source::Archive { file: file.clone(), folder }, None).unwrap();
+            println!("  {} {} ({})", m.id, m.version, m.name);
+        }
+    }
+
+    #[test]
+    fn refuses_unsafe_archive_paths() {
+        let into = std::env::temp_dir().join(format!("nook-unsafe-test-{}", stamp()));
+        let entry = |name: &str| Entry {
+            name: name.into(),
+            data: b"x".to_vec(),
+        };
+        for bad in ["p/../../evil.txt", "p/C:/evil.txt"] {
+            assert!(write_folder(&[entry(bad)], "p", &into).is_err(), "{bad}");
+        }
+        assert!(write_folder(&[entry("p/ok.txt")], "missing", &into).is_err());
+        write_folder(&[entry("p/./sub//ok.txt")], "p", &into).unwrap();
+        assert!(into.join("sub").join("ok.txt").is_file());
+        let _ = std::fs::remove_dir_all(&into);
+        // Not an archive at all.
+        assert!(!is_archive(Path::new("notes.txt")));
+        assert!(plugins_in_archive(Path::new("notes.txt")).is_err());
     }
 }

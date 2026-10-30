@@ -16,6 +16,7 @@ debug-overlay = []
 
 [dependencies]
 eframe.workspace = true
+wgpu.workspace = true
 egui.workspace = true
 egui-phosphor.workspace = true
 tray-icon.workspace = true

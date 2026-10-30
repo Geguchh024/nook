@@ -1,6 +1,6 @@
 //! Settings: the gear tile in the bento grid and the in-notch settings page.
 
-use crate::config::{AccentSource, Config, GrainSize, Material, MonitorMode};
+use crate::config::{AccentSource, Config, GrainSize, Material, MonitorMode, Renderer};
 use crate::update::{self, Status};
 use egui::{
     Align, Align2, Area, Color32, Id, Layout, Order, Rect, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
@@ -24,7 +24,7 @@ const TOP_CARD: f32 = 154.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
-const BODY: [f32; 2] = [4.0 * ROW + 14.0, 2.0 * ROW + 14.0];
+const BODY: [f32; 2] = [4.0 * ROW + 14.0, 3.0 * ROW + 28.0];
 /// Page height with every section collapsed, panel padding included.
 const BASE: f32 =
     2.0 * PANEL_PADDING + HEADER + GAP + TOP_CARD + GAP + DISCLOSURE + GAP + DISCLOSURE;
@@ -480,10 +480,14 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
         out.changed = true;
     }
     let glass = cfg.material == Material::Acrylic;
+    // With Windows "Transparency effects" off there is no blur to see
+    // through, so the glass is drawn opaque and opacity has no effect. Only
+    // read while this card is open.
+    let transparency = nook_platform::system::transparency_enabled();
     let span = (OPACITY_MAX - OPACITY_MIN) as f32;
     let mut t = (cfg.glass_opacity.clamp(OPACITY_MIN, OPACITY_MAX) - OPACITY_MIN) as f32 / span;
     if row(&mut lui, "Glass opacity", theme, |ui| {
-        if !glass {
+        if !glass || !transparency {
             // The solid material is always opaque.
             ui.disable();
         }
@@ -555,6 +559,30 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
     {
         cfg.reset_look();
         out.changed = true;
+    }
+
+    if !transparency {
+        let (note, _) = rui.allocate_exact_size(vec2(w, ROW), Sense::hover());
+        ui.painter().text(
+            pos2(note.min.x, note.center().y),
+            Align2::LEFT_CENTER,
+            "Windows transparency is off",
+            Theme::font(SIZE_LABEL),
+            theme.text_dim,
+        );
+        let turn_on = Rect::from_min_size(
+            pos2(note.max.x - 96.0, note.center().y - 13.0),
+            vec2(96.0, 26.0),
+        );
+        if nook_modules::kit::button(ui, turn_on, "Turn on", Some(icons::ARROW_SQUARE_OUT), false, theme)
+            .on_hover_text(
+                "Glass and opacity need Transparency effects in Windows Settings > Personalization > Colors",
+            )
+            .clicked()
+            && let Err(e) = nook_platform::shell::open("ms-settings:colors")
+        {
+            tracing::warn!("opening color settings: {e}");
+        }
     }
 }
 
@@ -628,6 +656,41 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
         "Daily: version, opens, minutes, tools used",
         theme,
     );
+
+    let mut renderer_idx = match cfg.renderer {
+        Renderer::Auto => 0,
+        Renderer::DirectX => 1,
+        Renderer::OpenGl => 2,
+    };
+    if row(&mut lui, "Renderer", theme, |ui| {
+        widgets::segmented(ui, &["Auto", "DirectX", "OpenGL"], &mut renderer_idx, theme)
+            .on_hover_text("Try OpenGL if the panel flickers; DirectX if it shows a black box")
+    }) {
+        cfg.renderer = [Renderer::Auto, Renderer::DirectX, Renderer::OpenGl][renderer_idx];
+        out.changed = true;
+    }
+    hint(
+        &mut lui,
+        &format!("Using {} · applies after restart", crate::diag::active_renderer()),
+        theme,
+    );
+
+    // "Open log" at the right, level with the Renderer row.
+    rui.add_space(ROW - 26.0);
+    let w = rui.available_width();
+    let (log_row, _) = rui.allocate_exact_size(vec2(w, ROW), Sense::hover());
+    let open_log = Rect::from_min_size(
+        pos2(log_row.max.x - 120.0, log_row.center().y - 13.0),
+        vec2(120.0, 26.0),
+    );
+    if nook_modules::kit::button(ui, open_log, "Open log", Some(icons::FILE_TEXT), false, theme)
+        .on_hover_text("Shows nook.log in Explorer, to attach to a bug report")
+        .clicked()
+        && let Some(path) = crate::diag::log_path()
+        && let Err(e) = nook_platform::shell::reveal(&path)
+    {
+        tracing::warn!("revealing log: {e}");
+    }
 }
 
 /// Small faint line under a row.

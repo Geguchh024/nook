@@ -86,7 +86,7 @@ To publish a release, bump `version` in `[workspace.package]` of
 `v<version>`:
 
 ```bash
-gh release create v0.2.0 dist/Nook-Setup-0.2.0.exe --title "Nook 0.2.0"
+gh release create v0.2.1 dist/Nook-Setup-0.2.1.exe --title "Nook 0.2.1"
 ```
 
 The website's download buttons point at that asset, so bump `VERSION` (and
@@ -146,8 +146,8 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
 
 - **Hover** the pill for 120 ms to expand. **Leave** for 250 ms to
   collapse.
-- **Click** the glass, press **Ctrl+Alt+N**, or use the tray's
-  **Pin open** to keep the panel open. A small pin shows at the top center.
+- **Click** the glass (or empty space on any page), press **Ctrl+Alt+N**,
+  or use the tray's **Pin open** to keep the panel open. A small pin shows at the top center.
 - **Position:** Settings, Position: Left, Center or Right. In a corner
   the panel opens toward the other side.
 - **Always on top:** on by default. Turn it off in Settings or the tray

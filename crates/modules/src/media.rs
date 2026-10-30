@@ -12,7 +12,7 @@ use egui::{
     UiBuilder, pos2, vec2,
 };
 use nook_platform::media::{MediaCommand, MediaWatcher, NowPlaying};
-use nook_ui::module::{Badge, Module, TileCtx, TileSize};
+use nook_ui::module::{Module, TileCtx, TileSize};
 use nook_ui::theme::{SIZE_LABEL, Theme, with_alpha};
 use nook_ui::{icons, paint, widgets};
 use std::sync::Arc;
@@ -107,12 +107,6 @@ impl Module for Media {
 
     fn is_active(&self) -> bool {
         self.now.as_ref().is_some_and(|n| n.playing)
-    }
-
-    fn collapsed_badge(&self) -> Option<Badge> {
-        self.is_active().then_some(Badge::Glyph {
-            icon: icons::MUSIC_NOTES,
-        })
     }
 
     fn attach(&mut self, ctx: &egui::Context) {

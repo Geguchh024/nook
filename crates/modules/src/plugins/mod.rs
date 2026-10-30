@@ -21,6 +21,7 @@ pub mod protocol;
 mod view;
 
 pub use manager::PluginsTile;
+pub use view::keyboard_focused;
 
 /// Module id of the Plugins tile and page.
 pub const PLUGINS_ID: &str = "plugins";
@@ -297,7 +298,8 @@ pub struct Plugin {
     show_request: bool,
     close_request: bool,
     page_open: bool,
-    page_drawn: Option<Instant>,
+    /// The page was drawn since the last `on_tick`.
+    page_drawn: bool,
     /// What the plugin was last told, to send only changes.
     theme_sent: Option<(bool, Color32)>,
     tile_layout: Option<(TileSize, egui::Vec2)>,
@@ -331,7 +333,7 @@ impl Plugin {
             show_request: false,
             close_request: false,
             page_open: false,
-            page_drawn: None,
+            page_drawn: false,
             theme_sent: None,
             tile_layout: None,
             page_layout: None,
@@ -474,15 +476,50 @@ impl Plugin {
 
     fn render(&mut self, ui: &mut Ui, view: &Node, theme: &Theme, salt: &str) {
         let mut events = Vec::new();
+        let mut drag = None;
         Renderer {
             theme,
             state: &mut self.state,
             events: &mut events,
+            drag: &mut drag,
+            drags: 0,
             dir: &self.found.dir,
             salt,
         }
         .root(ui, view);
         self.outbox.extend(events);
+        if let Some(paths) = drag {
+            self.drag_out(paths);
+        }
+    }
+
+    /// Drags a `drag` node's files out of Nook with the shell's own drag (as
+    /// from Explorer); blocks until the drop, like the file shelf does.
+    fn drag_out(&mut self, paths: Vec<String>) {
+        let files: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+        let result = nook_platform::files::drag_out(&files);
+        // The drag loop ate the button release; tell egui it happened.
+        if let Some(main) = nook_platform::window::find_own("Nook") {
+            nook_platform::window::post_left_button_up(main);
+        }
+        use nook_platform::files::DropResult;
+        let msg = match result {
+            Ok(r) => protocol::msg_dragged(
+                &paths,
+                match r {
+                    DropResult::Copied => "copied",
+                    DropResult::Moved => "moved",
+                    DropResult::Linked => "linked",
+                    DropResult::Cancelled => "cancelled",
+                },
+                None,
+            ),
+            Err(e) => {
+                tracing::warn!("plugin {} drag out: {e}", self.id);
+                protocol::msg_dragged(&paths, "error", Some(&e.to_string()))
+            }
+        };
+        self.outbox.push(msg);
     }
 }
 
@@ -570,15 +607,15 @@ impl Module for Plugin {
         if self.restart_at.is_some_and(|t| Instant::now() >= t) {
             self.start();
         }
-        // The page counts as closed once it has not been drawn for a moment.
-        if self.page_open
-            && self
-                .page_drawn
-                .is_none_or(|t| t.elapsed() > Duration::from_millis(300))
-        {
+        // The page counts as closed once a frame went by without drawing it.
+        // Not by time: an idle page is only redrawn every 350 ms (see
+        // `next_repaint`), and a time limit read before the draw flapped it
+        // closed and open again, which reset games waiting on a timer.
+        if self.page_open && !self.page_drawn {
             self.page_open = false;
             self.send(protocol::msg_simple("page_close"));
         }
+        self.page_drawn = false;
     }
 
     fn next_repaint(&self, _tile_visible: bool) -> Option<Duration> {
@@ -666,7 +703,7 @@ impl Module for Plugin {
 
     fn ui_page(&mut self, ui: &mut Ui, header: &mut Ui, body: Rect, theme: &Theme) -> bool {
         self.sync_theme(theme);
-        self.page_drawn = Some(Instant::now());
+        self.page_drawn = true;
         if !self.page_open {
             self.page_open = true;
             self.close_request = false;

@@ -25,6 +25,15 @@ const DEFAULT_GAP: f32 = 6.0;
 const CONTROL_H: f32 = 26.0;
 /// Larger images are scaled down when loaded.
 const MAX_IMAGE: u32 = 1024;
+/// Marks the egui ids of `keys` canvases (see [`keyboard_focused`]).
+const KEYS_MARK: &str = "nook-plugin-keys";
+
+/// A plugin canvas that takes key presses has the keyboard, so the window
+/// must be able to take focus, as for a text field.
+pub fn keyboard_focused(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| m.focused())
+        .is_some_and(|id| ctx.data(|d| d.get_temp::<bool>(id.with(KEYS_MARK)).is_some()))
+}
 
 /// What a control last showed, so a plugin's new value can override the
 /// user's edit and an unchanged one does not.
@@ -54,6 +63,11 @@ pub struct Renderer<'a> {
     pub state: &'a mut ViewState,
     /// Outgoing `event` messages.
     pub events: &'a mut Vec<Value>,
+    /// Set when a node with `drag` files starts being dragged; the caller
+    /// runs the drag after the frame.
+    pub drag: &'a mut Option<Vec<String>>,
+    /// Counts `drag` nodes this frame, for their ids.
+    pub drags: usize,
     /// Plugin folder, for relative image paths.
     pub dir: &'a Path,
     /// Scopes egui ids (`plugin id` + `tile`/`page`).
@@ -153,7 +167,38 @@ impl Renderer<'_> {
     }
 
     pub fn node(&mut self, ui: &mut Ui, node: &Node) -> Response {
-        let resp = self.kind(ui, &node.kind);
+        let mut resp = self.kind(ui, &node.kind);
+        if let Some(paths) = node.drag.as_ref().filter(|p| !p.is_empty()) {
+            // Drag sensing on top of the node's own controls: egui picks the
+            // click and the drag target separately, so its buttons still
+            // click, and a press that moves becomes this drag.
+            // Its own id (not the node's auto id, which shifts as siblings
+            // come and go), registered after the node's content so it is on
+            // top for dragging while the controls inside keep their clicks.
+            self.drags += 1;
+            let key = format!("drag:{}:{}", self.drags, egui::Id::new(paths).value());
+            resp = ui.interact(resp.rect, self.id(&key), Sense::drag());
+            // A drag-only widget is "dragged" from the press on, so wait for
+            // real movement: a click on a button inside stays a click.
+            let fired = resp.id.with("nook-drag-out");
+            let moved = ui.input(|i| {
+                i.pointer
+                    .press_origin()
+                    .zip(i.pointer.interact_pos())
+                    .is_some_and(|(from, now)| from.distance(now) > 6.0)
+            });
+            if resp.dragged() {
+                if moved && ui.data(|d| d.get_temp::<bool>(fired).is_none()) {
+                    ui.data_mut(|d| d.insert_temp(fired, true));
+                    *self.drag = Some(paths.clone());
+                }
+            } else {
+                ui.data_mut(|d| d.remove::<bool>(fired));
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
+            }
+        }
         match &node.tooltip {
             Some(t) if !t.is_empty() => resp.on_hover_text(t),
             _ => resp,
@@ -169,11 +214,15 @@ impl Renderer<'_> {
                 align,
                 justify,
                 scroll,
+                id,
             } => {
                 if *scroll {
+                    // justify "end": start at the bottom and follow new content
+                    // there (a chat), unless the user scrolled up.
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, false])
-                        .id_salt(self.id("scroll"))
+                        .stick_to_bottom(*justify == Align::End)
+                        .id_salt(self.id(&format!("scroll:{}", id.as_deref().unwrap_or(""))))
                         .show(ui, |ui| {
                             self.column(ui, children, *gap, *align, Align::Start)
                         })
@@ -326,7 +375,8 @@ impl Renderer<'_> {
                 width,
                 height,
                 shapes,
-            } => self.canvas(ui, id.as_deref(), *width, *height, shapes),
+                keys,
+            } => self.canvas(ui, id.as_deref(), *width, *height, shapes, *keys),
             Kind::Button {
                 id,
                 label,
@@ -565,21 +615,33 @@ impl Renderer<'_> {
                 .response
             }
             Some(at) => {
-                // Left part, then the rest packed from the right edge.
+                // Left part, then the rest packed from the right edge. Asks for
+                // last frame's height: in a bottom-up column (after a column
+                // spacer) a zero-height slot sits on the bottom edge and the
+                // row would grow down past it.
                 let width = ui.available_width();
-                ui.allocate_ui_with_layout(vec2(width, 0.0), Layout::left_to_right(valign), |ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    for c in &children[..at] {
-                        self.node(ui, c);
-                    }
-                    ui.with_layout(Layout::right_to_left(valign), |ui| {
+                let memo = ui.next_auto_id().with("row-h");
+                let h: f32 = ui.ctx().data(|d| d.get_temp(memo)).unwrap_or(0.0);
+                let resp = ui
+                    .allocate_ui_with_layout(vec2(width, h), Layout::left_to_right(valign), |ui| {
                         ui.spacing_mut().item_spacing.x = gap;
-                        for c in children[at + 1..].iter().rev() {
+                        for c in &children[..at] {
                             self.node(ui, c);
                         }
-                    });
-                })
-                .response
+                        ui.with_layout(Layout::right_to_left(valign), |ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            for c in children[at + 1..].iter().rev() {
+                                self.node(ui, c);
+                            }
+                        });
+                    })
+                    .response;
+                let now = resp.rect.height();
+                if (now - h).abs() > 0.5 {
+                    ui.ctx().data_mut(|d| d.insert_temp(memo, now));
+                    ui.ctx().request_repaint();
+                }
+                resp
             }
         }
     }
@@ -590,7 +652,9 @@ impl Renderer<'_> {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = gap;
             for chunk in children.chunks(columns) {
-                ui.horizontal(|ui| {
+                // Top-aligned: `horizontal` centres each cell on the row's
+                // height so far, which steps cells of different heights down.
+                ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.x = gap;
                     for c in chunk {
                         ui.allocate_ui_with_layout(
@@ -823,15 +887,15 @@ impl Renderer<'_> {
         width: Option<f32>,
         height: f32,
         shapes: &[Shape],
+        keys: bool,
     ) -> Response {
         let theme = self.theme;
         let w = width.unwrap_or_else(|| ui.available_width()).max(1.0);
-        let sense = if id.is_some() {
-            Sense::click()
-        } else {
-            Sense::hover()
-        };
-        let (rect, resp) = ui.allocate_exact_size(vec2(w, height.max(1.0)), sense);
+        let (rect, mut resp) = ui.allocate_exact_size(vec2(w, height.max(1.0)), Sense::hover());
+        if let Some(id) = id {
+            // A stable id, so keyboard focus survives redraws.
+            resp = ui.interact(rect, self.id(id), Sense::click());
+        }
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         let o = rect.min.to_vec2();
         let at = |x: f32, y: f32| pos2(x, y) + o;
@@ -968,8 +1032,10 @@ impl Renderer<'_> {
                 _ => {}
             }
         }
+        // Pointer clicks only: with the keyboard held, egui also "clicks" on
+        // Space and Enter, which arrive as keys instead.
         if let Some(id) = id
-            && resp.clicked()
+            && resp.clicked_by(egui::PointerButton::Primary)
             && let Some(p) = resp.interact_pointer_pos()
         {
             let local = p - rect.min;
@@ -979,7 +1045,66 @@ impl Renderer<'_> {
                 json!({ "x": local.x.round(), "y": local.y.round() }),
             );
         }
+        if let Some(id) = id
+            && keys
+        {
+            self.canvas_keys(ui, id, &resp);
+        }
         resp
+    }
+
+    /// Keeps the keyboard on a `keys` canvas and sends its presses. Takes
+    /// focus back from buttons and chips (a click elsewhere drops it), never
+    /// from a text field. Keys are named after their physical position, so
+    /// WASD works on any layout: "Up", "Space", "Enter", "Escape", "A", "7".
+    fn canvas_keys(&mut self, ui: &mut Ui, id: &str, resp: &Response) {
+        let ctx = ui.ctx().clone();
+        ctx.data_mut(|d| d.insert_temp(resp.id.with(KEYS_MARK), true));
+        if !resp.has_focus() {
+            if !ctx.text_edit_focused() {
+                resp.request_focus();
+                ctx.request_repaint();
+            }
+            return;
+        }
+        // Arrows, Tab and Escape go to the game, not to egui's focus moves.
+        ctx.memory_mut(|m| {
+            m.set_focus_lock_filter(
+                resp.id,
+                egui::EventFilter {
+                    tab: true,
+                    horizontal_arrows: true,
+                    vertical_arrows: true,
+                    escape: true,
+                },
+            );
+        });
+        let pressed: Vec<_> = ctx.input(|i| {
+            i.events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Key {
+                        key,
+                        physical_key,
+                        pressed: true,
+                        repeat,
+                        modifiers,
+                    } if !(modifiers.ctrl || modifiers.alt || modifiers.command) => Some((
+                        physical_key.unwrap_or(*key).name(),
+                        *repeat,
+                        modifiers.shift,
+                    )),
+                    _ => None,
+                })
+                .collect()
+        });
+        for (key, repeat, shift) in pressed {
+            self.emit(
+                id,
+                "key",
+                json!({ "key": key, "repeat": repeat, "shift": shift }),
+            );
+        }
     }
 
     fn image(

@@ -256,7 +256,7 @@ draw()
         <tr><td><code>mode</code></td><td><code>"live"</code></td><td><code>live</code>: one long-running process. <code>poll</code>: run again every <code>interval</code> seconds. See <a href="#modes">modes</a>.</td></tr>
         <tr><td><code>interval</code></td><td><code>60</code></td><td>Seconds between runs in poll mode (minimum 1).</td></tr>
         <tr><td><code>hotkey</code></td><td>none</td><td>A global shortcut, e.g. <code>"ctrl+alt+KeyY"</code>. Pressing it sends you <code>hotkey</code>.</td></tr>
-        <tr><td><code>accepts_files</code></td><td><code>false</code></td><td>While your page is open, files dropped on the notch are sent to you as <code>files</code>.</td></tr>
+        <tr><td><code>accepts_files</code></td><td><code>false</code></td><td>While your page is open, files dropped on the notch are sent to you as <code>files</code>, ahead of every other tile (File Shelf included).</td></tr>
         <tr><td><code>page_size</code></td><td>panel size</td><td><code>[width, height]</code> in points. The panel grows to this size while your page is open.</td></tr>
         <tr><td><code>description</code>, <code>author</code>, <code>version</code></td><td>""</td><td>Information only. The version is written to Nook's log.</td></tr>
       </tbody>
@@ -299,6 +299,9 @@ $b = Get-CimInstance Win32_Battery
     <!-- ───────────────────────────────── -->
     <h2 id="views">Views</h2>
     <p>A view is a tree of components. Every component has a <code>type</code> and can have a <code>tooltip</code>.
+      Any component can also have <code>drag</code>, a list of file paths: dragging the component then drags those
+      files out of Nook into Explorer, a chat or a mail, the same as dragging from Explorer. Buttons inside it still
+      click; the drag starts once the pointer moves. Afterwards you get a <code>dragged</code> message.
       Layout is simple:</p>
     <ul>
       <li><code>column</code> stacks its children downward and <code>row</code> places them left to right. <code>gap</code> sets the space between them (default 6).</li>
@@ -306,7 +309,10 @@ $b = Get-CimInstance Win32_Battery
         <code>[title, spacer, button]</code> puts the button on the right.</li>
       <li><code>align</code> (<code>start</code>, <code>center</code>, <code>end</code>) aligns children on the other axis. On a column,
         <code>justify</code> places the whole column at the top, middle or bottom of the available space.</li>
-      <li>Add <code>"scroll": true</code> to a column on a page when it may be taller than the space.</li>
+      <li>Add <code>"scroll": true</code> to a column on a page when it may be taller than the space. With
+        <code>"justify": "end"</code> as well, it opens scrolled to the bottom and follows content added there
+        (a chat), unless the user has scrolled up. Give it an <code>id</code> to keep a separate scroll
+        position per id; a new id starts fresh (at the bottom), for example once per message sent.</li>
     </ul>
     <pre data-label="A wide weather tile"><code>{ <span class="s">"type"</span>: <span class="s">"tile"</span>, <span class="s">"view"</span>:
   { <span class="s">"type"</span>: <span class="s">"row"</span>, <span class="s">"align"</span>: <span class="s">"center"</span>, <span class="s">"gap"</span>: <span class="n">10</span>, <span class="s">"children"</span>: [
@@ -329,8 +335,8 @@ $b = Get-CimInstance Win32_Battery
       <thead><tr><th>type</th><th>Fields</th><th>Notes</th></tr></thead>
       <tbody>
         <tr><td colspan="3"><b>Layout</b></td></tr>
-        <tr><td><code>column</code></td><td><code>children gap align justify scroll</code></td><td>Top to bottom.</td></tr>
-        <tr><td><code>row</code></td><td><code>children gap align</code></td><td>Left to right.</td></tr>
+        <tr><td><code>column</code></td><td><code>children gap align justify scroll id</code></td><td>Top to bottom.</td></tr>
+        <tr><td><code>row</code></td><td><code>children gap align</code></td><td>Left to right, always from the left edge. To centre things, stack them in a <code>column</code> with <code>align: center</code>.</td></tr>
         <tr><td><code>grid</code></td><td><code>columns children gap</code></td><td>Equal-width cells. Good for dashboards.</td></tr>
         <tr><td><code>card</code></td><td><code>children padding gap</code></td><td>A glass panel that groups its children.</td></tr>
         <tr><td><code>spacer</code></td><td><code>size?</code></td><td>A fixed gap, or with no size, pushes what follows to the end.</td></tr>
@@ -338,12 +344,12 @@ $b = Get-CimInstance Win32_Battery
         <tr><td colspan="3"><b>Content</b></td></tr>
         <tr><td><code>text</code></td><td><code>text size color bold wrap mono</code></td><td><code>size</code>: <code>small body title big huge</code>. Long text ends in “…” unless <code>wrap</code>.</td></tr>
         <tr><td><code>icon</code></td><td><code>icon size color fill</code></td><td>Default size 18.</td></tr>
-        <tr><td><code>image</code></td><td><code>path | base64, width height rounding</code></td><td>PNG, JPG or BMP. Nook reloads it when the file changes. Images larger than 1024 px are scaled down.</td></tr>
+        <tr><td><code>image</code></td><td><code>path | base64, width height rounding</code></td><td>PNG, JPG or BMP. Nook reloads it when the file changes; write a new version to a temp file and rename it over the old one, or Nook may read it half-written. With both <code>width</code> and <code>height</code> it is stretched to that box: give one to keep the aspect ratio. Images larger than 1024 px are scaled down.</td></tr>
         <tr><td><code>progress</code></td><td><code>value color width</code></td><td>A thin bar. <code>value</code> is 0–1.</td></tr>
         <tr><td><code>ring</code></td><td><code>value label size color</code></td><td>A circular progress ring with a short label inside.</td></tr>
         <tr><td><code>sparkline</code></td><td><code>values max color width height</code></td><td>An area chart. The newest value is on the right.</td></tr>
         <tr><td><code>list</code></td><td><code>items: [{id title subtitle icon trailing selected}]</code></td><td>Clickable rows. A click sends an event with the item's <code>id</code>.</td></tr>
-        <tr><td><code>canvas</code></td><td><code>height width id shapes</code></td><td>Free drawing. See <a href="#canvas">Canvas</a>.</td></tr>
+        <tr><td><code>canvas</code></td><td><code>height width id keys shapes</code></td><td>Free drawing. See <a href="#canvas">Canvas</a>.</td></tr>
         <tr><td colspan="3"><b>Controls</b> (each sends events with its <code>id</code>)</td></tr>
         <tr><td><code>button</code></td><td><code>id label icon primary width</code></td><td>Sends <code>click</code>. With no label it's a round icon button. <code>width: 0</code> fills the row.</td></tr>
         <tr><td><code>toggle</code></td><td><code>id value label</code></td><td>Sends <code>change</code> with <code>true</code> or <code>false</code>.</td></tr>
@@ -361,6 +367,11 @@ $b = Get-CimInstance Win32_Battery
     <h2 id="canvas">Canvas</h2>
     <p>When the built-in components aren't enough, draw your own: gauges, games, clocks, maps or visualizers. Coordinates are
       points from the canvas's top-left corner. Give the canvas an <code>id</code> and each click sends <code>{"x", "y"}</code>.</p>
+    <p>For games, add <code>"keys": true</code> as well. While the canvas is shown it holds the keyboard (unless a text field
+      has it) and each key press sends a <code>key</code> event with <code>{"key", "repeat", "shift"}</code>. Keys are named by their
+      place on the keyboard, so WASD works on any layout: <code>Up Down Left Right Space Enter Escape Tab Backspace</code>,
+      <code>A</code>–<code>Z</code> and <code>0</code>–<code>9</code>. Presses with Ctrl or Alt are not sent. Skip <code>repeat</code> presses unless
+      holding a key should repeat.</p>
     <div class="table-wrap"><table>
       <thead><tr><th>Shape</th><th>Fields</th></tr></thead>
       <tbody>
@@ -403,13 +414,14 @@ $b = Get-CimInstance Win32_Battery
       <thead><tr><th>type</th><th>Fields</th><th>When</th></tr></thead>
       <tbody>
         <tr><td><code>hello</code></td><td><code>protocol nook_version plugin_id data_dir theme{dark,accent}</code></td><td>First, right after your program starts.</td></tr>
-        <tr><td><code>event</code></td><td><code>id kind value?</code></td><td>A control was used. <code>kind</code> is <code>click change submit commit</code>.</td></tr>
+        <tr><td><code>event</code></td><td><code>id kind value?</code></td><td>A control was used. <code>kind</code> is <code>click change submit commit key</code>.</td></tr>
         <tr><td><code>tile_click</code></td><td></td><td>The tile was clicked somewhere other than one of your controls.</td></tr>
         <tr><td><code>page_open</code> / <code>page_close</code></td><td></td><td>Your page appeared or went away. Do expensive work only while it's open.</td></tr>
         <tr><td><code>layout</code></td><td><code>target size width height</code></td><td>The space available for your tile or page, in points. Sent again when it changes, e.g. after a resize.</td></tr>
         <tr><td><code>theme</code></td><td><code>dark accent</code></td><td>The user changed the theme or accent color.</td></tr>
         <tr><td><code>hotkey</code></td><td></td><td>Your manifest's <code>hotkey</code> was pressed.</td></tr>
         <tr><td><code>files</code></td><td><code>paths</code></td><td>Files were dropped on your open page (needs <code>accepts_files</code>).</td></tr>
+        <tr><td><code>dragged</code></td><td><code>paths result error?</code></td><td>The files of a <code>drag</code> component were dragged out. <code>result</code> is <code>copied</code>, <code>moved</code>, <code>linked</code>, <code>cancelled</code> (including a drop back onto Nook) or <code>error</code>.</td></tr>
         <tr><td><code>shutdown</code></td><td></td><td>Nook is quitting or reloading. Save your state now. Your program is killed 0.4 s later.</td></tr>
       </tbody>
     </table></div>

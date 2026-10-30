@@ -96,6 +96,7 @@ The process gets no console window (`CREATE_NO_WINDOW`).
 | `page_open` / `page_close` | | Your page appeared / has not been drawn for ~300 ms. |
 | `hotkey` | | The manifest `hotkey` was pressed. |
 | `files` | `paths` (array of strings) | Files dropped while your page is open (`accepts_files = true`). |
+| `dragged` | `paths`, `result`, `error` (optional) | The files of a node with `drag` were dragged out. `result`: `copied`, `moved`, `linked`, `cancelled` (also a drop back onto Nook) or `error`. |
 | `shutdown` | | Nook is quitting, reloading or replacing the plugin. Save now; the process is killed 0.4 s later. |
 
 Ignore unknown `type`s and unknown event ids: future versions add more.
@@ -113,12 +114,13 @@ Ignore unknown `type`s and unknown event ids: future versions add more.
 | `input` | `submit` on Enter; also `change` on every edit if `live: true` | string (current text) |
 | `chips` | `change` | `{"index": 2, "label": "Week"}` |
 | `canvas` with an `id` | `click` | `{"x": 31, "y": 12}` in canvas points from its top left |
+| `canvas` with an `id` and `"keys": true` | `key` | `{"key": "Up", "repeat": false, "shift": false}`. Named by physical position (WASD works on any layout): `Up Down Left Right Space Enter Escape Tab Backspace`, `A`–`Z`, `0`–`9`. No presses with Ctrl/Alt. |
 
 ## 7. Live mode lifecycle
 
 1. Nook starts `run` in the plugin folder and sends `hello`.
 2. You print `tile` (and `page`, `badge` ... as needed) whenever state changes.
-3. Nook sends `layout`, `event`, `theme`, `page_open/close`, `hotkey`, `files` as they happen.
+3. Nook sends `layout`, `event`, `theme`, `page_open/close`, `hotkey`, `files`, `dragged` as they happen.
 4. On quit/reload/update Nook sends `shutdown`, closes stdin, waits 0.4 s, then kills the process.
 5. If the process exits on its own, Nook restarts it after 2 s, up to 3 times within 60 s; after that the tile shows *Stopped · click to restart* with the error and last stderr lines on hover. A user click restarts it.
 

@@ -40,6 +40,18 @@ pub enum Material {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum Renderer {
+    /// DirectX 12, falling back to OpenGL when it cannot start.
+    #[default]
+    Auto,
+    /// DirectX 12 through a DirectComposition swapchain.
+    DirectX,
+    /// OpenGL. Some drivers drop its alpha and the window comes out black.
+    OpenGl,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum GrainSize {
     /// One physical pixel per speck.
     #[default]
@@ -104,6 +116,8 @@ pub struct Config {
     pub check_updates: bool,
     /// Send the anonymous daily "opened" ping (see `stats.rs`).
     pub usage_stats: bool,
+    /// GPU backend; read at startup only.
+    pub renderer: Renderer,
     /// Random id the stats ping counts installs by; made on first run.
     pub install_id: String,
     pub modules: ModulesConfig,
@@ -131,6 +145,7 @@ impl Default for Config {
             plugin_dev: false,
             check_updates: true,
             usage_stats: true,
+            renderer: Renderer::Auto,
             install_id: String::new(),
             modules: ModulesConfig {
                 order: nook_modules::DEFAULT_ORDER
@@ -261,6 +276,14 @@ mod tests {
         let old: Config = toml::from_str("theme = \"dark\"").expect("parse");
         assert_eq!(old.grain, DEFAULT_GRAIN);
         assert_eq!(old.look().tint, None);
+    }
+
+    #[test]
+    fn renderer_parses_and_defaults_to_auto() {
+        let cfg: Config = toml::from_str("renderer = \"opengl\"").expect("parse");
+        assert_eq!(cfg.renderer, Renderer::OpenGl);
+        let old: Config = toml::from_str("theme = \"dark\"").expect("parse");
+        assert_eq!(old.renderer, Renderer::Auto);
     }
 
     #[test]

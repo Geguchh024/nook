@@ -1,6 +1,6 @@
 # Nook view components
 
-Source of truth: `crates/modules/src/plugins/protocol.rs` (fields) and `view.rs` (drawing, events). A view is a tree of nodes; every node has a `type` and may have a `tooltip` (string). Send the whole tree each time.
+Source of truth: `crates/modules/src/plugins/protocol.rs` (fields) and `view.rs` (drawing, events). A view is a tree of nodes; every node has a `type` and may have a `tooltip` (string) and `drag` (array of file paths: dragging the node drags those files out of Nook, as from Explorer; controls inside still click, the drag starts once the pointer moves, and a `dragged` message follows). Send the whole tree each time. Python: `nook.draggable(node, paths)`.
 
 **Required** fields are in bold. Unknown fields are ignored; an unknown `type` draws nothing (so newer plugins still work on older Nook). A missing required field or a wrong JSON type (e.g. `"value": "0.5"` instead of `0.5`) makes the *whole message* invalid and it is skipped.
 
@@ -28,7 +28,7 @@ The real numbers arrive in `layout` messages; the user can resize tiles. Text th
 
 | type | Fields (default) | Notes |
 |---|---|---|
-| `column` | `children` ([]), `gap` (6), `align` (`start`/`center`/`end`, start), `justify` (start), `scroll` (false) | Top to bottom. `align` is horizontal; `justify` places the whole stack vertically in the available height. `scroll: true` for page content that may overflow. |
+| `column` | `children` ([]), `gap` (6), `align` (`start`/`center`/`end`, start), `justify` (start), `scroll` (false), `id` | Top to bottom. `align` is horizontal; `justify` places the whole stack vertically in the available height. `scroll: true` for page content that may overflow; with `justify: end` it opens at the bottom and follows new content (a chat). `id` keys the scroll position: a new id starts a fresh scroll. |
 | `row` | `children` ([]), `gap` (6), `align` (start) | Left to right. `align` is vertical; use `"center"` for icon + text rows. |
 | `grid` | **`columns`** (int ≥ 1), `children`, `gap` (6) | Equal-width cells, filled row by row. |
 | `card` | `children`, `padding` (10), `gap` | Glass panel grouping its children (a column inside). |
@@ -46,7 +46,7 @@ The real numbers arrive in `layout` messages; the user can resize tiles. Text th
 | `ring` | **`value`** (0..1), `label` (""), `size` (40), `color` (accent) | Circular progress with a short label inside. |
 | `sparkline` | **`values`** (array of numbers), `max` (auto), `color`, `width`, `height` | Area chart, newest value on the right. |
 | `list` | **`items`**: `[{ **id**, **title**, subtitle, icon, trailing, selected }]` | Clickable rows; click sends `event` with the item's `id`. `trailing` is short right-aligned text (a time, a size). |
-| `canvas` | **`height`**, `width` (fill), `id`, `shapes` | See §5. |
+| `canvas` | **`height`**, `width` (fill), `id`, `keys`, `shapes` | See §5. |
 
 ## 4. Controls
 
@@ -64,7 +64,7 @@ All need a stable **`id`**. See protocol.md §6 for exact event payloads.
 
 ## 5. Canvas and shapes
 
-`{"type":"canvas","height":104,"width":104,"id":"face","shapes":[...]}`. Coordinates are points from the canvas's top left. Without `width` the canvas fills the available width. With an `id`, clicks send `{"x","y"}`.
+`{"type":"canvas","height":104,"width":104,"id":"face","shapes":[...]}`. Coordinates are points from the canvas's top left. Without `width` the canvas fills the available width. With an `id`, clicks send `{"x","y"}`. With `"keys": true` as well, the canvas holds the keyboard while shown (unless a text field has it) and sends `key` events (see protocol.md).
 
 | Shape `type` | Fields (default) |
 |---|---|

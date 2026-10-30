@@ -91,13 +91,17 @@ pub enum BadgeSpec {
     Pulse,
 }
 
-/// One node of a view tree. `tooltip` works on every node.
+/// One node of a view tree. `tooltip` and `drag` work on every node.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Node {
     #[serde(flatten)]
     pub kind: Kind,
     #[serde(default)]
     pub tooltip: Option<String>,
+    /// Files to drag out of Nook when the node is dragged (as from
+    /// Explorer); the plugin then gets a `dragged` message.
+    #[serde(default)]
+    pub drag: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -114,9 +118,13 @@ pub enum Kind {
         /// Main-axis placement inside the available height.
         #[serde(default)]
         justify: Align,
-        /// Scroll when taller than the room (pages).
+        /// Scroll when taller than the room (pages). With justify "end" the
+        /// scroll sticks to the bottom.
         #[serde(default)]
         scroll: bool,
+        /// Keys the scroll position: a new id starts a fresh scroll (at the
+        /// bottom with justify "end"). Columns without one share it.
+        id: Option<String>,
     },
     Row {
         #[serde(default)]
@@ -205,6 +213,10 @@ pub enum Kind {
         height: f32,
         #[serde(default)]
         shapes: Vec<Shape>,
+        /// With an id: the canvas holds the keyboard while it is shown (unless
+        /// a text field has it) and sends `key` events (games).
+        #[serde(default)]
+        keys: bool,
     },
 
     // Controls: each sends `event` messages with its `id`.
@@ -462,6 +474,16 @@ pub fn msg_files(paths: &[std::path::PathBuf]) -> Value {
     json!({ "type": "files", "paths": paths })
 }
 
+/// A `drag` node's files were dragged out: `result` is `copied`, `moved`,
+/// `linked`, `cancelled` or `error` (with `error` set).
+pub fn msg_dragged(paths: &[String], result: &str, error: Option<&str>) -> Value {
+    let mut m = json!({ "type": "dragged", "paths": paths, "result": result });
+    if let Some(e) = error {
+        m["error"] = json!(e);
+    }
+    m
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,6 +498,12 @@ mod tests {
         };
         assert_eq!(view.tooltip.as_deref(), Some("t"));
         assert!(matches!(view.kind, Kind::Text { .. }));
+        assert!(view.drag.is_none());
+        let m = parse(r#"{"type":"card","children":[],"drag":["C:\\a.txt"]}"#).unwrap();
+        let Out::Tile { view } = m else {
+            panic!("not a tile")
+        };
+        assert_eq!(view.drag, Some(vec![r"C:\a.txt".to_owned()]));
         let m = parse(r#"{"type":"badge","badge":{"kind":"ring","progress":0.5}}"#).unwrap();
         assert!(matches!(
             m,

@@ -11,6 +11,8 @@
 
 use crate::{PlatformError, Result, Win32Context};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::SIZE;
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC,
@@ -37,8 +39,54 @@ pub enum DropResult {
     Cancelled,
 }
 
+/// A drag that ended on Nook's own window: its files, so the drop Nook then
+/// receives for them is ignored instead of added back.
+static OWN_DROP: Mutex<Option<(Vec<String>, Instant)>> = Mutex::new(None);
+
+fn path_key(p: &Path) -> String {
+    p.to_string_lossy().replace('/', "\\").to_lowercase()
+}
+
+/// True (once) when `paths` are what Nook's own drag just dropped on Nook:
+/// dropping a file back where it came from does nothing.
+pub fn take_own_drop(paths: &[PathBuf]) -> bool {
+    let mut own = OWN_DROP.lock().unwrap_or_else(|e| e.into_inner());
+    let hit = own.as_ref().is_some_and(|(keys, at)| {
+        at.elapsed() < Duration::from_secs(3) && paths.iter().all(|p| keys.contains(&path_key(p)))
+    });
+    if hit {
+        *own = None;
+    }
+    hit
+}
+
+/// Whether the cursor is over one of this process's windows (the drop
+/// landed on Nook itself).
+fn cursor_over_own_window() -> bool {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetCursorPos, GetWindowThreadProcessId, WindowFromPoint,
+    };
+    let mut pt = POINT::default();
+    // SAFETY: read-only queries about the cursor and the window under it.
+    unsafe {
+        if GetCursorPos(&mut pt).is_err() {
+            return false;
+        }
+        let hwnd = WindowFromPoint(pt);
+        if hwnd.is_invalid() {
+            return false;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        pid == GetCurrentProcessId()
+    }
+}
+
 /// Drags `paths` out of Nook. Call from the UI thread while the mouse
-/// button is held; blocks until the drop.
+/// button is held; blocks until the drop. A drop back onto Nook itself
+/// counts as cancelled (see [`take_own_drop`]).
 pub fn drag_out(paths: &[PathBuf]) -> Result<DropResult> {
     if paths.is_empty() {
         return Ok(DropResult::Cancelled);
@@ -70,6 +118,11 @@ pub fn drag_out(paths: &[PathBuf]) -> Result<DropResult> {
         // SAFETY: modal drag loop with the shell's default drop source.
         let effect: DROPEFFECT =
             unsafe { SHDoDragDrop(None, &data, None, allowed) }.api("SHDoDragDrop")?;
+        if effect.0 != 0 && cursor_over_own_window() {
+            let keys = paths.iter().map(|p| path_key(p)).collect();
+            *OWN_DROP.lock().unwrap_or_else(|e| e.into_inner()) = Some((keys, Instant::now()));
+            return Ok(DropResult::Cancelled);
+        }
         Ok(if effect.0 & DROPEFFECT_MOVE.0 != 0 {
             DropResult::Moved
         } else if effect.0 & DROPEFFECT_COPY.0 != 0 {

@@ -82,11 +82,27 @@ pub fn accent_from_wallpaper() -> Result<Option<[u8; 3]>> {
     let Some(path) = system::wallpaper_path() else {
         return Ok(None);
     };
-    let img = image::open(&path)
-        .map_err(|e| PlatformError::Other(format!("decode {}: {e}", path.display())))?;
+    // Windows keeps a screen-sized copy of the current wallpaper. Decoding
+    // that instead of the original keeps huge images (a 10000 px photo blew
+    // the decoder's memory limit) cheap; the original is the fallback.
+    let transcoded = std::env::var_os("APPDATA").map(|d| {
+        PathBuf::from(d).join(r"Microsoft\Windows\Themes\TranscodedWallpaper")
+    });
+    let img = match transcoded.as_deref().map(decode) {
+        Some(Ok(img)) => img,
+        _ => decode(&path)
+            .map_err(|e| PlatformError::Other(format!("decode {}: {e}", path.display())))?,
+    };
     let thumb = img.thumbnail(64, 64).to_rgb8();
     let pixels: Vec<[u8; 3]> = thumb.pixels().map(|p| p.0).collect();
     Ok(dominant_accent(&pixels))
+}
+
+/// Decodes by content, not extension (the transcoded copy has none).
+fn decode(path: &Path) -> std::result::Result<image::DynamicImage, image::ImageError> {
+    image::ImageReader::open(path)?
+        .with_guessed_format()?
+        .decode()
 }
 
 /// Hue histogram weighted by saturation x value; the winning bin's average

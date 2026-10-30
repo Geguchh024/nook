@@ -17,10 +17,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, HWND_BOTTOM, HWND_NOTOPMOST,
     HWND_TOPMOST, IsWindowVisible, LWA_ALPHA, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetLayeredWindowAttributes, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_NCCALCSIZE, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED,
+    SetWindowPos, ShowWindow, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_ERASEBKGND, WM_NCCALCSIZE,
+    WM_DWMCOMPOSITIONCHANGED, WM_NCPAINT, WM_PAINT, WM_SHOWWINDOW, WM_WINDOWPOSCHANGED, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX,
     WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows::core::BOOL;
 
 /// A window handle that can cross threads. Win32 handles are plain integers
@@ -40,6 +42,39 @@ impl Hwnd {
     pub(crate) fn get(self) -> HWND {
         HWND(self.0 as *mut core::ffi::c_void)
     }
+}
+
+/// Set when DirectX draws the window through a composition visual: the GDI
+/// surface under it must stay transparent black (see [`clear_gdi_surface`]).
+/// Off for OpenGL, which draws into that surface itself.
+static CLEAR_GDI: AtomicBool = AtomicBool::new(false);
+
+/// Keeps windows hooked by [`fill_client`] clear of GDI paint.
+pub fn set_gdi_clearing(on: bool) {
+    CLEAR_GDI.store(on, Ordering::Relaxed);
+}
+
+/// Recomputes the frame if the client area no longer covers the whole
+/// window: a frame strip left by a style change shows as a pale line along
+/// the top of the screen. Returns the client/window sizes it found when it
+/// had to fix them. Two cheap queries otherwise.
+pub fn ensure_client_fills(hwnd: Hwnd) -> Option<((i32, i32), (i32, i32))> {
+    use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+    let (mut c, mut w) = (RECT::default(), RECT::default());
+    // SAFETY: valid out pointers on our own window.
+    unsafe {
+        if GetClientRect(hwnd.get(), &mut c).is_err() || GetWindowRect(hwnd.get(), &mut w).is_err()
+        {
+            return None;
+        }
+    }
+    let client = (c.right - c.left, c.bottom - c.top);
+    let window = (w.right - w.left, w.bottom - w.top);
+    if client == window {
+        return None;
+    }
+    let _ = refresh_frame(hwnd);
+    Some((client, window))
 }
 
 /// Frame bits winit keeps on an undecorated window (for the DWM shadow). On
@@ -64,6 +99,27 @@ pub fn fill_client(hwnd: Hwnd) -> Result<()> {
         if msg == WM_NCCALCSIZE && wparam.0 != 0 {
             // Keep the proposed window rect as the client rect: no frame.
             return LRESULT(0);
+        }
+        if CLEAR_GDI.load(Ordering::Relaxed) {
+            let window = Hwnd::from_raw(hwnd.0 as isize);
+            match msg {
+                // There is no frame to paint; DWM would fill it pale.
+                WM_NCPAINT => return LRESULT(0),
+                WM_ERASEBKGND => {
+                    clear_gdi_surface(window);
+                    return LRESULT(1);
+                }
+                // Anything that can hand the window a new GDI surface:
+                // repaint, show, move/resize, DPI or display change.
+                WM_PAINT | WM_SHOWWINDOW | WM_WINDOWPOSCHANGED | WM_DPICHANGED
+                | WM_DISPLAYCHANGE | WM_DWMCOMPOSITIONCHANGED => {
+                    // SAFETY: forwarding to the next window procedure first.
+                    let res = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
+                    clear_gdi_surface(window);
+                    return res;
+                }
+                _ => {}
+            }
         }
         // SAFETY: forwarding to the next window procedure in the chain.
         unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
@@ -460,6 +516,31 @@ pub fn set_rect(hwnd: Hwnd, x: i32, y: i32, w: i32, h: i32) -> Result<()> {
     // SAFETY: SetWindowPos on our own window.
     unsafe { SetWindowPos(hwnd.get(), None, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE) }
         .api("SetWindowPos(rect)")
+}
+
+/// Fills the window's GDI surface with transparent black. When DirectX draws
+/// through a composition visual that surface stays underneath it, and the
+/// white DWM gave the window at its creation size showed through every
+/// transparent pixel. Call after the window is created or resized.
+pub fn clear_gdi_surface(hwnd: Hwnd) {
+    use windows::Win32::Graphics::Gdi::{
+        BLACK_BRUSH, FillRect, GetDC, GetStockObject, HBRUSH, ReleaseDC,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+    // SAFETY: a DC of our own window, released right after; stock brushes
+    // need no freeing.
+    unsafe {
+        let mut rc = RECT::default();
+        if GetClientRect(hwnd.get(), &mut rc).is_err() {
+            return;
+        }
+        let dc = GetDC(Some(hwnd.get()));
+        if dc.is_invalid() {
+            return;
+        }
+        FillRect(dc, &rc, HBRUSH(GetStockObject(BLACK_BRUSH).0));
+        ReleaseDC(Some(hwnd.get()), dc);
+    }
 }
 
 pub fn dpi(hwnd: Hwnd) -> u32 {

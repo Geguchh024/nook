@@ -3,13 +3,15 @@ resolver = "3"
 members = ["crates/app", "crates/ui", "crates/platform", "crates/modules"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "MIT"
 rust-version = "1.85"
 
 [workspace.dependencies]
-eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts"] }
+eframe = { version = "0.36", default-features = false, features = ["glow", "wgpu_no_default_features", "default_fonts"] }
+# DX12 only: its DirectComposition swapchain gives the window real per-pixel alpha.
+wgpu = { version = "30", default-features = false, features = ["dx12", "wgsl"] }
 egui = "0.36"
 egui-phosphor = { version = "0.14", features = ["regular", "fill"] }
 windows = "0.62"

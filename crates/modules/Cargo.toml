@@ -26,5 +26,11 @@ if-addrs = "0.15"
 image.workspace = true
 # Installing plugins from the website: GitHub archives are zip files.
 zip = { version = "7.4", default-features = false, features = ["deflate-flate2"] }
+# Plugin archives packed with 7-Zip.
+sevenz-rust2 = { version = "0.24", default-features = false, features = ["util", "deflate", "bzip2"] }
 # QR code encoding (pure Rust, no dependencies).
 qrcodegen = "1.8"
+
+[dev-dependencies]
+# Tests build .7z plugin bundles.
+sevenz-rust2 = { version = "0.24", default-features = false, features = ["util", "compress"] }

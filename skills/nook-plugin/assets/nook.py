@@ -39,7 +39,7 @@ import time
 
 __all__ = [
     "Plugin", "poll_event", "emit",
-    "column", "row", "grid", "card", "spacer", "divider",
+    "column", "row", "grid", "card", "spacer", "divider", "draggable",
     "text", "icon", "image", "progress", "ring", "sparkline", "list_view", "item",
     "canvas", "button", "toggle", "slider", "text_input", "chips",
     "rect", "circle", "line", "polygon", "arc", "label", "glyph",
@@ -59,11 +59,12 @@ def _node(type_, tooltip=None, **fields):
 
 # Layout -------------------------------------------------------------------
 
-def column(children, gap=None, align=None, justify=None, scroll=None, tooltip=None):
+def column(children, gap=None, align=None, justify=None, scroll=None, id=None, tooltip=None):
     """Stacks children top to bottom. align: start|center|end (across);
-    justify: start|center|end (down the available height)."""
+    justify: start|center|end (down the available height). With scroll=True,
+    justify="end" keeps it scrolled to the bottom; id keys the scroll position."""
     return _node("column", tooltip, children=list(children), gap=gap, align=align,
-                 justify=justify, scroll=scroll)
+                 justify=justify, scroll=scroll, id=id)
 
 
 def row(children, gap=None, align=None, tooltip=None):
@@ -86,6 +87,16 @@ def spacer(size=None):
 
 def divider():
     return _node("divider")
+
+
+def draggable(node, paths):
+    """Makes any node drag files out of Nook, as from Explorer: drop them in
+    Explorer, a chat, a mail. Controls inside still work. Afterwards Nook
+    sends a "dragged" message with "paths" and "result" (copied, moved,
+    linked, cancelled or error). Older Nook versions ignore it."""
+    node = dict(node)
+    node["drag"] = [str(p) for p in paths]
+    return node
 
 
 # Content ------------------------------------------------------------------
@@ -132,9 +143,13 @@ def list_view(items, tooltip=None):
     return _node("list", tooltip, items=list(items))
 
 
-def canvas(height, shapes, width=None, id=None, tooltip=None):
-    """Free drawing. With an id, clicks send {"x", "y"} in canvas points."""
-    return _node("canvas", tooltip, height=height, width=width, id=id, shapes=list(shapes))
+def canvas(height, shapes, width=None, id=None, keys=None, tooltip=None):
+    """Free drawing. With an id, clicks send {"x", "y"} in canvas points. With
+    keys=True too, the canvas holds the keyboard while shown and sends "key"
+    events with {"key", "repeat", "shift"}: "Up", "Space", "Enter", "Escape",
+    "A", "7" (named by position on the keyboard, so WASD works anywhere)."""
+    return _node("canvas", tooltip, height=height, width=width, id=id, keys=keys,
+                 shapes=list(shapes))
 
 
 # Controls -----------------------------------------------------------------
@@ -254,7 +269,7 @@ class Plugin:
 
     def on_message(self, type_):
         """Decorator for Nook's own messages: hello, theme, layout, tile_click,
-        page_open, page_close, hotkey, files, shutdown."""
+        page_open, page_close, hotkey, files, dragged, shutdown."""
         def deco(fn):
             self._messages.setdefault(type_, []).append(fn)
             return fn

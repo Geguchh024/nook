@@ -10,9 +10,18 @@ use egui::{Align, Area, Id, Layout, Order, Rect, Sense, Ui, UiBuilder, pos2, vec
 /// Height of the header row.
 pub const HEADER: f32 = 28.0;
 
+/// What happened on the page this frame.
+#[derive(Default)]
+pub struct PageOutput {
+    /// The back button was clicked.
+    pub back: bool,
+    /// Empty page space (not a control) was clicked. The page covers the
+    /// glass, so the app treats this like a click on the glass: pin / unpin.
+    pub background_clicked: bool,
+}
+
 /// Draws the page; `content` gets the body rect below the header and may
-/// add widgets to the right of the title through the second `Ui`. Returns
-/// true when the back button was clicked.
+/// add widgets to the right of the title through the second `Ui`.
 pub fn show(
     ui: &mut Ui,
     cctx: &ContentCtx,
@@ -20,11 +29,11 @@ pub fn show(
     id: &str,
     title: &str,
     content: impl FnOnce(&mut Ui, &mut Ui, Rect),
-) -> bool {
+) -> PageOutput {
     let ctx = ui.ctx().clone();
     let alpha = cctx.alpha * cctx.stagger(0);
     if alpha <= 0.002 {
-        return false;
+        return PageOutput::default();
     }
     let panel = cctx.panel.shrink(PANEL_PADDING);
     let mut back = false;
@@ -33,7 +42,9 @@ pub fn show(
         .fixed_pos(panel.min)
         .movable(false)
         .constrain(false)
-        .sense(Sense::hover())
+        // Controls drawn inside sit above the area's own background, so
+        // this only reports clicks on empty space.
+        .sense(Sense::click())
         .show(&ctx, |ui| {
             ui.multiply_opacity(alpha);
             ui.set_min_size(panel.size());
@@ -64,5 +75,8 @@ pub fn show(
             content(&mut bui, &mut actions, body);
         });
     ctx.set_transform_layer(area.response.layer_id, cctx.transform);
-    back
+    PageOutput {
+        back,
+        background_clicked: area.response.clicked(),
+    }
 }

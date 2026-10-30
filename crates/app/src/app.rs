@@ -135,12 +135,16 @@ impl NookApp {
     ) -> Result<Self> {
         let ctx = cc.egui_ctx.clone();
         theme::install_fonts(&ctx);
+        log_gpu(cc);
 
         let hwnd = match cc.window_handle().context("window handle")?.as_raw() {
             RawWindowHandle::Win32(h) => Hwnd::from_raw(h.hwnd.get()),
             other => anyhow::bail!("unexpected window handle {other:?}"),
         };
         window::ensure_overlay(hwnd, false).context("overlay window styles")?;
+        // DirectX draws on a composition visual above the GDI surface, which
+        // must then stay transparent (OpenGL draws into it instead).
+        window::set_gdi_clearing(cc.wgpu_render_state.is_some());
         if let Err(e) = window::fill_client(hwnd) {
             tracing::warn!("frameless client area: {e}");
         }
@@ -424,6 +428,7 @@ impl NookApp {
         if self.anchor != Some(rect) {
             match window::set_rect(self.hwnd, rect.0, rect.1, rect.2, rect.3) {
                 Ok(()) => {
+                    window::clear_gdi_surface(self.hwnd);
                     self.anchor = Some(rect);
                     self.shape_dirty = true;
                 }
@@ -436,6 +441,9 @@ impl NookApp {
     /// while a button pressed on it is held). The hit tester decides; the window
     /// style can only be changed safely from this thread.
     fn apply_click_through(&mut self) {
+        if let Some((client, window)) = window::ensure_client_fills(self.hwnd) {
+            tracing::warn!("frame strip: client {client:?} smaller than window {window:?}, fixed");
+        }
         let through = !self.hit.as_ref().is_none_or(HitTester::inside);
         // Checked against the real style every frame (one read, a write only
         // when it differs): winit rewrites the extended style when the
@@ -577,10 +585,11 @@ impl NookApp {
     /// changes). Text input needs an activatable window; otherwise never
     /// steal focus.
     fn sync_window_styles(&mut self, ctx: &egui::Context) {
-        // Only a text field needs the keyboard; any clicked widget holds
-        // egui focus, and taking the foreground for those would steal it
-        // from other windows (the screenshot editor, the browser).
-        let wanted = ctx.text_edit_focused();
+        // Only a text field (or a plugin game's canvas) needs the keyboard;
+        // any clicked widget holds egui focus, and taking the foreground for
+        // those would steal it from other windows (the screenshot editor,
+        // the browser).
+        let wanted = ctx.text_edit_focused() || nook_modules::plugins::keyboard_focused(ctx);
         let gained = wanted && !self.activatable;
         self.activatable = wanted;
         match window::ensure_overlay(self.hwnd, self.activatable) {
@@ -640,8 +649,10 @@ impl NookApp {
         self.save_config();
     }
 
-    /// Hands files dropped on the notch to the first visible module that
-    /// takes them.
+    /// Hands files dropped on the notch to the module whose page is open if
+    /// it takes them, else to the first visible module that does. Without
+    /// the page check the always-accepting File Shelf would win while
+    /// another module's page asks for a drop.
     fn route_dropped_files(&mut self, ctx: &egui::Context) {
         let paths: Vec<std::path::PathBuf> = ctx.input(|i| {
             i.raw
@@ -653,12 +664,49 @@ impl NookApp {
         if paths.is_empty() {
             return;
         }
-        match self
-            .registry
-            .visible_mut()
+        if nook_platform::files::take_own_drop(&paths) {
+            tracing::info!(
+                "{} file(s) dragged out and dropped back on Nook: ignored",
+                paths.len()
+            );
+            return;
+        }
+        // On the Plugins page every drop is meant as a plugin: it installs,
+        // or the page says why not; nothing goes on to the file shelf.
+        if self.page == Page::Module(nook_modules::plugins::PLUGINS_ID) {
+            tracing::info!("{} file(s) dropped on the Plugins page", paths.len());
+            for p in &paths {
+                nook_modules::plugins::install::submit_dropped(p);
+            }
+            return;
+        }
+        // Elsewhere, plugin archives (one plugin or a bundle) install and the
+        // Plugins page opens with their progress; other files, ordinary
+        // archives included, go to a module as before.
+        let paths: Vec<std::path::PathBuf> = paths
             .into_iter()
-            .find(|m| m.accepts_files())
-        {
+            .filter(|p| !nook_modules::plugins::install::submit_archive(p))
+            .collect();
+        if paths.is_empty() {
+            return;
+        }
+        let page_takes_files = match self.page {
+            Page::Module(id) => self
+                .registry
+                .get_mut(id)
+                .is_some_and(|m| m.accepts_files())
+                .then_some(id),
+            _ => None,
+        };
+        let target = match page_takes_files {
+            Some(id) => self.registry.get_mut(id),
+            None => self
+                .registry
+                .visible_mut()
+                .into_iter()
+                .find(|m| m.accepts_files()),
+        };
+        match target {
             Some(m) => {
                 tracing::info!("{} file(s) dropped on {}", paths.len(), m.id());
                 m.drop_files(paths);
@@ -891,6 +939,40 @@ fn register_hotkeys(cfg: &Config, registry: &Registry, ctx: &egui::Context) -> R
     Ok(hotkeys)
 }
 
+/// Which GPU and driver draw the window: the first thing to check when a
+/// report says the panel is black or flickers.
+fn log_gpu(cc: &eframe::CreationContext<'_>) {
+    if let Some(rs) = &cc.wgpu_render_state {
+        crate::diag::set_active_renderer("DirectX 12");
+        let info = rs.adapter.get_info();
+        tracing::info!(
+            "gpu: {} ({:?}, {:?}), driver {} {}, format {:?}",
+            info.name,
+            info.backend,
+            info.device_type,
+            info.driver,
+            info.driver_info,
+            rs.target_format,
+        );
+    } else if let Some(gl) = &cc.gl {
+        crate::diag::set_active_renderer("OpenGL");
+        use eframe::glow::HasContext;
+        // SAFETY: plain string queries on the current context.
+        let (renderer, version, alpha) = unsafe {
+            (
+                gl.get_parameter_string(eframe::glow::RENDERER),
+                gl.get_parameter_string(eframe::glow::VERSION),
+                gl.get_framebuffer_attachment_parameter_i32(
+                    eframe::glow::FRAMEBUFFER,
+                    eframe::glow::BACK_LEFT,
+                    eframe::glow::FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE,
+                ),
+            )
+        };
+        tracing::info!("gpu: {renderer} (OpenGL {version}), alpha bits {alpha}");
+    }
+}
+
 fn spawn_wallpaper_accent(tx: crossbeam_channel::Sender<Option<[u8; 3]>>, ctx: egui::Context) {
     let spawned = std::thread::Builder::new()
         .name("nook-accent".into())
@@ -1013,6 +1095,7 @@ impl eframe::App for NookApp {
         let mut clicked = None;
         let mut page_request = None;
         let mut module_back = false;
+        let mut page_background_clicked = false;
         let mut settings_out = settings::PageOutput::default();
         let mut grid_out = bento::BentoOutput::default();
         let mut update_clicked = false;
@@ -1026,10 +1109,11 @@ impl eframe::App for NookApp {
             .collect();
         let battery = self.sys.battery;
         let composited = self.backdrop.is_some();
-        // Stay open while typing in the panel (and the window has focus) or
-        // while files are dragged over it.
-        self.shell.hold_open = (ctx.text_edit_focused() && ctx.input(|i| i.focused))
-            || ctx.input(|i| !i.raw.hovered_files.is_empty());
+        // Stay open while typing in the panel or playing a plugin game (and
+        // the window has focus) or while files are dragged over it.
+        let typing = ctx.text_edit_focused() || nook_modules::plugins::keyboard_focused(&ctx);
+        self.shell.hold_open =
+            (typing && ctx.input(|i| i.focused)) || ctx.input(|i| !i.raw.hovered_files.is_empty());
         self.route_dropped_files(&ctx);
         self.shell.expanded_override = self.page_size(&ctx);
         let registry = &mut self.registry;
@@ -1068,7 +1152,7 @@ impl eframe::App for NookApp {
                     if let Some(m) = registry.get_mut(id) {
                         let title = m.name().to_owned();
                         let mut close = false;
-                        module_back = nook_ui::page::show(
+                        let page_out = nook_ui::page::show(
                             ui,
                             cctx,
                             &theme,
@@ -1077,7 +1161,9 @@ impl eframe::App for NookApp {
                             |ui, header, body| {
                                 close = m.ui_page(ui, header, body, &theme);
                             },
-                        ) || close;
+                        );
+                        module_back = page_out.back || close;
+                        page_background_clicked = page_out.background_clicked;
                     } else {
                         module_back = true;
                     }
@@ -1097,6 +1183,9 @@ impl eframe::App for NookApp {
         }
         if settings_out.back || module_back {
             self.page = Page::Bento;
+        }
+        if page_background_clicked {
+            self.shell.state.toggle_pin(Self::now(&ctx));
         }
         if settings_out.open_plugins {
             self.page = Page::Module(nook_modules::plugins::PLUGINS_ID);
@@ -1173,6 +1262,8 @@ impl eframe::App for NookApp {
         self.frames = self.frames.saturating_add(1);
         if self.frames == 3 {
             window::ensure_shown(self.hwnd);
+            // Showing the window gives it a fresh, white GDI surface.
+            window::clear_gdi_surface(self.hwnd);
             if let Err(e) = window::set_opacity(self.hwnd, 255) {
                 tracing::warn!("window opacity: {e}");
             }

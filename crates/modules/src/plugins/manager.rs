@@ -146,7 +146,7 @@ impl Module for PluginsTile {
                         ui,
                         rect.center(),
                         ph::PUZZLE_PIECE,
-                        "No plugins yet. Install one from the marketplace.",
+                        "No plugins yet. Install one from the marketplace, or drop a .zip here.",
                         theme,
                     );
                 }
@@ -168,8 +168,50 @@ impl Module for PluginsTile {
                     }
                 }
             });
+        // While files are dragged over, the whole page is the drop zone:
+        // everything dropped here goes to the installer (see the app's
+        // drop routing), never to the file shelf.
+        if ui.input(|i| !i.raw.hovered_files.is_empty()) {
+            drop_zone(ui, body, theme);
+        }
         false
     }
+}
+
+/// Covers the page while files are dragged over it.
+fn drop_zone(ui: &Ui, body: Rect, theme: &Theme) {
+    let rect = body.shrink(2.0);
+    let painter = ui.painter();
+    painter.rect_filled(rect, 14.0, with_alpha(theme.glass_bottom.to_opaque(), 0.96));
+    painter.rect_filled(rect, 14.0, with_alpha(theme.accent, 0.10));
+    painter.rect_stroke(
+        rect,
+        14.0,
+        egui::Stroke::new(1.5, with_alpha(theme.accent, 0.7)),
+        egui::StrokeKind::Inside,
+    );
+    let c = rect.center();
+    painter.text(
+        c - vec2(0.0, 26.0),
+        Align2::CENTER_CENTER,
+        ph::ARCHIVE_BOX,
+        FontId::proportional(34.0),
+        theme.accent_fg(),
+    );
+    painter.text(
+        c + vec2(0.0, 14.0),
+        Align2::CENTER_CENTER,
+        "Drop a plugin .zip or .7z to install",
+        Theme::font_semibold(SIZE_BODY + 2.0),
+        theme.text,
+    );
+    painter.text(
+        c + vec2(0.0, 36.0),
+        Align2::CENTER_CENTER,
+        "One plugin or a bundle of several",
+        Theme::font(SIZE_LABEL),
+        theme.text_dim,
+    );
 }
 
 fn request_card(ui: &mut Ui, rect: Rect, r: &Request, theme: &Theme) {

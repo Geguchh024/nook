@@ -5,6 +5,7 @@
 //                 "opens": 12, "minutes": 9, "tools": {"timer": 3, "clipboard": 5}}
 //   GET  /stats?key=<STATS_KEY>               dashboard
 //   GET  /stats?key=<STATS_KEY>&format=json   the same numbers as JSON
+//   GET  /live                                public totals for the website (no key)
 //
 // Nook sends about one ping per day per install. `opens`, `minutes` and
 // `tools` cover the time since its previous ping (0.2.0 sends none of them).
@@ -22,10 +23,13 @@ const MAX_COUNT = 100000;
 const count = (v) => (Number.isInteger(v) && v >= 0 && v <= MAX_COUNT ? v : null);
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/ping" && request.method === "POST") {
       return ping(request, env);
+    }
+    if (url.pathname === "/live" && request.method === "GET") {
+      return live(request, env, ctx);
     }
     if (url.pathname === "/stats" && request.method === "GET") {
       if (!env.STATS_KEY || url.searchParams.get("key") !== env.STATS_KEY) {
@@ -87,6 +91,28 @@ async function ping(request, env) {
     ),
   ]);
   return new Response(null, { status: 204 });
+}
+
+// Only totals, so the website can show them. Cached for five minutes so
+// page views don't each reach D1.
+async function live(request, env, ctx) {
+  const cache = caches.default;
+  const key = new Request(new URL("/live", request.url));
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const [installs, today, week] = await env.DB.batch([
+    env.DB.prepare("SELECT COUNT(DISTINCT id) AS n FROM pings"),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM pings WHERE day = ?1").bind(daysAgo(0)),
+    env.DB.prepare("SELECT COUNT(DISTINCT id) AS n FROM pings WHERE day > ?1").bind(daysAgo(7)),
+  ]);
+  const n = (r) => r.results[0]?.n ?? 0;
+  const res = Response.json(
+    { installs: n(installs), active_today: n(today), active_7d: n(week) },
+    { headers: { "access-control-allow-origin": "*", "cache-control": "public, max-age=300" } },
+  );
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
 }
 
 async function collect(env) {
