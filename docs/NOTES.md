@@ -4,7 +4,8 @@
 
 - Wi-Fi and Bluetooth are exposed only when WinRT radio access is allowed and that radio exists. Windows may deny radio access on some device or account configurations.
 - **Mute notifications** is experimental. Windows has no stable public DND API for this unpackaged app, so this option writes `HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications\ToastEnabled`.
-- Brightness controls are not implemented in this build; no WMI or DDC/CI helper is included, so no nonfunctional brightness slider is shown.
+- Brightness uses DDC/CI on the monitor containing the Nook window. Internal laptop panels that do not expose DDC/CI remain unavailable; no slider is shown for them.
+- Volume changes the Windows default audio endpoint's master volume, which is system-wide; it is not a separate level per monitor.
 - Quick Controls reads state when its page opens and after user actions. The worker sleeps on its command channel while idle.
 
 Limits hit while building the shell on egui/eframe, how each one is handled,

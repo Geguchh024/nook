@@ -13,6 +13,7 @@ enum Command {
     Refresh,
     Radio(RadioKind, bool),
     Volume(f32),
+    Brightness(f32),
     Mute(bool),
     Notifications(bool),
     Stop,
@@ -20,7 +21,7 @@ enum Command {
 
 struct Worker {
     tx: Sender<Command>,
-    rx: Receiver<Result<Snapshot, String>>,
+    rx: Receiver<Result<Option<Snapshot>, String>>,
     join: Option<JoinHandle<()>>,
 }
 
@@ -37,18 +38,27 @@ impl Worker {
                 }
                 while let Ok(command) = commands.recv() {
                     let result = match command {
-                        Command::Refresh => Ok(()),
-                        Command::Radio(kind, on) => controls::set_radio(kind, on).map(|_| ()),
-                        Command::Volume(value) => controls::set_volume(value),
-                        Command::Mute(muted) => controls::set_muted(muted),
-                        Command::Notifications(muted) => controls::set_notifications_muted(muted),
                         Command::Stop => break,
+                        Command::Volume(value) => controls::set_volume(value).map(|()| None),
+                        command => {
+                            let action = match command {
+                                Command::Refresh => Ok(()),
+                                Command::Radio(kind, on) => {
+                                    controls::set_radio(kind, on).map(|_| ())
+                                }
+                                Command::Brightness(value) => {
+                                    controls::set_brightness(value).map(|_| ())
+                                }
+                                Command::Mute(muted) => controls::set_muted(muted),
+                                Command::Notifications(muted) => {
+                                    controls::set_notifications_muted(muted)
+                                }
+                                Command::Volume(_) | Command::Stop => continue,
+                            };
+                            action.map(|()| Some(controls::snapshot()))
+                        }
                     };
-                    let state = controls::snapshot();
-                    if results
-                        .send(result.map(|()| state).map_err(|e| e.to_string()))
-                        .is_err()
-                    {
+                    if results.send(result.map_err(|e| e.to_string())).is_err() {
                         break;
                     }
                     ctx.request_repaint();
@@ -85,6 +95,8 @@ pub struct Controls {
     refresh_on_page: bool,
     volume_due: Option<Instant>,
     volume_pending: Option<f32>,
+    volume_display: Option<f32>,
+    brightness_display: Option<f32>,
 }
 
 impl Default for Controls {
@@ -96,6 +108,8 @@ impl Default for Controls {
             refresh_on_page: true,
             volume_due: None,
             volume_pending: None,
+            volume_display: None,
+            brightness_display: None,
         }
     }
 }
@@ -146,7 +160,7 @@ impl Module for Controls {
         icons::SLIDERS_HORIZONTAL
     }
     fn size_hint(&self) -> TileSize {
-        TileSize::Large
+        TileSize::Small
     }
 
     fn attach(&mut self, ctx: &egui::Context) {
@@ -169,7 +183,14 @@ impl Module for Controls {
         if let Some(worker) = &self.worker {
             while let Ok(result) = worker.rx.try_recv() {
                 match result {
-                    Ok(state) => self.state = state,
+                    Ok(Some(state)) => {
+                        self.state = state;
+                        if self.volume_pending.is_none() {
+                            self.volume_display = state.volume;
+                        }
+                        self.brightness_display = state.brightness;
+                    }
+                    Ok(None) => {}
                     Err(error) => tracing::warn!("quick controls: {error}"),
                 }
             }
@@ -257,17 +278,24 @@ impl Module for Controls {
                         });
                         ui.end_row();
 
-                        if let Some(mut volume) = self.state.volume {
+                        if let Some(mut volume) = self.volume_display.or(self.state.volume) {
                             ui.horizontal(|ui| {
-                                Self::row_label(ui, "Volume", theme);
-                                let available = (ui.available_width() - 20.0).max(80.0);
+                                Self::row_label(ui, "System volume", theme);
+                                let available = (ui.available_width() - 20.0).clamp(72.0, 320.0);
                                 let response =
-                                    widgets::slider(ui, &mut volume, available, 100, theme);
+                                    widgets::slider(ui, &mut volume, available, 0, theme);
                                 if response.changed() {
+                                    self.volume_display = Some(volume);
                                     self.volume_pending = Some(volume);
                                     self.volume_due =
                                         Some(Instant::now() + Duration::from_millis(50));
                                     ui.ctx().request_repaint_after(Duration::from_millis(55));
+                                }
+                                if response.drag_stopped() {
+                                    self.volume_due = None;
+                                    if let Some(value) = self.volume_pending.take() {
+                                        let _ = tx.send(Command::Volume(value));
+                                    }
                                 }
                                 if self.state.muted == Some(true) {
                                     let button = widgets::icon_button(
@@ -299,7 +327,24 @@ impl Module for Controls {
                         if columns == 2 {
                             ui.end_row();
                         }
-                        ui.label("Brightness is unavailable on this device or build");
+                        if let Some(mut brightness) =
+                            self.brightness_display.or(self.state.brightness)
+                        {
+                            ui.horizontal(|ui| {
+                                Self::row_label(ui, "Display brightness", theme);
+                                let available = (ui.available_width() - 20.0).clamp(72.0, 320.0);
+                                let response =
+                                    widgets::slider(ui, &mut brightness, available, 0, theme);
+                                if response.changed() {
+                                    self.brightness_display = Some(brightness);
+                                }
+                                if response.drag_stopped() || response.clicked() {
+                                    let _ = tx.send(Command::Brightness(brightness));
+                                }
+                            });
+                        } else {
+                            ui.label("This display does not expose brightness control");
+                        }
                         ui.end_row();
                     });
             });
@@ -309,5 +354,15 @@ impl Module for Controls {
 
     fn shutdown(&mut self) {
         self.worker = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn controls_tile_defaults_to_small() {
+        assert_eq!(Controls::default().size_hint(), TileSize::Small);
     }
 }

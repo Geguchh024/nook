@@ -81,6 +81,12 @@ fn info(h: HMONITOR) -> Result<Monitor> {
     })
 }
 
+/// Native monitor handle for window-targeted display controls.
+pub(crate) fn native_handle(hwnd: Hwnd) -> HMONITOR {
+    // SAFETY: monitor lookup does not retain or mutate the HWND.
+    unsafe { MonitorFromWindow(hwnd.get(), MONITOR_DEFAULTTONEAREST) }
+}
+
 /// Every connected monitor, primary first.
 pub fn all() -> Vec<Monitor> {
     unsafe extern "system" fn collect(h: HMONITOR, _: HDC, _: *mut RECT, lparam: LPARAM) -> BOOL {

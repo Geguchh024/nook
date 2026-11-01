@@ -230,10 +230,11 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
 
 - **Tools** (second page of the grid). Each opens a full page; made Wide
   or Large, most show more on the tile itself.
-  - **Quick Controls:** Wi-Fi and Bluetooth when Windows exposes a radio,
-    master volume and mute when an audio endpoint is available, and an
-    experimental **Mute notifications** toggle. Brightness is unavailable in
-    this build.
+  - **Quick Controls** (Small by default): clicking the tile opens its page
+    without resizing the tile. It includes Wi-Fi and Bluetooth when Windows
+    exposes a radio, system master volume and mute, brightness for the display
+    holding Nook when it exposes DDC/CI controls, and experimental
+    **Mute notifications**.
   - **QR code** (Ctrl+Alt+Q makes one from the clipboard): paste a link and
     the code draws as you type. Styles: dots, liquid, round lines, rounded,
     square; corner eyes round, circle, leaf or square; solid colors,
@@ -402,8 +403,9 @@ drained in `on_tick`.
   marked private; the expand button opens the full history page
 - [x] Color picker: loupe with zoom and pixel nudging, HEX/RGB/HSL/HSV/OKLCH,
   history page, Ctrl+Alt+P
-- [x] Media (SMTC): title, artist, album art, progress, previous /
-  play-pause / next; a note glyph in the pill while playing
+- [x] Media (SMTC): title, artist, album art, a full controller page with
+  seek bar and durations, previous / play-pause / next; a note glyph in the
+  pill while playing
 
 **Settings panel**
 

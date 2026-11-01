@@ -13,7 +13,7 @@ use egui::{
 };
 use nook_platform::media::{MediaCommand, MediaWatcher, NowPlaying};
 use nook_ui::module::{Module, TileCtx, TileSize};
-use nook_ui::theme::{SIZE_LABEL, Theme, with_alpha};
+use nook_ui::theme::{SIZE_BODY, SIZE_LABEL, Theme, with_alpha};
 use nook_ui::{icons, paint, widgets};
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,6 +26,8 @@ pub struct Media {
     now: Option<NowPlaying>,
     /// Texture for `now.art`, keyed by the art's allocation.
     art: Option<(usize, TextureHandle)>,
+    page_request: bool,
+    seek_preview: Option<f64>,
 }
 
 impl Media {
@@ -120,6 +122,7 @@ impl Module for Media {
     fn on_tick(&mut self) {
         if let Some(snapshot) = self.watcher.as_ref().and_then(MediaWatcher::poll) {
             self.now = snapshot;
+            self.seek_preview = None;
             if self.now.as_ref().and_then(|n| n.art.as_ref()).is_none() {
                 self.art = None;
             }
@@ -137,6 +140,10 @@ impl Module for Media {
         let rect = ui.max_rect();
 
         let Some(now) = self.now.clone() else {
+            let response = ui.interact(rect, ui.id().with("media-page"), egui::Sense::click());
+            if response.clicked() {
+                self.page_request = true;
+            }
             let c = rect.center();
             paint::icon(
                 ui.painter(),
@@ -155,6 +162,14 @@ impl Module for Media {
             );
             return;
         };
+
+        let page_hit = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.max.y - 36.0));
+        if ui
+            .interact(page_hit, ui.id().with("media-page"), egui::Sense::click())
+            .clicked()
+        {
+            self.page_request = true;
+        }
 
         // Album art, or a placeholder.
         let art_rect = Rect::from_min_size(rect.min, vec2(ART, ART));
@@ -277,5 +292,150 @@ impl Module for Media {
         {
             self.send(MediaCommand::Next);
         }
+    }
+
+    fn take_page_request(&mut self) -> bool {
+        std::mem::take(&mut self.page_request)
+    }
+
+    fn ui_page(&mut self, ui: &mut Ui, _header: &mut Ui, body: Rect, theme: &Theme) -> bool {
+        let Some(now) = self.now.clone() else {
+            ui.painter().text(
+                body.center(),
+                Align2::CENTER_CENTER,
+                "Nothing is playing",
+                Theme::font(SIZE_BODY),
+                theme.text_dim,
+            );
+            return false;
+        };
+
+        let art_size = body.height().min(76.0).min(body.width() * 0.22).max(40.0);
+        let art_rect = Rect::from_min_size(body.min, vec2(art_size, art_size));
+        match self.art_texture(ui.ctx()) {
+            Some(texture) => rounded_image(ui, art_rect, texture, 12.0),
+            None => {
+                widgets::card(ui.painter(), art_rect, theme);
+                paint::icon(
+                    ui.painter(),
+                    art_rect.center(),
+                    icons::MUSIC_NOTES,
+                    art_size * 0.42,
+                    theme.text_faint,
+                    false,
+                );
+            }
+        }
+
+        let info_x = art_rect.max.x + 12.0;
+        let info_width = (body.max.x - info_x).max(1.0);
+        text_line(
+            ui,
+            pos2(info_x, body.min.y + 2.0),
+            &now.source,
+            info_width,
+            Theme::font(SIZE_LABEL - 1.0),
+            theme.text_faint,
+        );
+        text_line(
+            ui,
+            pos2(info_x, body.min.y + 26.0),
+            if now.title.is_empty() {
+                "Unknown title"
+            } else {
+                &now.title
+            },
+            info_width,
+            Theme::font_semibold(SIZE_BODY),
+            theme.text,
+        );
+        text_line(
+            ui,
+            pos2(info_x, body.min.y + 49.0),
+            &now.artist,
+            info_width,
+            Theme::font(SIZE_LABEL),
+            theme.text_dim,
+        );
+
+        if let Some((position, duration)) = now.position() {
+            let mut fraction = (self.seek_preview.unwrap_or(position) / duration.max(1.0)) as f32;
+            let bar_rect = Rect::from_min_size(
+                pos2(body.min.x, body.min.y + art_size + 12.0),
+                vec2(body.width(), 22.0),
+            );
+            let response = ui
+                .scope_builder(egui::UiBuilder::new().max_rect(bar_rect), |ui| {
+                    widgets::slider(ui, &mut fraction, bar_rect.width(), 0, theme)
+                })
+                .inner;
+            if response.changed() {
+                self.seek_preview = Some(fraction as f64 * duration);
+            }
+            if response.drag_stopped() || response.clicked() {
+                let ticks = (fraction as f64 * duration * 10_000_000.0).max(0.0) as u64;
+                self.send(MediaCommand::Seek(ticks));
+            }
+            let current = self.seek_preview.unwrap_or(position);
+            ui.painter().text(
+                pos2(body.min.x, bar_rect.max.y + 5.0),
+                egui::Align2::LEFT_TOP,
+                mmss(current),
+                Theme::font(SIZE_LABEL - 1.0),
+                theme.text_dim,
+            );
+            ui.painter().text(
+                pos2(body.max.x, bar_rect.max.y + 5.0),
+                egui::Align2::RIGHT_TOP,
+                mmss(duration),
+                Theme::font(SIZE_LABEL - 1.0),
+                theme.text_dim,
+            );
+        }
+
+        let center = pos2(body.center().x, body.max.y - 13.0);
+        let gap = 38.0;
+        if now.can_previous
+            && button_at(
+                ui,
+                center - vec2(gap, 0.0),
+                28.0,
+                icons::SKIP_BACK,
+                false,
+                theme,
+            )
+            .on_hover_text("Previous")
+            .clicked()
+        {
+            self.send(MediaCommand::Previous);
+        }
+        if now.can_toggle {
+            let (glyph, tip) = if now.playing {
+                (icons::PAUSE, "Pause")
+            } else {
+                (icons::PLAY, "Play")
+            };
+            if button_at(ui, center, 32.0, glyph, true, theme)
+                .on_hover_text(tip)
+                .clicked()
+            {
+                self.send(MediaCommand::PlayPause);
+            }
+        }
+        if now.can_next
+            && button_at(
+                ui,
+                center + vec2(gap, 0.0),
+                28.0,
+                icons::SKIP_FORWARD,
+                false,
+                theme,
+            )
+            .on_hover_text("Next")
+            .clicked()
+        {
+            self.send(MediaCommand::Next);
+        }
+        false
     }
 }

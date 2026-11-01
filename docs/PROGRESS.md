@@ -16,12 +16,14 @@
 - Raised the Settings appearance card height so the additional Style row has its own space.
 - Updated README usage notes for both shell styles.
 - Verification: `cargo test --workspace --offline` passed with `APPDATA` redirected to a writable workspace directory. `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. `cargo fmt --all --check` still reports formatting differences in untouched repository files; all edited Rust files were formatted directly.
-- Controls module (step 3) remains to be implemented.
 
 ## Step 3 — Quick Controls
 
 - Added a responsive Controls page and background worker using channels; no idle polling.
 - Added Wi-Fi/Bluetooth radio helpers, Windows master volume/mute, and the experimental toast notification registry option.
-- Brightness is reported unavailable because no WMI or DDC/CI implementation is present. Unsupported radios and audio endpoints are omitted from the controls.
-- Workspace tests and workspace Clippy pass with the controls module and added Windows features.
-- Brightness remains unavailable: this build has no WMI or DDC/CI implementation. Radio and volume behavior still needs a hardware session to verify.
+- Brightness now targets the monitor containing the Nook window through DDC/CI; laptop panels without DDC/CI remain unavailable. Unsupported radios and audio endpoints are omitted from the controls.
+- Quick Controls defaults to Small while retaining the existing size editor. Volume now updates optimistically with an unstepped slider and throttled background writes; brightness writes only on release.
+- Media opens a dedicated page with album art, current/total duration, a draggable seek bar, and Previous / Play-Pause / Next transport controls.
+- Volume is Windows master volume (system-wide); brightness targets the monitor containing the Nook window through DDC/CI. Laptop panels without DDC/CI remain unavailable.
+- `cargo test --workspace --offline --quiet` passed (72 modules, 39 platform, 33 UI, 12 app tests; 7 ignored) with `APPDATA` redirected to a writable workspace directory. `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+- Launched the updated app with the preview config and Settings open. Radio and brightness behavior still needs a hardware session to verify.

@@ -14,6 +14,7 @@ use egui::{Color32, FontFamily, FontId, Rect, Ui, pos2, vec2};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use nook_platform::backdrop::{Backdrop, Tint};
+use nook_platform::controls as platform_controls;
 use nook_platform::hittest::{HitShape, HitTester};
 use nook_platform::material::{self, Applied};
 use nook_platform::single_instance::InstanceGuard;
@@ -141,6 +142,7 @@ impl NookApp {
             RawWindowHandle::Win32(h) => Hwnd::from_raw(h.hwnd.get()),
             other => anyhow::bail!("unexpected window handle {other:?}"),
         };
+        platform_controls::set_host_window(hwnd);
         window::ensure_overlay(hwnd, false).context("overlay window styles")?;
         // DirectX draws on a composition visual above the GDI surface, which
         // must then stay transparent (OpenGL draws into it instead).
