@@ -784,6 +784,32 @@ fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Re
     let now = ui.input(|i| i.time);
     let clock = system::clock();
 
+    if let Some((label, until)) = badges.iter().find_map(|badge| match badge {
+        Badge::Notice { label, until } if *until > now => Some((label, *until)),
+        _ => None,
+    }) {
+        let max_width = (right - left - 8.0).max(0.0);
+        let mut display = label.clone();
+        let font = Theme::font_semibold(SIZE_LABEL);
+        while !display.is_empty()
+            && painter
+                .layout_no_wrap(display.clone(), font.clone(), theme.pill_text)
+                .size()
+                .x
+                > max_width
+        {
+            display.pop();
+            if !display.is_empty() {
+                display.pop();
+                display.push('…');
+            }
+        }
+        ink_text(painter, &display, font, theme.pill_text, left, cy, false);
+        ui.ctx()
+            .request_repaint_after(Duration::from_secs_f64((until - now).max(0.02)));
+        return;
+    }
+
     // Left: a running timer's ring + countdown, otherwise the clock.
     let ring = badges.iter().find_map(|b| match b {
         Badge::Ring { progress, label } => Some((*progress, label.clone())),
@@ -829,6 +855,7 @@ fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Re
     for badge in &badges {
         match badge {
             Badge::Ring { .. } => {}
+            Badge::Notice { .. } => {}
             Badge::Glyph { icon } => {
                 let ink = ink_text(
                     painter,

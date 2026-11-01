@@ -2,7 +2,7 @@
 //! snapshots through a channel drained by `on_tick`.
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use nook_platform::controls::{self, RadioKind, Snapshot};
+use nook_platform::controls::{self, Snapshot};
 use nook_ui::module::{Module, TileCtx, TileSize};
 use nook_ui::theme::{SIZE_BODY, SIZE_LABEL, Theme};
 use nook_ui::{icons, paint, widgets};
@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 
 enum Command {
     Refresh,
-    Radio(RadioKind, bool),
     Volume(f32),
     Brightness(f32),
     Mute(bool),
@@ -43,9 +42,6 @@ impl Worker {
                         command => {
                             let action = match command {
                                 Command::Refresh => Ok(()),
-                                Command::Radio(kind, on) => {
-                                    controls::set_radio(kind, on).map(|_| ())
-                                }
                                 Command::Brightness(value) => {
                                     controls::set_brightness(value).map(|_| ())
                                 }
@@ -53,7 +49,8 @@ impl Worker {
                                 Command::Notifications(muted) => {
                                     controls::set_notifications_muted(muted)
                                 }
-                                Command::Volume(_) | Command::Stop => continue,
+                                Command::Stop => continue,
+                                Command::Volume(_) => continue,
                             };
                             action.map(|()| Some(controls::snapshot()))
                         }
@@ -128,25 +125,6 @@ impl Controls {
                 .color(theme.text_dim),
         );
     }
-
-    fn radio_row(
-        ui: &mut egui::Ui,
-        label: &str,
-        kind: RadioKind,
-        state: Option<bool>,
-        theme: &Theme,
-        tx: &Sender<Command>,
-    ) {
-        if let Some(mut enabled) = state {
-            ui.horizontal(|ui| {
-                Self::row_label(ui, label, theme);
-                let response = widgets::toggle(ui, &mut enabled, theme);
-                if response.changed() {
-                    let _ = tx.send(Command::Radio(kind, enabled));
-                }
-            });
-        }
-    }
 }
 
 impl Module for Controls {
@@ -161,6 +139,10 @@ impl Module for Controls {
     }
     fn size_hint(&self) -> TileSize {
         TileSize::Small
+    }
+
+    fn page_size(&self) -> Option<egui::Vec2> {
+        Some(egui::vec2(600.0, 382.0))
     }
 
     fn attach(&mut self, ctx: &egui::Context) {
@@ -202,21 +184,48 @@ impl Module for Controls {
         let clicked = ui.interact(rect, ui.id().with("controls-open"), egui::Sense::click());
         let painter = ui.painter();
         let center = rect.center();
-        paint::icon(
-            painter,
-            center - egui::vec2(0.0, 13.0),
-            self.icon(),
-            26.0,
-            ctx.theme.text,
-            false,
-        );
-        painter.text(
-            egui::pos2(center.x, center.y + 15.0),
-            egui::Align2::CENTER_CENTER,
-            "Quick Controls",
-            Theme::font(SIZE_BODY),
-            ctx.theme.text,
-        );
+        let wide = rect.width() >= 150.0;
+        if wide {
+            paint::icon(
+                painter,
+                center - egui::vec2(0.0, 12.0),
+                self.icon(),
+                26.0,
+                ctx.theme.text,
+                false,
+            );
+            painter.text(
+                egui::pos2(center.x, center.y + 16.0),
+                egui::Align2::CENTER_CENTER,
+                "Quick Controls",
+                Theme::font(SIZE_BODY),
+                ctx.theme.text,
+            );
+            if rect.height() >= 150.0 {
+                let volume = self
+                    .volume_display
+                    .or(self.state.volume)
+                    .map(|value| format!("Volume {}%", (value * 100.0).round() as u32));
+                let brightness = self
+                    .brightness_display
+                    .or(self.state.brightness)
+                    .map(|value| format!("Brightness {}%", (value * 100.0).round() as u32));
+                let summary = match (volume, brightness) {
+                    (Some(volume), Some(brightness)) => format!("{volume}  ·  {brightness}"),
+                    (Some(value), None) | (None, Some(value)) => value,
+                    (None, None) => "System sliders".to_owned(),
+                };
+                painter.text(
+                    egui::pos2(center.x, center.y + 33.0),
+                    egui::Align2::CENTER_CENTER,
+                    summary,
+                    Theme::font(SIZE_LABEL - 1.0),
+                    ctx.theme.text_dim,
+                );
+            }
+        } else {
+            paint::icon(painter, center, self.icon(), 28.0, ctx.theme.text, false);
+        }
         if clicked.clicked() {
             self.page_request = true;
             self.refresh_on_page = true;
@@ -246,109 +255,86 @@ impl Module for Controls {
         ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
             ui.set_width(body.width());
             ui.set_height(body.height());
+            ui.spacing_mut().item_spacing.y = 14.0;
             ui.vertical(|ui| {
-                let columns = if body.width() >= 600.0 { 2 } else { 1 };
-                egui::Grid::new("controls-grid")
-                    .num_columns(columns)
-                    .spacing(egui::vec2(24.0, 16.0))
-                    .show(ui, |ui| {
-                        Self::radio_row(ui, "Wi-Fi", RadioKind::Wifi, self.state.wifi, theme, &tx);
-                        Self::radio_row(
-                            ui,
-                            "Bluetooth",
-                            RadioKind::Bluetooth,
-                            self.state.bluetooth,
-                            theme,
-                            &tx,
-                        );
-                        ui.end_row();
-
-                        ui.horizontal(|ui| {
-                            Self::row_label(ui, "Mute notifications", theme);
-                            let mut muted = self.state.notifications_muted;
-                            if widgets::toggle(ui, &mut muted, theme)
-                                .on_hover_text(
-                                    "Experimental: changes the Windows toast notification setting",
-                                )
-                                .changed()
-                            {
-                                let _ = tx.send(Command::Notifications(muted));
-                                self.state.notifications_muted = muted;
-                            }
-                        });
-                        ui.end_row();
-
-                        if let Some(mut volume) = self.volume_display.or(self.state.volume) {
-                            ui.horizontal(|ui| {
-                                Self::row_label(ui, "System volume", theme);
-                                let available = (ui.available_width() - 20.0).clamp(72.0, 320.0);
-                                let response =
-                                    widgets::slider(ui, &mut volume, available, 0, theme);
-                                if response.changed() {
-                                    nook_ui::sound::scrub(ui.ctx(), response.id);
-                                    self.volume_display = Some(volume);
-                                    self.volume_pending = Some(volume);
-                                    self.volume_due =
-                                        Some(Instant::now() + Duration::from_millis(50));
-                                    ui.ctx().request_repaint_after(Duration::from_millis(55));
-                                }
-                                if response.drag_stopped() {
-                                    self.volume_due = None;
-                                    if let Some(value) = self.volume_pending.take() {
-                                        let _ = tx.send(Command::Volume(value));
-                                    }
-                                }
-                                if self.state.muted == Some(true) {
-                                    let button = widgets::icon_button(
-                                        ui,
-                                        icons::SPEAKER_SLASH,
-                                        26.0,
-                                        true,
-                                        theme,
-                                    );
-                                    if button.clicked() {
-                                        let _ = tx.send(Command::Mute(false));
-                                    }
-                                } else {
-                                    let button = widgets::icon_button(
-                                        ui,
-                                        icons::SPEAKER_HIGH,
-                                        26.0,
-                                        false,
-                                        theme,
-                                    );
-                                    if button.clicked() {
-                                        let _ = tx.send(Command::Mute(true));
-                                    }
-                                }
-                            });
+                ui.horizontal(|ui| {
+                    Self::row_label(ui, "System volume", theme);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let muted = self.state.muted == Some(true);
+                        let glyph = if muted {
+                            icons::SPEAKER_SLASH
                         } else {
-                            ui.label("System volume is unavailable");
+                            icons::SPEAKER_HIGH
+                        };
+                        if widgets::icon_button(ui, glyph, 28.0, muted, theme).clicked() {
+                            let _ = tx.send(Command::Mute(!muted));
                         }
-                        if columns == 2 {
-                            ui.end_row();
+                        if let Some(value) = self.volume_display.or(self.state.volume) {
+                            ui.label(
+                                egui::RichText::new(format!("{}%", (value * 100.0).round() as u32))
+                                    .color(theme.text_dim),
+                            );
                         }
-                        if let Some(mut brightness) =
-                            self.brightness_display.or(self.state.brightness)
-                        {
-                            ui.horizontal(|ui| {
-                                Self::row_label(ui, "Display brightness", theme);
-                                let available = (ui.available_width() - 20.0).clamp(72.0, 320.0);
-                                let response =
-                                    widgets::slider(ui, &mut brightness, available, 0, theme);
-                                if response.changed() {
-                                    nook_ui::sound::scrub(ui.ctx(), response.id);
-                                    self.brightness_display = Some(brightness);
-                                }
-                                if response.drag_stopped() || response.clicked() {
-                                    let _ = tx.send(Command::Brightness(brightness));
-                                }
-                            });
-                        } else {
-                            ui.label("This display does not expose brightness control");
-                        }
-                        ui.end_row();
                     });
+                });
+                if let Some(mut volume) = self.volume_display.or(self.state.volume) {
+                    let available = ui.available_width().max(120.0);
+                    let response = widgets::slider(ui, &mut volume, available, 0, theme);
+                    if response.changed() {
+                        nook_ui::sound::scrub(ui.ctx(), response.id);
+                        self.volume_display = Some(volume);
+                        self.volume_pending = Some(volume);
+                        self.volume_due = Some(Instant::now() + Duration::from_millis(50));
+                        ui.ctx().request_repaint_after(Duration::from_millis(55));
+                    }
+                    if response.drag_stopped() {
+                        self.volume_due = None;
+                        if let Some(value) = self.volume_pending.take() {
+                            let _ = tx.send(Command::Volume(value));
+                        }
+                    }
+                } else {
+                    ui.label("System volume is unavailable");
+                }
+
+                ui.horizontal(|ui| {
+                    Self::row_label(ui, "Display brightness", theme);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if let Some(value) = self.brightness_display.or(self.state.brightness) {
+                            ui.label(
+                                egui::RichText::new(format!("{}%", (value * 100.0).round() as u32))
+                                    .color(theme.text_dim),
+                            );
+                        }
+                    });
+                });
+                if let Some(mut brightness) = self.brightness_display.or(self.state.brightness) {
+                    let available = ui.available_width().max(120.0);
+                    let response = widgets::slider(ui, &mut brightness, available, 0, theme);
+                    if response.changed() {
+                        nook_ui::sound::scrub(ui.ctx(), response.id);
+                        self.brightness_display = Some(brightness);
+                    }
+                    if response.drag_stopped() || response.clicked() {
+                        let _ = tx.send(Command::Brightness(brightness));
+                    }
+                } else {
+                    ui.label("Brightness is unavailable on this display");
+                }
+
+                ui.horizontal(|ui| {
+                    Self::row_label(ui, "Mute notifications", theme);
+                    let mut muted = self.state.notifications_muted;
+                    if widgets::toggle(ui, &mut muted, theme)
+                        .on_hover_text(
+                            "Experimental: changes the Windows toast notification setting",
+                        )
+                        .changed()
+                    {
+                        let _ = tx.send(Command::Notifications(muted));
+                        self.state.notifications_muted = muted;
+                    }
+                });
             });
         });
         false

@@ -21,6 +21,8 @@ pub enum Badge {
     Glyph { icon: &'static str },
     /// A pulsing dot: something arrived.
     Pulse,
+    /// A short-lived system connection event shown inside the collapsed shell.
+    Notice { label: String, until: f64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

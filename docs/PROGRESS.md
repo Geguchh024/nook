@@ -36,3 +36,13 @@
 - Added `assets/Sounds/generate_ui_sounds.py` to reproduce the original tones. The user-provided MP3s remain alongside the derived, trimmed WAV assets.
 - Verification: `cargo test --workspace --offline --quiet` passed (12 app, 72 modules, 39 platform and 33 UI tests; 7 ignored). `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
 - Launched the rebuilt app with the isolated preview config (`shell_style = "notch"`) and Settings open.
+
+## Step 5 — Responsive wireless and Quick Controls
+
+- Removed Wi-Fi and Bluetooth from the Quick Controls page and registered them as independent Small-by-default tiles. Their Small layout is icon-only; wider sizes show the tile name and connection state.
+- Added on-demand Wi-Fi scans and Bluetooth discovery/pairing/device removal pages. The Wi-Fi page can connect to open and WPA2-Personal networks; unsupported enterprise/WEP security routes to Windows Settings. Bluetooth connection for already-paired devices routes through Windows Bluetooth Settings because connection methods vary by device profile.
+- Added OS event watchers that show the connected/disconnected Wi-Fi network or Bluetooth device name briefly in the notch. These watchers are event-driven; scans only run when a page is opened or refreshed.
+- Reworked Quick Controls into a single-column layout with responsive full-width volume and brightness sliders, mute control and the notification toggle. The page remains Small by default and opening it does not resize its tile.
+- Added a WMI laptop-panel brightness fallback when DDC/CI is unavailable. This fallback targets the first active WMI brightness endpoint; per-monitor targeting remains available through DDC/CI where supported.
+- Updated README controls documentation. Verification: `cargo test --workspace --offline --quiet` passed (12 app, 72 modules, 40 platform and 33 UI tests; 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+- Hardware behavior for radio discovery, device pairing and laptop brightness still depends on Windows hardware/drivers and needs a device session for end-to-end verification.

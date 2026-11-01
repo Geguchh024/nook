@@ -15,6 +15,7 @@ windows-numerics = "0.3"
 candle-core = "0.9"
 candle-nn = "0.9"
 serde_json = "1.0.154"
+crossbeam-channel.workspace = true
 
 [dependencies.windows]
 workspace = true
@@ -28,6 +29,8 @@ features = [
   "Media_Control",
   "Media_Ocr",
   "Devices_Radios",
+  "Devices_Bluetooth",
+  "Devices_Enumeration",
   "Storage_Streams",
   "System",
   "UI",
@@ -63,6 +66,7 @@ features = [
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",
   "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_WiFi",
   "Win32_NetworkManagement_Ndis",
   "Win32_Networking_WinSock",
   "Win32_Storage_FileSystem",

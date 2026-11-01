@@ -2197,6 +2197,7 @@ dependencies = [
  "anyhow",
  "candle-core",
  "candle-nn",
+ "crossbeam-channel",
  "image",
  "serde_json",
  "thiserror 2.0.21",

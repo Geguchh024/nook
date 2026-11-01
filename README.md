@@ -235,10 +235,14 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
 - **Tools** (second page of the grid). Each opens a full page; made Wide
   or Large, most show more on the tile itself.
   - **Quick Controls** (Small by default): clicking the tile opens its page
-    without resizing the tile. It includes Wi-Fi and Bluetooth when Windows
-    exposes a radio, system master volume and mute, brightness for the display
-    holding Nook when it exposes DDC/CI controls, and experimental
-    **Mute notifications**.
+    without resizing the tile. It includes system master volume and mute,
+    brightness for the display holding Nook (DDC/CI, with a WMI fallback for
+    supported laptop panels), and experimental **Mute notifications**.
+  - **Wi-Fi** and **Bluetooth** are separate Small-by-default tiles. Open a
+    tile to scan nearby networks/devices and connect, pair, or remove them.
+    Available device names can appear on larger tiles; connection changes are
+    announced briefly inside the notch. Bluetooth connection actions for
+    profile-specific devices may open Windows Bluetooth Settings.
   - **QR code** (Ctrl+Alt+Q makes one from the clipboard): paste a link and
     the code draws as you type. Styles: dots, liquid, round lines, rounded,
     square; corner eyes round, circle, leaf or square; solid colors,

@@ -9,6 +9,7 @@ pub mod backdrop;
 pub mod capture;
 pub mod crash;
 pub mod controls;
+pub mod wireless;
 pub mod clipboard;
 pub mod embed;
 pub mod files;

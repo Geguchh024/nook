@@ -3,6 +3,7 @@
 use crate::registry::{self, Hive};
 use crate::window::Hwnd;
 use crate::{PlatformError, Result, Win32Context};
+use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use windows::Devices::Radios::{Radio, RadioAccessStatus, RadioKind as WinRadioKind, RadioState};
 use windows::Win32::Devices::Display::{
@@ -102,6 +103,58 @@ fn read_brightness() -> Option<f32> {
     .ok()
     .flatten()
     .flatten()
+    .or_else(read_wmi_brightness)
+}
+
+fn run_wmi(script: &str) -> Result<std::process::Output> {
+    ProcessCommand::new("powershell.exe")
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .output()
+        .map_err(|e| PlatformError::Other(format!("starting Windows brightness helper: {e}")))
+}
+
+fn read_wmi_brightness() -> Option<f32> {
+    let output = run_wmi(
+        "Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness | Where-Object Active | Select-Object -First 1 -ExpandProperty CurrentBrightness",
+    )
+    .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout)
+        .ok()?
+        .trim()
+        .parse::<u8>()
+        .ok()?;
+    Some(value as f32 / 100.0)
+}
+
+fn set_wmi_brightness(value: f32) -> Result<bool> {
+    let level = (value.clamp(0.0, 1.0) * 100.0).round() as u8;
+    let script = format!(
+        "$m = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods | Where-Object Active | Select-Object -First 1; if ($null -eq $m) {{ exit 2 }}; $r = Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{{Timeout=0; Brightness={level}}}; if ($r.ReturnValue -ne 0) {{ exit 3 }}"
+    );
+    let output = run_wmi(&script)?;
+    if output.status.success() {
+        Ok(true)
+    } else if output.status.code() == Some(2) {
+        Ok(false)
+    } else {
+        let reason = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        Err(PlatformError::Other(if reason.is_empty() {
+            "Windows rejected the brightness change".into()
+        } else {
+            reason
+        }))
+    }
 }
 
 pub fn set_brightness(value: f32) -> Result<bool> {
@@ -120,7 +173,10 @@ pub fn set_brightness(value: f32) -> Result<bool> {
         }
         Ok(false)
     })?;
-    Ok(set.unwrap_or(false))
+    match set {
+        Some(true) => Ok(true),
+        Some(false) | None => set_wmi_brightness(value),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,6 +206,10 @@ fn radio_state(kind: RadioKind) -> Option<bool> {
         }
     }
     None
+}
+
+pub fn radio_enabled(kind: RadioKind) -> Option<bool> {
+    radio_state(kind)
 }
 
 fn endpoint() -> Result<IAudioEndpointVolume> {
