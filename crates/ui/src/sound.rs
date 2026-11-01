@@ -25,6 +25,10 @@ fn played_id() -> Id {
     Id::new("nook_ui_sound_played_this_frame")
 }
 
+fn enabled_id() -> Id {
+    Id::new("nook_ui_sound_enabled")
+}
+
 fn scrub_id() -> Id {
     Id::new("nook_ui_sound_scrub_time")
 }
@@ -34,9 +38,18 @@ pub fn install(ctx: &Context, player: Player) {
     ctx.data_mut(|data| data.insert_temp(player_id(), player));
 }
 
+/// Sets whether UI cues may play. The application syncs this from its saved
+/// settings before drawing widgets each frame.
+pub fn set_enabled(ctx: &Context, enabled: bool) {
+    ctx.data_mut(|data| data.insert_temp(enabled_id(), enabled));
+}
+
 /// Starts a cue and marks the current frame as handled to prevent a generic
 /// click cue from playing over this more specific sound.
 pub fn play(ctx: &Context, cue: Cue) {
+    if !ctx.data(|data| data.get_temp::<bool>(enabled_id()).unwrap_or(true)) {
+        return;
+    }
     let player = ctx.data(|data| data.get_temp::<Player>(player_id()));
     if let Some(player) = player {
         player(cue);

@@ -98,6 +98,7 @@ pub struct Clipboard {
     /// Entry last copied back, and when (egui time).
     copied: Option<(u64, f64)>,
     open_page: bool,
+    editing: Option<(u64, String)>,
 }
 
 impl Clipboard {
@@ -356,15 +357,13 @@ impl Module for Clipboard {
             return false;
         }
 
-        const COLS: usize = 4;
         const GAP: f32 = 8.0;
-        let card_w = (body.width() - GAP * (COLS - 1) as f32) / COLS as f32;
-        let card_h = 76.0;
+        const CARD_H: f32 = 76.0;
         let ctx = ui.ctx().clone();
         let mut copy = None;
         let mut delete = None;
+        let mut edit = None;
         let ids: Vec<u64> = self.history.entries.iter().map(|e| e.id).collect();
-        let rows = ids.len().div_ceil(COLS);
 
         ScrollArea::vertical()
             .id_salt("nook-clip-scroll")
@@ -372,40 +371,38 @@ impl Module for Clipboard {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 let (area, _) = ui.allocate_exact_size(
-                    vec2(body.width(), rows as f32 * (card_h + GAP) - GAP),
+                    vec2(body.width(), ids.len() as f32 * (CARD_H + GAP) - GAP),
                     Sense::hover(),
                 );
                 for (i, id) in ids.iter().copied().enumerate() {
-                    let (r, c) = (i / COLS, i % COLS);
                     let card = Rect::from_min_size(
-                        pos2(
-                            area.min.x + c as f32 * (card_w + GAP),
-                            area.min.y + r as f32 * (card_h + GAP),
-                        ),
-                        vec2(card_w, card_h),
+                        pos2(area.min.x, area.min.y + i as f32 * (CARD_H + GAP)),
+                        vec2(area.width(), CARD_H),
                     );
                     if !ui.is_rect_visible(card) {
                         continue;
                     }
                     widgets::card(ui.painter(), card, theme);
                     let resp = hover_box(ui, card, Id::new(("clip-card", id)), TILE_RADIUS, theme);
-                    if resp.clicked() {
-                        copy = Some(id);
-                    }
                     let copied = self.just_copied(id, now);
                     let Some(entry) = self.history.entries.iter_mut().find(|e| e.id == id) else {
                         continue;
                     };
-                    let inner = card.shrink(10.0);
-                    let footer_y = inner.max.y - 5.0;
+                    let actions_w = 92.0;
+                    let inner = card.shrink2(vec2(12.0, 8.0));
+                    let content = Rect::from_min_max(
+                        inner.min,
+                        pos2((inner.max.x - actions_w).max(inner.min.x), inner.max.y),
+                    );
+                    let action_y = inner.center().y;
                     let label = match entry.content.clone() {
                         ClipContent::Text(t) => {
                             text_block(
                                 ui,
-                                inner.min,
+                                pos2(content.min.x, content.min.y + 1.0),
                                 t.trim(),
-                                inner.width(),
-                                3,
+                                content.width(),
+                                2,
                                 Theme::font(SIZE_LABEL),
                                 theme.text,
                             );
@@ -414,8 +411,8 @@ impl Module for Clipboard {
                         ClipContent::Image(_) => match entry.texture(&ctx) {
                             Some((tex, img)) => {
                                 let area = Rect::from_min_max(
-                                    inner.min,
-                                    pos2(inner.max.x, footer_y - 9.0),
+                                    content.min,
+                                    pos2(content.max.x, content.max.y),
                                 );
                                 image(ui, fit(area, img.thumb_size), tex, 4.0);
                                 format!("{}×{}", img.width, img.height)
@@ -429,28 +426,99 @@ impl Module for Clipboard {
                         (format!("{label} · {}", age(entry.at)), theme.text_faint)
                     };
                     ui.painter().text(
-                        pos2(inner.min.x, footer_y),
+                        pos2(content.min.x, content.max.y - 1.0),
                         Align2::LEFT_CENTER,
                         footer,
                         Theme::font(SIZE_LABEL - 1.0),
                         color,
                     );
-                    if resp.hovered()
-                        && button_at(
+                    if resp.hovered() {
+                        let copy_resp = button_at(
                             ui,
-                            pos2(card.max.x - 13.0, card.max.y - 13.0),
-                            20.0,
-                            icons::X,
+                            pos2(inner.max.x - 72.0, action_y),
+                            24.0,
+                            icons::COPY_SIMPLE,
                             theme,
                         )
-                        .on_hover_text("Remove")
+                        .on_hover_text("Copy")
+                        .clicked();
+                        if copy_resp {
+                            copy = Some(id);
+                        }
+                        if matches!(entry.content, ClipContent::Text(_))
+                            && button_at(
+                                ui,
+                                pos2(inner.max.x - 44.0, action_y),
+                                24.0,
+                                icons::PENCIL_SIMPLE,
+                                theme,
+                            )
+                            .on_hover_text("Edit text")
+                            .clicked()
+                            && let ClipContent::Text(text) = &entry.content
+                        {
+                            edit = Some((id, text.clone()));
+                        }
+                        if button_at(
+                            ui,
+                            pos2(inner.max.x - 14.0, action_y),
+                            24.0,
+                            icons::TRASH,
+                            theme,
+                        )
+                        .on_hover_text("Delete")
                         .clicked()
-                    {
-                        delete = Some(id);
-                        copy = None;
+                        {
+                            delete = Some(id);
+                            copy = None;
+                            edit = None;
+                        }
+                    } else if resp.clicked() {
+                        copy = Some(id);
                     }
                 }
             });
+
+        if let Some((id, text)) = edit {
+            self.editing = Some((id, text));
+        }
+        let mut save_edit = None;
+        let mut cancel_edit = false;
+        if let Some((id, text)) = &mut self.editing {
+            egui::Window::new("Edit clipboard text")
+                .id(Id::new("nook-clipboard-edit"))
+                .collapsible(false)
+                .resizable(true)
+                .default_width(420.0)
+                .show(ui.ctx(), |ui| {
+                    ui.add(
+                        egui::TextEdit::multiline(text)
+                            .desired_width(ui.available_width())
+                            .desired_rows(8),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button("Save and copy").clicked() {
+                            save_edit = Some((*id, text.clone()));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            cancel_edit = true;
+                        }
+                    });
+                });
+        }
+        if let Some((id, text)) = save_edit {
+            if let Some(entry) = self.history.entries.iter_mut().find(|entry| entry.id == id) {
+                entry.content = ClipContent::Text(text.clone());
+                entry.at = Instant::now();
+                self.copied = Some((id, now));
+                if let Some(watcher) = &self.watcher {
+                    watcher.set(ClipContent::Text(text));
+                }
+            }
+            self.editing = None;
+        } else if cancel_edit {
+            self.editing = None;
+        }
 
         if let Some(id) = delete {
             self.history.remove(id);

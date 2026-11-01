@@ -1134,6 +1134,7 @@ impl eframe::App for NookApp {
         self.overlay.begin();
         let ctx = ui.ctx().clone();
         nook_ui::sound::install(&ctx, play_ui_sound);
+        nook_ui::sound::set_enabled(&ctx, self.cfg.sound_effects);
         nook_ui::sound::begin_frame(&ctx);
         let theme = Theme::styled(
             self.dark(),

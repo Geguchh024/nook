@@ -150,8 +150,9 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
   or use the tray's **Pin open** to keep the panel open. A small pin shows at the top center.
 - UI actions have short sounds: buttons, switches, opening the panel, and
   media transport each use a matching cue. Volume, brightness and media
-  seeking use a quiet movement tick throttled while dragging. Playback is
-  event-driven and bundled with the app; it adds no idle polling.
+  seeking use a quiet movement tick throttled while dragging. Toggle
+  **Sound effects** in Settings → Behavior to silence or restore all Nook UI
+  cues. Playback is event-driven and bundled with the app; it adds no idle polling.
 - **Style:** Settings, Style: Pill or Notch. Pill floats below the work-area
   edge; Notch touches the monitor's top edge with curved ears. Both styles
   open into the same panel in place.
@@ -408,7 +409,9 @@ drained in `on_tick`.
 - [x] Timer: countdown (scroll or +/- to set, sound at zero, snooze) and
   stopwatch, ring and time mirrored in the pill. Pomodoro cycles still to do
 - [x] Clipboard history: text and images, in memory only, skips content
-  marked private; the expand button opens the full history page
+  marked private; the full page shows one responsive card per item. Hover to
+  copy or delete, and edit text entries in place before saving them back to
+  the clipboard.
 - [x] Color picker: loupe with zoom and pixel nudging, HEX/RGB/HSL/HSV/OKLCH,
   history page, Ctrl+Alt+P
 - [x] Media (SMTC): title, artist, album art, a full controller page with

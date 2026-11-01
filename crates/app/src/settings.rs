@@ -302,6 +302,14 @@ pub fn page(
                 out.startup_toggled = true;
                 out.changed = true;
             }
+            let mut sounds = cfg.sound_effects;
+            if row(&mut rui, "Sound effects", theme, |ui| {
+                widgets::toggle(ui, &mut sounds, theme)
+                    .on_hover_text("Play short sounds for clicks, switches and sliders")
+            }) {
+                cfg.sound_effects = sounds;
+                out.changed = true;
+            }
 
             let open = open_section(&ctx);
             let mut y = top.max.y + GAP;

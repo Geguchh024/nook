@@ -46,3 +46,10 @@
 - Added a WMI laptop-panel brightness fallback when DDC/CI is unavailable. This fallback targets the first active WMI brightness endpoint; per-monitor targeting remains available through DDC/CI where supported.
 - Updated README controls documentation. Verification: `cargo test --workspace --offline --quiet` passed (12 app, 72 modules, 40 platform and 33 UI tests; 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
 - Hardware behavior for radio discovery, device pairing and laptop brightness still depends on Windows hardware/drivers and needs a device session for end-to-end verification.
+
+## Step 6 — Sound preference and clipboard actions
+
+- Added a saved Sound effects toggle to Settings → Behavior. It defaults on for existing config files and gates every centralized Nook cue, including clicks, panel motion and slider ticks.
+- Replaced the clipboard page's fixed four-column grid with one responsive full-width card per history item.
+- Hovering a text card exposes Copy, Edit and Delete; image cards expose Copy and Delete. Text editing uses a resizable multiline editor, and Save and copy updates the history item and system clipboard.
+- Verification: `cargo test --workspace --offline --quiet` passed with `APPDATA` redirected to a writable workspace directory (13 app, 72 modules, 40 platform and 33 UI tests passed; 7 ignored). `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

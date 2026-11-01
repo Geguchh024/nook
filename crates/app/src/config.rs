@@ -95,6 +95,8 @@ pub struct ModulesConfig {
 #[serde(default)]
 pub struct Config {
     pub shell_style: ShellStyle,
+    /// Play the short UI sound cues.
+    pub sound_effects: bool,
     pub theme: ThemeMode,
     pub accent: AccentSource,
     pub accent_hex: String,
@@ -136,6 +138,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             shell_style: ShellStyle::Pill,
+            sound_effects: true,
             theme: ThemeMode::Auto,
             accent: AccentSource::Wallpaper,
             accent_hex: "#7C5CFF".into(),
@@ -257,6 +260,7 @@ mod tests {
     fn missing_fields_use_defaults() {
         let cfg: Config = toml::from_str("theme = \"dark\"").expect("parse");
         assert_eq!(cfg.theme, ThemeMode::Dark);
+        assert!(cfg.sound_effects);
         assert_eq!(cfg.hover_delay_ms, 120);
         assert_eq!(cfg.placement, Placement::Center);
         assert!(cfg.on_top);
@@ -308,5 +312,15 @@ mod tests {
         assert_eq!(Config::default().shell_style, ShellStyle::Pill);
         let cfg: Config = toml::from_str("shell_style = \"notch\"").expect("parse");
         assert_eq!(cfg.shell_style, ShellStyle::Notch);
+    }
+
+    #[test]
+    fn sound_effects_default_on_and_round_trip() {
+        let mut cfg = Config::default();
+        assert!(cfg.sound_effects);
+        cfg.sound_effects = false;
+        let text = toml::to_string_pretty(&cfg).expect("serialize");
+        let back: Config = toml::from_str(&text).expect("parse");
+        assert!(!back.sound_effects);
     }
 }
