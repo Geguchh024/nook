@@ -6,6 +6,7 @@
 - **Mute notifications** is experimental. Windows has no stable public DND API for this unpackaged app, so this option writes `HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications\ToastEnabled`.
 - Brightness uses DDC/CI on the monitor containing the Nook window. Internal laptop panels that do not expose DDC/CI remain unavailable; no slider is shown for them.
 - Volume changes the Windows default audio endpoint's master volume, which is system-wide; it is not a separate level per monitor.
+- Output-device and per-app routing choices are delegated to Windows Sound settings. Nook lists active render endpoints and audio sessions, but Windows does not expose a supported public API for changing the default output or reassigning a running session to another endpoint from an unpackaged Win32 app. The per-app mixer is opened through `ms-settings:apps-volume`.
 - Quick Controls reads state when its page opens and after user actions. The worker sleeps on its command channel while idle.
 
 Limits hit while building the shell on egui/eframe, how each one is handled,

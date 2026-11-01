@@ -345,9 +345,24 @@ pub fn page(
             }
             let mut sounds = cfg.sound_effects;
             if row(&mut rui, "Sound effects", theme, |ui| {
-                widgets::toggle(ui, &mut sounds, theme)
-                    .on_hover_text("Play short sounds for clicks, switches and sliders")
+                widgets::icon_button(
+                    ui,
+                    if sounds {
+                        icons::SPEAKER_HIGH
+                    } else {
+                        icons::SPEAKER_SLASH
+                    },
+                    28.0,
+                    sounds,
+                    theme,
+                )
+                .on_hover_text(if sounds {
+                    "Mute Nook sound effects"
+                } else {
+                    "Unmute Nook sound effects"
+                })
             }) {
+                sounds = !sounds;
                 cfg.sound_effects = sounds;
                 out.changed = true;
             }
@@ -844,5 +859,6 @@ fn row(
             .max_rect(rect)
             .layout(Layout::right_to_left(Align::Center)),
     );
-    control(&mut cui).changed()
+    let response = control(&mut cui);
+    response.changed() || response.clicked()
 }

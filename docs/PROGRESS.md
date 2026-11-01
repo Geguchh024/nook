@@ -77,3 +77,11 @@
 - Connected Bluetooth devices show a battery percentage when Windows reports the `System.Devices.BatteryLife` property. Battery data is device/driver dependent and absent otherwise.
 - Windows does not provide one generic Bluetooth connect operation for every profile, so already paired-device connection is handed to Windows Bluetooth Settings. Wi-Fi connections use WLAN directly where supported.
 - Verification: `cargo test --workspace --offline --quiet` passed (159 passed, 7 ignored) with workspace-local `APPDATA`; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 10 — Sound output and app routing
+
+- Replaced the Sound effects switch with a right-side speaker/mute icon that toggles the saved sound preference live.
+- Added an Output and app speakers page under Quick Controls. It lists active render devices, marks the default, enumerates active audio sessions across outputs, and shows each app's display name and shell icon when Windows supplies one.
+- Added direct links to Windows Sound settings for default output selection and App volume settings for per-app speaker routing. Nook does not claim to change routes itself: public Core Audio APIs do not expose a supported default-endpoint switch or a generic running-session endpoint reassignment for this unpackaged app.
+- Device/session enumeration and icon extraction run only on the controls worker after the page opens or refreshes; the worker waits on its channel at idle.
+- Verification: `cargo test --workspace --offline --quiet` passed (159 passed, 7 ignored) with workspace-local `APPDATA`; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

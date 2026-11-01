@@ -38,6 +38,7 @@ features = [
   "UI_Composition_Desktop",
   "Win32_Foundation",
   "Win32_Devices_Display",
+  "Win32_Devices_FunctionDiscovery",
   "Win32_Graphics_Direct2D",
   "Win32_Graphics_Direct2D_Common",
   "Win32_System_WinRT",

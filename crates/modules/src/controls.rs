@@ -6,6 +6,7 @@ use nook_platform::controls::{self, Snapshot};
 use nook_ui::module::{Module, TileCtx, TileSize};
 use nook_ui::theme::{SIZE_BODY, SIZE_LABEL, Theme};
 use nook_ui::{icons, paint, widgets};
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -140,6 +141,8 @@ pub struct Controls {
     brightness_display: Option<f32>,
     volume_overridden: bool,
     brightness_overridden: bool,
+    audio_page: bool,
+    audio_textures: HashMap<String, egui::TextureHandle>,
 }
 
 impl Default for Controls {
@@ -157,6 +160,8 @@ impl Default for Controls {
             brightness_display: None,
             volume_overridden: false,
             brightness_overridden: false,
+            audio_page: false,
+            audio_textures: HashMap::new(),
         }
     }
 }
@@ -227,12 +232,14 @@ impl Module for Controls {
             while let Ok(result) = worker.rx.try_recv() {
                 match result {
                     Ok(Some(state)) => {
+                        let snapshot_volume = state.volume;
+                        let snapshot_brightness = state.brightness;
                         self.state = state;
                         if !self.volume_overridden {
-                            self.volume_display = state.volume;
+                            self.volume_display = snapshot_volume;
                         }
                         if !self.brightness_overridden {
-                            self.brightness_display = state.brightness;
+                            self.brightness_display = snapshot_brightness;
                         }
                     }
                     Ok(None) => {}
@@ -319,6 +326,122 @@ impl Module for Controls {
             return false;
         };
         let tx = worker.tx.clone();
+        if self.audio_page {
+            let ctx = ui.ctx().clone();
+            for app in &self.state.audio_apps {
+                let key = app.icon_path.as_deref().unwrap_or(&app.name).to_owned();
+                if !self.audio_textures.contains_key(&key)
+                    && let Some(icon) = &app.icon
+                {
+                    self.audio_textures.insert(
+                        key.clone(),
+                        ctx.load_texture(
+                            format!("nook-audio-app-{key}"),
+                            egui::ColorImage::from_rgba_premultiplied(
+                                [icon.width as usize, icon.height as usize],
+                                &icon.rgba,
+                            ),
+                            egui::TextureOptions::LINEAR,
+                        ),
+                    );
+                }
+            }
+            ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+                ui.set_width(body.width());
+                ui.horizontal(|ui| {
+                    if ui.button("←  Sound").clicked() {
+                        self.audio_page = false;
+                    }
+                    ui.heading("Output and apps");
+                });
+                egui::ScrollArea::vertical()
+                    .id_salt("controls-audio-routing")
+                    .max_height((body.height() - 44.0).max(100.0))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("Output devices")
+                                .font(Theme::font(SIZE_LABEL))
+                                .color(theme.text_dim),
+                        );
+                        if self.state.outputs.is_empty() {
+                            ui.label("No active output devices were found.");
+                        } else {
+                            for output in &self.state.outputs {
+                                ui.horizontal(|ui| {
+                                    paint::icon(
+                                        ui.painter(),
+                                        ui.cursor().min + egui::vec2(12.0, 12.0),
+                                        icons::SPEAKER_HIGH,
+                                        18.0,
+                                        if output.is_default { theme.accent } else { theme.text_dim },
+                                        output.is_default,
+                                    );
+                                    ui.add_space(30.0);
+                                    ui.label(&output.name);
+                                    if output.is_default {
+                                        ui.label(egui::RichText::new("Default").color(theme.accent));
+                                    }
+                                });
+                            }
+                        }
+                        if ui.button("Choose output in Windows Settings").clicked()
+                            && let Err(error) = nook_platform::shell::open("ms-settings:sound")
+                        {
+                            tracing::warn!("opening Windows sound settings: {error}");
+                        }
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new("Apps currently using audio")
+                                .font(Theme::font(SIZE_LABEL))
+                                .color(theme.text_dim),
+                        );
+                        if self.state.audio_apps.is_empty() {
+                            ui.label("No active audio sessions were found.");
+                        } else {
+                            for app in &self.state.audio_apps {
+                                ui.horizontal(|ui| {
+                                    let key = app.icon_path.as_deref().unwrap_or(&app.name);
+                                    if let Some(icon) = self.audio_textures.get(key) {
+                                        ui.add(
+                                            egui::Image::new(icon)
+                                                .fit_to_exact_size(egui::vec2(28.0, 28.0)),
+                                        );
+                                    } else {
+                                        paint::icon(
+                                            ui.painter(),
+                                            ui.cursor().min + egui::vec2(12.0, 12.0),
+                                            icons::APP_WINDOW,
+                                            20.0,
+                                            theme.text_dim,
+                                            false,
+                                        );
+                                        ui.add_space(30.0);
+                                    }
+                                    let label = ui.label(&app.name);
+                                    if let Some(path) = app.icon_path.as_deref() {
+                                        label.on_hover_text(path);
+                                    }
+                                    if ui.button("Choose speaker").clicked()
+                                        && let Err(error) =
+                                            nook_platform::shell::open("ms-settings:apps-volume")
+                                    {
+                                        tracing::warn!("opening Windows app volume settings: {error}");
+                                    }
+                                });
+                            }
+                        }
+                        ui.label(
+                            egui::RichText::new(
+                                "Windows applies output choices per device and app in its sound settings.",
+                            )
+                            .small()
+                            .color(theme.text_faint),
+                        );
+                    });
+            });
+            return false;
+        }
         ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
             ui.set_width(body.width());
             ui.set_height(body.height());
@@ -363,6 +486,11 @@ impl Module for Controls {
                     }
                 } else {
                     ui.label("System volume is unavailable");
+                }
+
+                if ui.button("Output and app speakers  ›").clicked() {
+                    self.audio_page = true;
+                    self.send(Command::Refresh);
                 }
 
                 ui.horizontal(|ui| {

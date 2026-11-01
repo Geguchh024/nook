@@ -245,6 +245,10 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
     brightness for the display holding Nook (DDC/CI, with a WMI fallback for
     supported laptop panels), and experimental **Mute notifications**. Slider
     thumbs track immediately while Windows writes are coalesced in the background.
+    The Sound effects setting uses a speaker icon to mute/unmute Nook cues.
+    **Output and app speakers** lists active Windows output devices and audio
+    apps with their available session icons; output and per-app routing open
+    Windows Sound and Volume Mixer settings, where those choices are applied.
   - **Wi-Fi** and **Bluetooth** are separate Small-by-default tiles. Open a
     tile to scan nearby networks/devices and connect, pair, or remove them.
     Wi-Fi shows signal quality (Weak/Fair/Good/Excellent), not a misleading

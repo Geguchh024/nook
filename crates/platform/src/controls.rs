@@ -10,10 +10,16 @@ use windows::Win32::Devices::Display::{
     DestroyPhysicalMonitors, GetMonitorBrightness, GetNumberOfPhysicalMonitorsFromHMONITOR,
     GetPhysicalMonitorsFromHMONITOR, PHYSICAL_MONITOR, SetMonitorBrightness,
 };
+use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-use windows::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, eMultimedia, eRender};
-use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+use windows::Win32::Media::Audio::{
+    AudioSessionStateActive, DEVICE_STATE_ACTIVE, IAudioSessionControl2, IAudioSessionManager2,
+    IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, eMultimedia, eRender,
+};
+use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc};
+use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoTaskMemFree, STGM_READ};
 use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize};
+use windows::core::Interface;
 
 static HOST_WINDOW: AtomicIsize = AtomicIsize::new(0);
 
@@ -32,7 +38,7 @@ pub fn uninitialize_worker() {
     unsafe { RoUninitialize() };
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     pub wifi: Option<bool>,
     pub bluetooth: Option<bool>,
@@ -40,6 +46,30 @@ pub struct Snapshot {
     pub volume: Option<f32>,
     pub muted: Option<bool>,
     pub brightness: Option<f32>,
+    pub outputs: Vec<AudioOutput>,
+    pub audio_apps: Vec<AudioApp>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioOutput {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioApp {
+    pub name: String,
+    pub icon_path: Option<String>,
+    pub icon: Option<AudioAppIcon>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AudioAppIcon {
+    pub width: u32,
+    pub height: u32,
+    /// Premultiplied RGBA pixels from the Windows shell icon provider.
+    pub rgba: Vec<u8>,
 }
 
 /// Sets the Nook window whose display is the target for brightness actions.
@@ -238,6 +268,171 @@ fn endpoint() -> Result<IAudioEndpointVolume> {
     unsafe { device.Activate(CLSCTX_ALL, None) }.api("IMMDevice::Activate(IAudioEndpointVolume)")
 }
 
+fn allocated_wide(value: windows::core::PWSTR) -> Option<String> {
+    // Windows allocates the returned PWSTR with CoTaskMemAlloc.
+    let text = unsafe { value.to_string() }.ok();
+    unsafe { CoTaskMemFree(Some(value.0.cast::<core::ffi::c_void>().cast_const())) };
+    text.filter(|text| !text.trim().is_empty())
+}
+
+fn output_name(device: &IMMDevice) -> Option<String> {
+    let store = unsafe { device.OpenPropertyStore(STGM_READ) }.ok()?;
+    let mut value = unsafe { store.GetValue(&PKEY_Device_FriendlyName) }.ok()?;
+    let text = unsafe { PropVariantToStringAlloc(&value) }
+        .ok()
+        .and_then(allocated_wide);
+    let _ = unsafe { PropVariantClear(&mut value) };
+    text
+}
+
+fn output_devices() -> Vec<AudioOutput> {
+    let enumerator: windows::core::Result<IMMDeviceEnumerator> =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) };
+    let Ok(enumerator) = enumerator else {
+        return Vec::new();
+    };
+    let Ok(default) = (unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) }) else {
+        return Vec::new();
+    };
+    let default_id = unsafe { default.GetId() }.ok().and_then(allocated_wide);
+    let Ok(devices) = (unsafe { enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) })
+    else {
+        return Vec::new();
+    };
+    let Ok(count) = (unsafe { devices.GetCount() }) else {
+        return Vec::new();
+    };
+    (0..count)
+        .filter_map(|index| {
+            let device = unsafe { devices.Item(index) }.ok()?;
+            let id = unsafe { device.GetId() }.ok().and_then(allocated_wide)?;
+            Some(AudioOutput {
+                name: output_name(&device).unwrap_or_else(|| "Audio output".into()),
+                is_default: default_id.as_deref() == Some(&id),
+                id,
+            })
+        })
+        .collect()
+}
+
+fn audio_apps() -> Vec<AudioApp> {
+    let enumerator: windows::core::Result<IMMDeviceEnumerator> =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) };
+    let Ok(enumerator) = enumerator else {
+        return Vec::new();
+    };
+    let Ok(devices) = (unsafe { enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) })
+    else {
+        return Vec::new();
+    };
+    let Ok(device_count) = (unsafe { devices.GetCount() }) else {
+        return Vec::new();
+    };
+    let mut active_sessions = Vec::new();
+    for device_index in 0..device_count {
+        let Ok(device) = (unsafe { devices.Item(device_index) }) else {
+            continue;
+        };
+        let Ok(manager) = (unsafe { device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) })
+        else {
+            continue;
+        };
+        let Ok(sessions) = (unsafe { manager.GetSessionEnumerator() }) else {
+            continue;
+        };
+        let Ok(count) = (unsafe { sessions.GetCount() }) else {
+            continue;
+        };
+        for index in 0..count {
+            if let Ok(session) = unsafe { sessions.GetSession(index) }
+                && unsafe { session.GetState() }.is_ok_and(|state| state == AudioSessionStateActive)
+            {
+                active_sessions.push(session);
+            }
+        }
+    }
+    let mut apps = Vec::new();
+    for session in active_sessions {
+        let Ok(session) = session.cast::<IAudioSessionControl2>() else {
+            continue;
+        };
+        let process_id = unsafe { session.GetProcessId() }.unwrap_or_default();
+        if process_id == 0 {
+            continue;
+        }
+        let icon_path = unsafe { session.GetIconPath() }
+            .ok()
+            .and_then(allocated_wide);
+        let name = unsafe { session.GetDisplayName() }
+            .ok()
+            .and_then(allocated_wide)
+            .or_else(|| {
+                icon_path
+                    .as_deref()
+                    .and_then(|path| path.rsplit(['\\', '/']).next())
+                    .map(str::to_owned)
+            })
+            .unwrap_or_else(|| format!("Audio app ({process_id})"));
+        apps.push(AudioApp {
+            name,
+            icon_path,
+            icon: None,
+        });
+    }
+    apps.sort_by_key(|app| app.name.to_lowercase());
+    apps.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
+    let icon_paths: Vec<_> = apps
+        .iter()
+        .enumerate()
+        .filter_map(|(index, app)| {
+            let path = app.icon_path.as_deref()?.trim_start_matches('@');
+            let path = path
+                .split_once(',')
+                .map_or(path, |(path, _)| path)
+                .trim_matches('"');
+            std::path::Path::new(path)
+                .exists()
+                .then(|| (index, path.to_owned()))
+        })
+        .collect();
+    if icon_paths.is_empty() {
+        return apps;
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let Ok(worker) = std::thread::Builder::new()
+        .name("nook-audio-icons".into())
+        .spawn(move || {
+            crate::files::init_thumbnail_thread();
+            for (index, path) in icon_paths {
+                if let Ok((width, height, rgba)) =
+                    crate::files::thumbnail(std::path::Path::new(&path), 48)
+                    && tx
+                        .send((
+                            index,
+                            AudioAppIcon {
+                                width,
+                                height,
+                                rgba,
+                            },
+                        ))
+                        .is_err()
+                {
+                    break;
+                }
+            }
+        })
+    else {
+        return apps;
+    };
+    for (index, icon) in rx {
+        if let Some(app) = apps.get_mut(index) {
+            app.icon = Some(icon);
+        }
+    }
+    let _ = worker.join();
+    apps
+}
+
 pub fn snapshot() -> Snapshot {
     let audio = endpoint().ok();
     Snapshot {
@@ -258,6 +453,8 @@ pub fn snapshot() -> Snapshot {
             .and_then(|a| unsafe { a.GetMute().ok() })
             .map(|b| b.as_bool()),
         brightness: read_brightness(),
+        outputs: output_devices(),
+        audio_apps: audio_apps(),
     }
 }
 
