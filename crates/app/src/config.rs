@@ -50,6 +50,14 @@ pub enum Renderer {
     OpenGl,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellStyle {
+    #[default]
+    Pill,
+    Notch,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GrainSize {
@@ -86,6 +94,7 @@ pub struct ModulesConfig {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    pub shell_style: ShellStyle,
     pub theme: ThemeMode,
     pub accent: AccentSource,
     pub accent_hex: String,
@@ -126,6 +135,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            shell_style: ShellStyle::Pill,
             theme: ThemeMode::Auto,
             accent: AccentSource::Wallpaper,
             accent_hex: "#7C5CFF".into(),
@@ -291,5 +301,12 @@ mod tests {
         let cfg: Config = toml::from_str("placement = \"right\"\non_top = false").expect("parse");
         assert_eq!(cfg.placement, Placement::Right);
         assert!(!cfg.on_top);
+    }
+
+    #[test]
+    fn shell_style_is_snake_case_and_defaults_to_pill() {
+        assert_eq!(Config::default().shell_style, ShellStyle::Pill);
+        let cfg: Config = toml::from_str("shell_style = \"notch\"").expect("parse");
+        assert_eq!(cfg.shell_style, ShellStyle::Notch);
     }
 }

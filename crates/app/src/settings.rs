@@ -1,6 +1,6 @@
 //! Settings: the gear tile in the bento grid and the in-notch settings page.
 
-use crate::config::{AccentSource, Config, GrainSize, Material, MonitorMode, Renderer};
+use crate::config::{AccentSource, Config, GrainSize, Material, MonitorMode, Renderer, ShellStyle};
 use crate::update::{self, Status};
 use egui::{
     Align, Align2, Area, Color32, Id, Layout, Order, Rect, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
@@ -204,6 +204,13 @@ pub fn page(
 
             let mut lui = card_ui(ui, left);
             section_title(&mut lui, "Appearance", theme);
+            let mut style_idx = usize::from(cfg.shell_style == ShellStyle::Notch);
+            if row(&mut lui, "Style", theme, |ui| {
+                widgets::segmented(ui, &["Pill", "Notch"], &mut style_idx, theme)
+            }) {
+                cfg.shell_style = [ShellStyle::Pill, ShellStyle::Notch][style_idx];
+                out.changed = true;
+            }
             let mut theme_idx = match cfg.theme {
                 ThemeMode::Auto => 0,
                 ThemeMode::Dark => 1,
@@ -671,7 +678,10 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
     }
     hint(
         &mut lui,
-        &format!("Using {} · applies after restart", crate::diag::active_renderer()),
+        &format!(
+            "Using {} · applies after restart",
+            crate::diag::active_renderer()
+        ),
         theme,
     );
 
@@ -683,9 +693,16 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
         pos2(log_row.max.x - 120.0, log_row.center().y - 13.0),
         vec2(120.0, 26.0),
     );
-    if nook_modules::kit::button(ui, open_log, "Open log", Some(icons::FILE_TEXT), false, theme)
-        .on_hover_text("Shows nook.log in Explorer, to attach to a bug report")
-        .clicked()
+    if nook_modules::kit::button(
+        ui,
+        open_log,
+        "Open log",
+        Some(icons::FILE_TEXT),
+        false,
+        theme,
+    )
+    .on_hover_text("Shows nook.log in Explorer, to attach to a bug report")
+    .clicked()
         && let Some(path) = crate::diag::log_path()
         && let Err(e) = nook_platform::shell::reveal(&path)
     {
