@@ -1,5 +1,12 @@
 # Progress
 
+## Step 12 — Notes and Clipboard search/date filters
+
+- Added a shared content search field and expandable month calendar to both Notes and Clipboard pages. Searching is case-insensitive and matches full note or copied-text content; image entries remain filterable by date.
+- Picking a calendar day filters entries to that local calendar date; month navigation, Today, and clearing back to All dates are available. Notes keep their current editor selection, and the editor is hidden when that note does not match the active filter.
+- The date picker reuses the calendar module's Gregorian day calculations. Clipboard entries record the local date at capture time; Notes derive the local day from the file modification time without adding background polling.
+- Verification: `cargo clippy --workspace --all-targets --offline -- -D warnings` and `cargo test --workspace --offline --quiet` passed with workspace-local `APPDATA`.
+
 ## Step 1 — shell style configuration
 
 - Added the `shell_style` config enum and TOML parsing with `pill` as the backward-compatible default.

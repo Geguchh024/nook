@@ -109,6 +109,7 @@ pub struct Notes {
     /// Put the cursor in the editor on the next page frame.
     focus_editor: bool,
     retention_days: Option<u32>,
+    filter: crate::kit::HistoryFilter,
 }
 
 impl Notes {
@@ -190,18 +191,31 @@ impl Notes {
         let now = SystemTime::now();
         let row_h = 38.0;
         let mut pick = None;
+        let filtered: Vec<usize> = self
+            .notes
+            .iter()
+            .enumerate()
+            .filter(|(_, note)| {
+                self.filter
+                    .matches(&note.text, crate::kit::local_day(note.modified))
+            })
+            .map(|(index, _)| index)
+            .collect();
         ScrollArea::vertical()
             .id_salt("nook-notes-list")
             .max_height(area.height())
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 let (rows, _) = ui.allocate_exact_size(
-                    vec2(area.width(), self.notes.len() as f32 * row_h),
+                    vec2(area.width(), filtered.len() as f32 * row_h),
                     Sense::hover(),
                 );
-                for (i, note) in self.notes.iter().enumerate() {
+                for (row_index, i) in filtered.iter().copied().enumerate() {
+                    let Some(note) = self.notes.get(i) else {
+                        continue;
+                    };
                     let row = Rect::from_min_size(
-                        pos2(rows.min.x, rows.min.y + i as f32 * row_h),
+                        pos2(rows.min.x, rows.min.y + row_index as f32 * row_h),
                         vec2(rows.width(), row_h - 2.0),
                     );
                     if !ui.is_rect_visible(row) {
@@ -390,18 +404,17 @@ impl Module for Notes {
             .map(|at| SAVE_AFTER.saturating_sub(at.elapsed()) + Duration::from_millis(5))
             .min();
         let expiry = self.retention_days.and_then(|days| {
-                let max_age = Duration::from_secs(u64::from(days) * 86_400);
-                let now = SystemTime::now();
-                self.notes
-                    .iter()
-                    .filter(|note| note.dirty.is_none() && note.path.exists())
-                    .map(|note| {
-                        max_age.saturating_sub(
-                            now.duration_since(note.modified).unwrap_or(Duration::ZERO),
-                        )
-                    })
-                    .min()
-            });
+            let max_age = Duration::from_secs(u64::from(days) * 86_400);
+            let now = SystemTime::now();
+            self.notes
+                .iter()
+                .filter(|note| note.dirty.is_none() && note.path.exists())
+                .map(|note| {
+                    max_age
+                        .saturating_sub(now.duration_since(note.modified).unwrap_or(Duration::ZERO))
+                })
+                .min()
+        });
         match (dirty, expiry) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (Some(value), None) | (None, Some(value)) => Some(value),
@@ -457,6 +470,15 @@ impl Module for Notes {
         {
             self.new_note();
         }
+        let filter_area =
+            Rect::from_min_size(body.min, vec2(body.width(), body.height().min(220.0)));
+        let mut filter_ui = ui.new_child(
+            UiBuilder::new()
+                .max_rect(filter_area)
+                .id_salt("notes-filter"),
+        );
+        let filter_height = crate::kit::history_filter(&mut filter_ui, &mut self.filter, theme);
+        let content_top = (body.min.y + filter_height + 6.0).min(body.max.y);
         if self.notes.is_empty() {
             ui.painter().text(
                 body.center(),
@@ -467,11 +489,26 @@ impl Module for Notes {
             );
             return false;
         }
-        let list = Rect::from_min_size(body.min, vec2(LIST_W, body.height()));
-        let editor = Rect::from_min_max(pos2(list.max.x + 8.0, body.min.y), body.max);
+        let content = Rect::from_min_max(pos2(body.min.x, content_top), body.max);
+        let list = Rect::from_min_size(content.min, vec2(LIST_W, content.height()));
+        let editor = Rect::from_min_max(pos2(list.max.x + 8.0, content.min.y), content.max);
         let mut lui = ui.new_child(UiBuilder::new().max_rect(list).id_salt("notes-list"));
         self.list(&mut lui, list, theme);
-        self.editor(ui, editor, theme);
+        let current_matches = self.notes.get(self.current).is_some_and(|note| {
+            self.filter
+                .matches(&note.text, crate::kit::local_day(note.modified))
+        });
+        if current_matches {
+            self.editor(ui, editor, theme);
+        } else {
+            ui.painter().text(
+                editor.center(),
+                Align2::CENTER_CENTER,
+                "No notes match this search or date.",
+                Theme::font(SIZE_LABEL),
+                theme.text_dim,
+            );
+        }
         false
     }
 }
@@ -505,6 +542,26 @@ mod tests {
             Some("1 day left")
         );
         assert_eq!(retention_left(now, now, None), None);
+    }
+
+    #[test]
+    fn history_filter_matches_content_and_selected_day() {
+        let day = crate::calendar::days_from_civil(2026, 11, 1);
+        let mut filter = crate::kit::HistoryFilter::default();
+        filter.query = "meeting".into();
+        filter.day = Some(day);
+        assert!(filter.matches("Team Meeting notes", day));
+        assert!(!filter.matches("Team Meeting notes", day - 1));
+        assert!(!filter.matches("Shopping list", day));
+    }
+
+    #[test]
+    fn file_timestamp_maps_to_windows_local_day() {
+        let local = nook_platform::system::local_time();
+        assert_eq!(
+            crate::kit::local_day(SystemTime::now()),
+            crate::calendar::days_from_civil(local.year, local.month, local.day)
+        );
     }
 
     #[test]

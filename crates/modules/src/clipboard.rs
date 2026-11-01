@@ -28,6 +28,7 @@ struct Entry {
     id: u64,
     content: ClipContent,
     at: Instant,
+    day: i64,
     texture: Option<TextureHandle>,
 }
 
@@ -61,6 +62,8 @@ impl History {
         if let Some(i) = self.entries.iter().position(|e| e.content == content) {
             let mut e = self.entries.remove(i);
             e.at = Instant::now();
+            let local = nook_platform::system::local_time();
+            e.day = crate::calendar::days_from_civil(local.year, local.month, local.day);
             self.entries.insert(0, e);
             return;
         }
@@ -71,6 +74,10 @@ impl History {
                 id: self.next_id,
                 content,
                 at: Instant::now(),
+                day: {
+                    let local = nook_platform::system::local_time();
+                    crate::calendar::days_from_civil(local.year, local.month, local.day)
+                },
                 texture: None,
             },
         );
@@ -107,6 +114,7 @@ pub struct Clipboard {
     edit_focus_pending: bool,
     retention_days: Option<u32>,
     message: Option<String>,
+    filter: crate::kit::HistoryFilter,
 }
 
 impl Clipboard {
@@ -453,6 +461,15 @@ impl Module for Clipboard {
             );
         }
 
+        let filter_area =
+            Rect::from_min_size(body.min, vec2(body.width(), body.height().min(220.0)));
+        let mut filter_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(filter_area)
+                .id_salt("clipboard-filter"),
+        );
+        let filter_height = crate::kit::history_filter(&mut filter_ui, &mut self.filter, theme);
+        let content_top = (body.min.y + filter_height + 6.0).min(body.max.y);
         if self.history.entries.is_empty() {
             ui.painter().text(
                 body.center(),
@@ -470,13 +487,42 @@ impl Module for Clipboard {
         let mut copy = None;
         let mut delete = None;
         let mut edit = None;
-        let ids: Vec<u64> = self.history.entries.iter().map(|e| e.id).collect();
+        let ids: Vec<u64> = self
+            .history
+            .entries
+            .iter()
+            .filter(|entry| {
+                let text = match &entry.content {
+                    ClipContent::Text(text) => text.as_str(),
+                    ClipContent::Image(_) => "",
+                };
+                self.filter.matches(text, entry.day)
+            })
+            .map(|e| e.id)
+            .collect();
 
+        if ids.is_empty() {
+            ui.painter().text(
+                pos2(body.center().x, content_top + 44.0),
+                Align2::CENTER_CENTER,
+                "No clipboard items match this search or date.",
+                Theme::font(SIZE_LABEL),
+                theme.text_dim,
+            );
+            return false;
+        }
+
+        let list_area = Rect::from_min_max(pos2(body.min.x, content_top), body.max);
+        let mut list_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(list_area)
+                .id_salt("clipboard-results"),
+        );
         ScrollArea::vertical()
             .id_salt("nook-clip-scroll")
-            .max_height((body.height() - 24.0).max(80.0))
+            .max_height((body.height() - (content_top - body.min.y) - 16.0).max(80.0))
             .auto_shrink([false, false])
-            .show(ui, |ui| {
+            .show(&mut list_ui, |ui| {
                 let (area, _) = ui.allocate_exact_size(
                     vec2(body.width(), ids.len() as f32 * (CARD_H + GAP) - GAP),
                     Sense::hover(),
@@ -662,6 +708,8 @@ impl Module for Clipboard {
             if let Some(entry) = self.history.entries.iter_mut().find(|entry| entry.id == id) {
                 entry.content = ClipContent::Text(text.clone());
                 entry.at = Instant::now();
+                let local = nook_platform::system::local_time();
+                entry.day = crate::calendar::days_from_civil(local.year, local.month, local.day);
                 let content = ClipContent::Text(text);
                 let result = if let Some(watcher) = &self.watcher {
                     watcher.set(content.clone())
