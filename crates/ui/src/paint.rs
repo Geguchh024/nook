@@ -17,20 +17,21 @@ pub fn fill_gradient(painter: &Painter, outline: &[Pos2], top: Color32, bottom: 
     if outline.len() < 3 {
         return;
     }
+    let (points, triangles) = triangulate(outline);
+    if triangles.is_empty() {
+        return;
+    }
     let (min_y, max_y) = outline.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| {
         (lo.min(p.y), hi.max(p.y))
     });
     let span = (max_y - min_y).max(1.0);
     let color_at = |y: f32| lerp_color(top, bottom, (y - min_y) / span);
     let mut mesh = Mesh::default();
-    let center = centroid(outline);
-    mesh.colored_vertex(center, color_at(center.y));
-    for p in outline {
+    for p in &points {
         mesh.colored_vertex(*p, color_at(p.y));
     }
-    let n = outline.len() as u32;
-    for i in 0..n {
-        mesh.add_triangle(0, 1 + i, 1 + (i + 1) % n);
+    for [a, b, c] in triangles {
+        mesh.add_triangle(a, b, c);
     }
     painter.add(Shape::mesh(mesh));
 }
@@ -50,28 +51,94 @@ pub fn fill_noise(
     if outline.len() < 3 || alpha == 0 {
         return;
     }
+    let (points, triangles) = triangulate(outline);
+    if triangles.is_empty() {
+        return;
+    }
     let tint = Color32::from_white_alpha(alpha);
     let scale = painter.ctx().pixels_per_point() / (NOISE_SIZE as f32 * grain_px.max(1.0));
     let uv = |p: Pos2| pos2(p.x * scale, p.y * scale);
     let mut mesh = Mesh::with_texture(texture);
-    let center = centroid(outline);
-    mesh.vertices.push(Vertex {
-        pos: center,
-        uv: uv(center),
-        color: tint,
-    });
-    for p in outline {
+    for p in &points {
         mesh.vertices.push(Vertex {
             pos: *p,
             uv: uv(*p),
             color: tint,
         });
     }
-    let n = outline.len() as u32;
-    for i in 0..n {
-        mesh.add_triangle(0, 1 + i, 1 + (i + 1) % n);
+    for [a, b, c] in triangles {
+        mesh.add_triangle(a, b, c);
     }
     painter.add(Shape::mesh(mesh));
+}
+
+/// Ear clipping triangulation for simple polygons. Unlike a centroid fan,
+/// this keeps concave notch ears inside their outline in every mesh pass.
+fn triangulate(outline: &[Pos2]) -> (Vec<Pos2>, Vec<[u32; 3]>) {
+    let mut points = Vec::with_capacity(outline.len());
+    for &p in outline {
+        if points.last().is_none_or(|q: &Pos2| q.distance_sq(p) > 1e-6) {
+            points.push(p);
+        }
+    }
+    if points.len() > 2
+        && points
+            .last()
+            .is_some_and(|last| points[0].distance_sq(*last) <= 1e-6)
+    {
+        points.pop();
+    }
+    if points.len() < 3 {
+        return (points, Vec::new());
+    }
+    let area = points.iter().enumerate().fold(0.0, |sum, (i, a)| {
+        let b = points[(i + 1) % points.len()];
+        sum + a.x * b.y - b.x * a.y
+    });
+    let orientation = area.signum();
+    if orientation == 0.0 {
+        return (points, Vec::new());
+    }
+    let mut ring: Vec<usize> = (0..points.len()).collect();
+    let mut triangles = Vec::with_capacity(points.len() - 2);
+    let mut guard = ring.len() * ring.len();
+    while ring.len() > 3 && guard > 0 {
+        guard -= 1;
+        let mut clipped = false;
+        for at in 0..ring.len() {
+            let ia = ring[(at + ring.len() - 1) % ring.len()];
+            let ib = ring[at];
+            let ic = ring[(at + 1) % ring.len()];
+            let (a, b, c) = (points[ia], points[ib], points[ic]);
+            let cross = (b - a).x * (c - b).y - (b - a).y * (c - b).x;
+            if cross * orientation <= 1e-5 {
+                continue;
+            }
+            let occupied = ring.iter().copied().any(|ip| {
+                if ip == ia || ip == ib || ip == ic {
+                    return false;
+                }
+                let p = points[ip];
+                let c1 = (b - a).x * (p.y - a.y) - (b - a).y * (p.x - a.x);
+                let c2 = (c - b).x * (p.y - b.y) - (c - b).y * (p.x - b.x);
+                let c3 = (a - c).x * (p.y - c.y) - (a - c).y * (p.x - c.x);
+                c1 * orientation >= -1e-5 && c2 * orientation >= -1e-5 && c3 * orientation >= -1e-5
+            });
+            if !occupied {
+                triangles.push([ia as u32, ib as u32, ic as u32]);
+                ring.remove(at);
+                clipped = true;
+                break;
+            }
+        }
+        if !clipped {
+            return (points, Vec::new());
+        }
+    }
+    if ring.len() == 3 {
+        triangles.push([ring[0] as u32, ring[1] as u32, ring[2] as u32]);
+    }
+    (points, triangles)
 }
 
 /// The shell's glass surface at shell `progress` (0 = pill, 1 = panel).
@@ -192,13 +259,6 @@ pub fn ring(
     painter.add(PathShape::line(points, PathStroke::new(width, color)));
 }
 
-fn centroid(points: &[Pos2]) -> Pos2 {
-    let sum = points
-        .iter()
-        .fold(vec2(0.0, 0.0), |acc, p| acc + p.to_vec2());
-    (sum / points.len() as f32).to_pos2()
-}
-
 fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
     // Premultiplied components interpolate correctly for alpha blending.
     let t = t.clamp(0.0, 1.0);
@@ -251,4 +311,30 @@ pub fn noise_texture(ctx: &Context) -> TextureHandle {
     );
     ctx.data_mut(|d| d.insert_temp(key, tex.clone()));
     tex
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::{notch_outline, polygon_contains};
+    use egui::{Rect, pos2, vec2};
+
+    #[test]
+    fn concave_notch_mesh_stays_inside_the_outline() {
+        let outline = notch_outline(
+            Rect::from_min_size(pos2(100.0, 0.0), vec2(200.0, 100.0)),
+            12.0,
+            20.0,
+            8,
+        );
+        let (points, triangles) = triangulate(&outline);
+        assert_eq!(triangles.len(), points.len() - 2);
+        for [a, b, c] in triangles {
+            let center = (points[a as usize].to_vec2()
+                + points[b as usize].to_vec2()
+                + points[c as usize].to_vec2())
+                / 3.0;
+            assert!(polygon_contains(&outline, center.to_pos2()));
+        }
+    }
 }

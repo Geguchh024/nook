@@ -12,6 +12,163 @@ use nook_ui::module::TileCtx;
 use nook_ui::theme::{SIZE_ICON, SIZE_LABEL, Theme, mix, with_alpha};
 use nook_ui::{anim, paint, widgets};
 
+/// Search and local-calendar date filter shared by history-style pages.
+#[derive(Clone, Debug)]
+pub struct HistoryFilter {
+    pub query: String,
+    pub day: Option<i64>,
+    month: i64,
+    calendar_open: bool,
+}
+
+impl Default for HistoryFilter {
+    fn default() -> Self {
+        let now = nook_platform::system::local_time();
+        let day = crate::calendar::days_from_civil(now.year, now.month, now.day);
+        let (year, month, _) = crate::calendar::civil_from_days(day);
+        Self {
+            query: String::new(),
+            day: None,
+            month: crate::calendar::days_from_civil(year, month, 1),
+            calendar_open: false,
+        }
+    }
+}
+
+impl HistoryFilter {
+    pub fn matches(&self, text: &str, day: i64) -> bool {
+        (self.query.trim().is_empty()
+            || text
+                .to_lowercase()
+                .contains(&self.query.trim().to_lowercase()))
+            && self.day.is_none_or(|selected| selected == day)
+    }
+}
+
+/// Maps a file timestamp to its local calendar day without waking a worker.
+pub fn local_day(timestamp: std::time::SystemTime) -> i64 {
+    let now = nook_platform::system::local_time();
+    let current = std::time::SystemTime::now();
+    let utc_now = current
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let local_seconds = (now.hour * 3600 + now.minute * 60 + now.second) as i64;
+    let mut offset = local_seconds - utc_now.rem_euclid(86_400);
+    if offset > 43_200 {
+        offset -= 86_400;
+    } else if offset < -43_200 {
+        offset += 86_400;
+    }
+    let utc_stamp = timestamp
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    (utc_stamp + offset).div_euclid(86_400)
+}
+
+/// Draws a search field and a compact expandable month picker.
+pub fn history_filter(ui: &mut Ui, filter: &mut HistoryFilter, theme: &Theme) -> f32 {
+    let search_id = ui.id().with("nook-history-search");
+    ui.horizontal(|ui| {
+        let search_width = (ui.available_width() - 116.0).max(120.0);
+        ui.add_sized(
+            [search_width, 32.0],
+            TextEdit::singleline(&mut filter.query)
+                .id(search_id)
+                .hint_text("Search content")
+                .desired_width(search_width),
+        );
+        let label = filter.day.map_or_else(
+            || "All dates".to_owned(),
+            |day| {
+                let (y, m, d) = crate::calendar::civil_from_days(day);
+                format!("{y:04}-{m:02}-{d:02}")
+            },
+        );
+        if ui.button(label).clicked() {
+            filter.calendar_open = !filter.calendar_open;
+        }
+        if filter.day.is_some() && ui.small_button("×").clicked() {
+            filter.day = None;
+        }
+    });
+
+    if !filter.calendar_open {
+        return 38.0;
+    }
+    let (year, month, _) = crate::calendar::civil_from_days(filter.month);
+    ui.horizontal(|ui| {
+        if ui.small_button("‹").clicked() {
+            let (y, m) = if month == 1 {
+                (year - 1, 12)
+            } else {
+                (year, month - 1)
+            };
+            filter.month = crate::calendar::days_from_civil(y, m, 1);
+        }
+        const MONTHS: [&str; 12] = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ];
+        ui.label(format!("{} {year}", MONTHS[(month - 1) as usize]));
+        if ui.small_button("›").clicked() {
+            let (y, m) = if month == 12 {
+                (year + 1, 1)
+            } else {
+                (year, month + 1)
+            };
+            filter.month = crate::calendar::days_from_civil(y, m, 1);
+        }
+        if ui.button("Today").clicked() {
+            let now = nook_platform::system::local_time();
+            filter.day = Some(crate::calendar::days_from_civil(
+                now.year, now.month, now.day,
+            ));
+            filter.calendar_open = false;
+        }
+    });
+    egui::Grid::new(ui.id().with("history-calendar-grid"))
+        .spacing(vec2(4.0, 3.0))
+        .show(ui, |ui| {
+            for label in ["M", "T", "W", "T", "F", "S", "S"] {
+                ui.label(egui::RichText::new(label).color(theme.text_faint));
+            }
+            ui.end_row();
+            let offset = crate::calendar::weekday(filter.month);
+            let count = crate::calendar::days_in_month(year, month);
+            for cell in 0..42 {
+                if cell > 0 && cell % 7 == 0 {
+                    ui.end_row();
+                }
+                let day = cell as i64 - i64::from(offset) + 1;
+                if (1..=i64::from(count)).contains(&day) {
+                    let stamp = filter.month + day - 1;
+                    if ui
+                        .selectable_label(filter.day == Some(stamp), day.to_string())
+                        .clicked()
+                    {
+                        filter.day = Some(stamp);
+                        filter.calendar_open = false;
+                    }
+                } else {
+                    ui.add_space(18.0);
+                }
+            }
+        });
+    208.0
+}
+
 /// A faint fill for wells and inactive controls.
 pub fn wash(theme: &Theme) -> Color32 {
     if theme.dark {

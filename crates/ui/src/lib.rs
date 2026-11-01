@@ -9,6 +9,7 @@ pub mod page;
 pub mod paint;
 pub mod shell;
 pub mod shell_state;
+pub mod sound;
 pub mod spring;
 pub mod theme;
 pub mod widgets;

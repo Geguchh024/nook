@@ -11,9 +11,9 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use windows::Win32::Media::Audio::{
-    CALLBACK_NULL, HWAVEIN, PlaySoundW, SND_ASYNC, SND_FILENAME, SND_FLAGS, SND_NODEFAULT,
-    WAVE_FORMAT_PCM, WAVE_MAPPER, WAVEFORMATEX, WAVEHDR, WHDR_DONE, waveInAddBuffer, waveInClose,
-    waveInGetNumDevs, waveInOpen, waveInPrepareHeader, waveInReset, waveInStart,
+    CALLBACK_NULL, HWAVEIN, PlaySoundW, SND_ASYNC, SND_FILENAME, SND_FLAGS, SND_MEMORY,
+    SND_NODEFAULT, WAVE_FORMAT_PCM, WAVE_MAPPER, WAVEFORMATEX, WAVEHDR, WHDR_DONE, waveInAddBuffer,
+    waveInClose, waveInGetNumDevs, waveInOpen, waveInPrepareHeader, waveInReset, waveInStart,
     waveInUnprepareHeader,
 };
 use windows::core::{PCWSTR, PSTR};
@@ -204,6 +204,29 @@ pub fn play(path: &Path) -> Result<()> {
             "could not play {}",
             path.display()
         )))
+    }
+}
+
+/// Plays a bundled WAV asset without extracting it to disk. The bytes must
+/// have static storage because asynchronous `PlaySoundW` keeps reading them.
+pub fn play_memory(bytes: &'static [u8]) -> Result<()> {
+    if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err(PlatformError::Other(
+            "embedded audio is not a WAV file".into(),
+        ));
+    }
+    // SAFETY: the validated WAV data has static lifetime for async playback.
+    let ok = unsafe {
+        PlaySoundW(
+            PCWSTR(bytes.as_ptr().cast()),
+            None,
+            SND_MEMORY | SND_ASYNC | SND_NODEFAULT,
+        )
+    };
+    if ok.as_bool() {
+        Ok(())
+    } else {
+        Err(PlatformError::Other("could not play embedded WAV".into()))
     }
 }
 

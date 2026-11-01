@@ -14,6 +14,7 @@ use egui::{Color32, FontFamily, FontId, Rect, Ui, pos2, vec2};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use nook_platform::backdrop::{Backdrop, Tint};
+use nook_platform::controls as platform_controls;
 use nook_platform::hittest::{HitShape, HitTester};
 use nook_platform::material::{self, Applied};
 use nook_platform::single_instance::InstanceGuard;
@@ -31,6 +32,23 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+
+fn play_ui_sound(cue: nook_ui::sound::Cue) {
+    use nook_ui::sound::Cue;
+    let bytes: &'static [u8] = match cue {
+        Cue::Tap => include_bytes!("../../../assets/Sounds/wav/user_tap.wav"),
+        Cue::ToggleOn => include_bytes!("../../../assets/Sounds/wav/nook_toggle_on.wav"),
+        Cue::ToggleOff => include_bytes!("../../../assets/Sounds/wav/user_toggle_off.wav"),
+        Cue::Expand => include_bytes!("../../../assets/Sounds/wav/user_expand.wav"),
+        Cue::TileExpand => include_bytes!("../../../assets/Sounds/wav/nook_expand.wav"),
+        Cue::Collapse => include_bytes!("../../../assets/Sounds/wav/nook_collapse.wav"),
+        Cue::Media => include_bytes!("../../../assets/Sounds/wav/user_media.wav"),
+        Cue::Scrub => include_bytes!("../../../assets/Sounds/wav/nook_scrub.wav"),
+    };
+    if let Err(error) = nook_platform::audio::play_memory(bytes) {
+        tracing::debug!("UI sound playback failed: {error}");
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Page {
@@ -141,6 +159,7 @@ impl NookApp {
             RawWindowHandle::Win32(h) => Hwnd::from_raw(h.hwnd.get()),
             other => anyhow::bail!("unexpected window handle {other:?}"),
         };
+        platform_controls::set_host_window(hwnd);
         window::ensure_overlay(hwnd, false).context("overlay window styles")?;
         // DirectX draws on a composition visual above the GDI surface, which
         // must then stay transparent (OpenGL draws into it instead).
@@ -191,6 +210,11 @@ impl NookApp {
         registry.arrange(&cfg.modules.order, &cfg.modules.disabled);
         registry.set_sizes(&cfg.modules.sizes);
         for m in registry.all_mut() {
+            match m.id() {
+                "clipboard" => m.set_retention_days(cfg.clipboard_retention.days()),
+                "notes" => m.set_retention_days(cfg.notes_retention.days()),
+                _ => {}
+            }
             m.attach(&ctx);
         }
         let hotkeys = match register_hotkeys(&cfg, &registry, &ctx) {
@@ -207,7 +231,9 @@ impl NookApp {
 
         let timings = timings(&cfg);
         let mut shell = Shell::new(ShellMetrics::default(), timings);
+        shell.metrics.notch_collapsed = cfg.notch_size.points();
         shell.placement = cfg.placement;
+        shell.notch = cfg.shell_style == crate::config::ShellStyle::Notch;
         // Dev flags (screenshots/demos): `--pinned` starts expanded and
         // pinned, `--settings` additionally opens the settings page.
         // `--page=<module id>` opens that module's page.
@@ -424,7 +450,12 @@ impl NookApp {
         };
         let scale = window::dpi(self.hwnd) as f32 / 96.0;
         let h = (self.shell.window_size().y * scale).ceil() as i32;
-        let rect = (mon.work.left, mon.work.top, mon.work.width(), h);
+        let area = if self.shell.notch {
+            mon.bounds
+        } else {
+            mon.work
+        };
+        let rect = (area.left, area.top, area.width(), h);
         if self.anchor != Some(rect) {
             match window::set_rect(self.hwnd, rect.0, rect.1, rect.2, rect.3) {
                 Ok(()) => {
@@ -537,10 +568,16 @@ impl NookApp {
     /// Pushes the shell's current shape to the compositor (sub-pixel clip
     /// of the glass) and to the hit tester (screen pixels, plus the debug
     /// overlay if enabled). Only does work when the shape changed.
-    fn update_shape(&mut self, ctx: &egui::Context, shape: Option<Squircle>, extra: Option<Rect>) {
+    fn update_shape(
+        &mut self,
+        ctx: &egui::Context,
+        shape: Option<Squircle>,
+        shell_outline: Option<&[egui::Pos2]>,
+        extra: Option<Rect>,
+    ) {
         let ppp = ctx.pixels_per_point();
-        let outline: Vec<(f32, f32)> = shape
-            .map(|s| s.outline().iter().map(|p| (p.x * ppp, p.y * ppp)).collect())
+        let outline: Vec<(f32, f32)> = shell_outline
+            .map(|points| points.iter().map(|p| (p.x * ppp, p.y * ppp)).collect())
             .unwrap_or_default();
         let key = (outline, extra);
         if self.pushed.as_ref() == Some(&key) && !self.shape_dirty {
@@ -558,17 +595,8 @@ impl NookApp {
                 .map(|(x, y, _, _)| (x as f32, y as f32))
                 .unwrap_or_default();
             let mut polygons = Vec::with_capacity(2);
-            if let Some(s) = shape {
-                // A point of slack so the anti-aliased edge still counts.
-                let padded =
-                    Squircle::new(s.rect.expand(1.0), s.radius + 1.0).with_exponent(s.exponent);
-                polygons.push(
-                    padded
-                        .outline()
-                        .iter()
-                        .map(|p| (ox + p.x * ppp, oy + p.y * ppp))
-                        .collect(),
-                );
+            if shape.is_some() {
+                polygons.push(outline.iter().map(|&(x, y)| (ox + x, oy + y)).collect());
             }
             if let Some(r) = extra {
                 let (x0, y0) = (ox + r.min.x * ppp, oy + r.min.y * ppp);
@@ -753,7 +781,14 @@ fn icon_font(size: f32, fill: bool) -> FontId {
 /// Collapsed pill: live badges from modules (ring + label on the left,
 /// glyphs and pulse dots on the right), inset by the same ink margin on
 /// both sides.
-fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Rect, theme: &Theme) {
+fn draw_pill(
+    badges: Vec<Badge>,
+    battery: Option<Battery>,
+    clock_style: crate::config::ClockStyle,
+    ui: &mut Ui,
+    rect: Rect,
+    theme: &Theme,
+) {
     const PAD: f32 = 15.0;
     let painter = ui.painter();
     let cy = rect.center().y;
@@ -761,6 +796,32 @@ fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Re
     let mut right = rect.max.x - PAD;
     let now = ui.input(|i| i.time);
     let clock = system::clock();
+
+    if let Some((label, until)) = badges.iter().find_map(|badge| match badge {
+        Badge::Notice { label, until } if *until > now => Some((label, *until)),
+        _ => None,
+    }) {
+        let max_width = (right - left - 8.0).max(0.0);
+        let mut display = label.clone();
+        let font = Theme::font_semibold(SIZE_LABEL);
+        while !display.is_empty()
+            && painter
+                .layout_no_wrap(display.clone(), font.clone(), theme.pill_text)
+                .size()
+                .x
+                > max_width
+        {
+            display.pop();
+            if !display.is_empty() {
+                display.pop();
+                display.push('…');
+            }
+        }
+        ink_text(painter, &display, font, theme.pill_text, left, cy, false);
+        ui.ctx()
+            .request_repaint_after(Duration::from_secs_f64((until - now).max(0.02)));
+        return;
+    }
 
     // Left: a running timer's ring + countdown, otherwise the clock.
     let ring = badges.iter().find_map(|b| match b {
@@ -790,15 +851,7 @@ fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Re
             );
         }
         None => {
-            ink_text(
-                painter,
-                &clock.time,
-                Theme::font_semibold(SIZE_BODY),
-                theme.pill_text,
-                left,
-                cy,
-                false,
-            );
+            draw_clock(painter, &clock.time, clock_style, left, cy, theme.pill_text);
         }
     }
 
@@ -807,6 +860,7 @@ fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Re
     for badge in &badges {
         match badge {
             Badge::Ring { .. } => {}
+            Badge::Notice { .. } => {}
             Badge::Glyph { icon } => {
                 let ink = ink_text(
                     painter,
@@ -875,6 +929,88 @@ fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Re
     // One wake-up when the minute changes; nothing in between.
     ui.ctx()
         .request_repaint_after(Duration::from_secs(u64::from(clock.secs_to_next_minute)));
+}
+
+fn draw_clock(
+    painter: &egui::Painter,
+    value: &str,
+    style: crate::config::ClockStyle,
+    left: f32,
+    cy: f32,
+    color: Color32,
+) {
+    match style {
+        crate::config::ClockStyle::Classic => {
+            ink_text(
+                painter,
+                value,
+                Theme::font_semibold(SIZE_BODY),
+                color,
+                left,
+                cy,
+                false,
+            );
+        }
+        crate::config::ClockStyle::Digital => {
+            ink_text(
+                painter,
+                value,
+                egui::FontId::monospace(SIZE_BODY),
+                color,
+                left,
+                cy,
+                false,
+            );
+        }
+        crate::config::ClockStyle::DotMatrix => dot_matrix_clock(painter, value, left, cy, color),
+    }
+}
+
+fn dot_matrix_clock(painter: &egui::Painter, value: &str, left: f32, cy: f32, color: Color32) {
+    const CELL: f32 = 2.8;
+    const CHAR_GAP: f32 = 2.0;
+    let step = 4.0 * CELL + CHAR_GAP + CELL;
+    let mut x0 = left;
+    for ch in value.chars() {
+        if let Some(rows) = dot_glyph(ch) {
+            for (row, bits) in rows.iter().enumerate() {
+                for col in 0..5 {
+                    if bits & (1 << (4 - col)) != 0 {
+                        painter.circle_filled(
+                            pos2(
+                                x0 + col as f32 * CELL + CELL * 0.5,
+                                cy - 3.0 * CELL + row as f32 * CELL,
+                            ),
+                            CELL * 0.34,
+                            color,
+                        );
+                    }
+                }
+            }
+        }
+        x0 += step;
+    }
+}
+
+fn dot_glyph(ch: char) -> Option<[u8; 7]> {
+    Some(match ch.to_ascii_uppercase() {
+        '0' => [14, 17, 19, 21, 25, 17, 14],
+        '1' => [4, 12, 4, 4, 4, 4, 14],
+        '2' => [14, 17, 1, 2, 4, 8, 31],
+        '3' => [30, 1, 1, 14, 1, 1, 30],
+        '4' => [2, 6, 10, 18, 31, 2, 2],
+        '5' => [31, 16, 16, 30, 1, 1, 30],
+        '6' => [14, 16, 16, 30, 17, 17, 14],
+        '7' => [31, 1, 2, 4, 8, 8, 8],
+        '8' => [14, 17, 17, 14, 17, 17, 14],
+        '9' => [14, 17, 17, 15, 1, 1, 14],
+        ':' => [0, 4, 4, 0, 4, 4, 0],
+        'A' => [14, 17, 17, 31, 17, 17, 17],
+        'M' => [17, 27, 21, 21, 17, 17, 17],
+        'P' => [30, 17, 17, 30, 16, 16, 16],
+        ' ' => [0; 7],
+        _ => return None,
+    })
 }
 
 fn battery_icon(b: Battery, theme: &Theme) -> (&'static str, Color32) {
@@ -1084,6 +1220,9 @@ impl eframe::App for NookApp {
         #[cfg(feature = "debug-overlay")]
         self.overlay.begin();
         let ctx = ui.ctx().clone();
+        nook_ui::sound::install(&ctx, play_ui_sound);
+        nook_ui::sound::set_enabled(&ctx, self.cfg.sound_effects);
+        nook_ui::sound::begin_frame(&ctx);
         let theme = Theme::styled(
             self.dark(),
             self.accent(),
@@ -1102,12 +1241,14 @@ impl eframe::App for NookApp {
         let update_status = self.updater.status();
         let editing = self.editing;
         let page = self.page;
+        let was_open = self.shell.state.is_open();
         let badges: Vec<Badge> = self
             .registry
             .visible()
             .filter_map(|m| m.collapsed_badge())
             .collect();
         let battery = self.sys.battery;
+        let clock_style = self.cfg.clock_style;
         let composited = self.backdrop.is_some();
         // Stay open while typing in the panel or playing a plugin game (and
         // the window has focus) or while files are dragged over it.
@@ -1123,7 +1264,7 @@ impl eframe::App for NookApp {
             &theme,
             hidden,
             composited,
-            |ui, rect, _alpha| draw_pill(badges, battery, ui, rect, &theme),
+            |ui, rect, _alpha| draw_pill(badges, battery, clock_style, ui, rect, &theme),
             |ui, cctx| match page {
                 Page::Bento => {
                     let mut tiles = registry.grid_mut(editing);
@@ -1173,6 +1314,17 @@ impl eframe::App for NookApp {
                 }
             },
         );
+        let is_open = self.shell.state.is_open();
+        if was_open != is_open {
+            nook_ui::sound::play(
+                &ctx,
+                if is_open {
+                    nook_ui::sound::Cue::Expand
+                } else {
+                    nook_ui::sound::Cue::Collapse
+                },
+            );
+        }
 
         if let Some(id) = clicked {
             self.stats.tool(id);
@@ -1221,8 +1373,18 @@ impl eframe::App for NookApp {
         if settings_out.changed {
             self.shell.timings = timings(&self.cfg);
             self.shell.placement = self.cfg.placement;
+            self.shell.notch = self.cfg.shell_style == crate::config::ShellStyle::Notch;
+            self.shell.metrics.notch_collapsed = self.cfg.notch_size.points();
+            self.shape_dirty = true;
             self.watcher.set_monitor_mode(self.cfg.monitor);
             nook_modules::plugins::set_dev_mode(self.cfg.plugin_dev);
+            for module in self.registry.all_mut() {
+                match module.id() {
+                    "clipboard" => module.set_retention_days(self.cfg.clipboard_retention.days()),
+                    "notes" => module.set_retention_days(self.cfg.notes_retention.days()),
+                    _ => {}
+                }
+            }
             self.stats.set_enabled(self.cfg.usage_stats);
             // Re-sample now so a monitor switch does not wait for the watcher.
             self.sys.monitor =
@@ -1256,7 +1418,12 @@ impl eframe::App for NookApp {
         let overlay_rect: Option<Rect> = None;
 
         self.update_tint(&ctx, &theme, &out);
-        self.update_shape(&ctx, out.visible.then_some(out.shape), overlay_rect);
+        self.update_shape(
+            &ctx,
+            out.visible.then_some(out.shape),
+            out.visible.then_some(out.outline.as_slice()),
+            overlay_rect,
+        );
 
         // Reveal the window once real frames have been presented.
         self.frames = self.frames.saturating_add(1);
@@ -1269,6 +1436,9 @@ impl eframe::App for NookApp {
             }
         } else if self.frames < 3 {
             ctx.request_repaint();
+        }
+        if ctx.input(|input| input.pointer.primary_clicked()) && !nook_ui::sound::played(&ctx) {
+            nook_ui::sound::play(&ctx, nook_ui::sound::Cue::Tap);
         }
     }
 

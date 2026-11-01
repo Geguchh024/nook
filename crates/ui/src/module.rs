@@ -21,6 +21,8 @@ pub enum Badge {
     Glyph { icon: &'static str },
     /// A pulsing dot: something arrived.
     Pulse,
+    /// A short-lived system connection event shown inside the collapsed shell.
+    Notice { label: String, until: f64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,6 +67,9 @@ pub trait Module: Send {
     /// Called once at start-up with the UI context, so background work can
     /// wake the UI (`ctx.request_repaint()`) when it has news.
     fn attach(&mut self, _ctx: &egui::Context) {}
+    /// Retention limit for stored user content, in days. `None` means keep
+    /// until the user removes it. Sent from app settings on startup and changes.
+    fn set_retention_days(&mut self, _days: Option<u32>) {}
     /// Called once per UI frame before drawing; drain channels here.
     fn on_tick(&mut self) {}
     /// How soon this module needs another frame while visible (e.g. a ticking

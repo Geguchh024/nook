@@ -1,6 +1,5 @@
-//! The notch shell: a squircle that springs between the collapsed pill and
-//! the expanded panel, painted as glass, hosting the pill badges and the
-//! panel content.
+//! The shell springs between a collapsed pill or top-edge notch and the
+//! expanded panel, painted as glass, hosting badges and panel content.
 //!
 //! The OS window spans the whole width of the monitor's work area, so where
 //! the notch sits (left corner, center, right corner) only moves the shape
@@ -8,7 +7,7 @@
 //! itself never moves. A notch in a corner grows away from its edge.
 
 use crate::anim::{self, ease_out_cubic};
-use crate::geometry::{CORNER_EXPONENT, Squircle, lerp};
+use crate::geometry::{CORNER_EXPONENT, Squircle, lerp, notch_outline, polygon_contains};
 use crate::paint;
 use crate::shell_state::{ShellState, ShellTimings};
 use crate::spring::SpringParams;
@@ -46,6 +45,8 @@ impl Placement {
 #[derive(Clone, Copy, Debug)]
 pub struct ShellMetrics {
     pub collapsed: Vec2,
+    /// Compact bounds used when the shell is in notch mode.
+    pub notch_collapsed: Vec2,
     /// Extra size while the pointer rests on the closed pill.
     pub hover_swell: Vec2,
     pub expanded: Vec2,
@@ -61,6 +62,7 @@ impl Default for ShellMetrics {
     fn default() -> Self {
         Self {
             collapsed: vec2(140.0, 34.0),
+            notch_collapsed: vec2(200.0, 32.0),
             hover_swell: vec2(12.0, 2.0),
             expanded: vec2(568.0, 236.0),
             collapsed_radius: 17.0,
@@ -117,6 +119,8 @@ impl ContentCtx {
 pub struct ShellOutput {
     /// Current shape in window coordinates (points). Drive hit-testing with it.
     pub shape: Squircle,
+    /// Exact outline shared with composition clipping and click-through.
+    pub outline: Vec<Pos2>,
     /// 0 = pill, 1 = panel (may overshoot slightly).
     pub progress: f32,
     /// False when fully hidden (fullscreen app in front).
@@ -137,12 +141,15 @@ pub struct Shell {
     /// Expanded size wanted by the page on show (phone link), instead of
     /// `metrics.expanded`.
     pub expanded_override: Option<Vec2>,
+    /// Use a top-edge notch silhouette instead of the floating pill.
+    pub notch: bool,
     /// Height the OS window must keep: it grows as soon as a taller page
     /// opens, and shrinks only once the shell has settled back down.
     tall: f32,
     id: Id,
     outline: Vec<Pos2>,
     last_shape: Option<Squircle>,
+    last_outline: Vec<Pos2>,
     reveal_start: Option<f64>,
 }
 
@@ -155,10 +162,12 @@ impl Shell {
             placement: Placement::default(),
             hold_open: false,
             expanded_override: None,
+            notch: false,
             tall: metrics.expanded.y,
             id: Id::new("nook-shell"),
             outline: Vec::new(),
             last_shape: None,
+            last_outline: Vec::new(),
             reveal_start: None,
         }
     }
@@ -180,8 +189,13 @@ impl Shell {
 
     /// Left edge for a shell of `width` at anchor fraction `frac`.
     fn left_for(&self, window: Rect, width: f32, frac: f32) -> f32 {
-        let lo = window.min.x + self.metrics.side_margin;
-        let hi = (window.max.x - self.metrics.side_margin - width).max(lo);
+        let side = if self.notch {
+            12.0
+        } else {
+            self.metrics.side_margin
+        };
+        let lo = window.min.x + side;
+        let hi = (window.max.x - side - width).max(lo);
         lerp(lo, hi, frac)
     }
 
@@ -189,7 +203,7 @@ impl Shell {
         let m = &self.metrics;
         let min = pos2(
             self.left_for(window, size.x, frac),
-            window.min.y + m.top_margin,
+            window.min.y + if self.notch { 0.0 } else { m.top_margin },
         );
         let radius = lerp(
             m.collapsed_radius,
@@ -222,6 +236,7 @@ impl Shell {
         let hovered = !hidden
             && (self.hold_open
                 || match (self.last_shape, ctx.input(|i| i.pointer.hover_pos())) {
+                    (Some(_), Some(p)) if self.notch => polygon_contains(&self.last_outline, p),
                     (Some(s), Some(p)) => s.contains(p),
                     _ => false,
                 });
@@ -231,7 +246,10 @@ impl Shell {
             && !hidden
         {
             let resp = ui.interact(shape.rect, self.id.with("bg"), Sense::click());
-            if resp.clicked() {
+            let on_shape = ctx
+                .input(|i| i.pointer.interact_pos())
+                .is_some_and(|p| !self.notch || polygon_contains(&self.last_outline, p));
+            if resp.clicked() && on_shape {
                 self.state.toggle_pin(now);
             }
         }
@@ -243,23 +261,33 @@ impl Shell {
 
         let open = targets.shell_open && !hidden;
         let expanded = self.expanded();
-        let rest = if self.state.is_hovering_closed() {
-            m.collapsed + m.hover_swell
+        let collapsed = if self.notch {
+            m.notch_collapsed
         } else {
             m.collapsed
+        };
+        let rest = if self.state.is_hovering_closed() {
+            collapsed
+                + if self.notch {
+                    vec2(12.0, 2.0)
+                } else {
+                    m.hover_swell
+                }
+        } else {
+            collapsed
         };
         let shell_params = SpringParams::shell();
         let w = anim::spring_from(
             &ctx,
             self.id.with("w"),
-            m.collapsed.x,
+            collapsed.x,
             if open { expanded.x } else { rest.x },
             shell_params,
         );
         let h = anim::spring_from(
             &ctx,
             self.id.with("h"),
-            m.collapsed.y,
+            collapsed.y,
             if open { expanded.y } else { rest.y },
             SpringParams::with_overshoot(220.0, 0.04),
         );
@@ -274,7 +302,7 @@ impl Shell {
 
         // Progress is measured against the regular panel, so a taller page
         // reads as fully open (1.0) instead of re-running the morph.
-        let mut progress = ((h - m.collapsed.y) / (m.expanded.y - m.collapsed.y)).max(0.0);
+        let mut progress = ((h - collapsed.y) / (m.expanded.y - collapsed.y)).max(0.0);
         if expanded.y > m.expanded.y {
             progress = progress.min(1.0);
         }
@@ -291,13 +319,19 @@ impl Shell {
             SpringParams::with_overshoot(240.0, 0.03),
         );
         let shape = self.shape_for(window, vec2(w, h), progress, frac);
-        shape.outline_into(&mut self.outline);
+        if self.notch {
+            self.outline = notch_outline(shape.rect, 12.0, lerp(14.0, 28.0, progress), 12);
+        } else {
+            shape.outline_into(&mut self.outline);
+        }
         self.last_shape = Some(shape);
+        self.last_outline.clone_from(&self.outline);
 
         let visible = opacity > 0.002;
         if !visible {
             return ShellOutput {
                 shape,
+                outline: self.outline.clone(),
                 progress,
                 visible,
                 opacity,
@@ -370,6 +404,7 @@ impl Shell {
 
         ShellOutput {
             shape,
+            outline: self.outline.clone(),
             progress,
             visible,
             opacity,
@@ -398,5 +433,17 @@ mod tests {
         // ...and one in the right corner keeps its right edge.
         let pill = shell.shape_for(window, m.collapsed, 0.0, 1.0).rect;
         assert_eq!(pill.max.x, right.max.x);
+    }
+
+    #[test]
+    fn notch_ear_radius_stays_inside_the_monitor_bounds() {
+        let mut shell = Shell::new(ShellMetrics::default(), ShellTimings::default());
+        shell.notch = true;
+        let window = Rect::from_min_size(Pos2::ZERO, vec2(1536.0, 300.0));
+        let left = shell.shape_for(window, shell.metrics.expanded, 1.0, 0.0);
+        let right = shell.shape_for(window, shell.metrics.expanded, 1.0, 1.0);
+        assert_eq!(left.rect.min.y, 0.0);
+        assert_eq!(left.rect.min.x - 12.0, window.min.x);
+        assert_eq!(right.rect.max.x + 12.0, window.max.x);
     }
 }

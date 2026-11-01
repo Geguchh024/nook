@@ -68,6 +68,8 @@ pub enum MediaCommand {
     PlayPause,
     Next,
     Previous,
+    /// Seek in WinRT 100 ns timeline ticks.
+    Seek(u64),
 }
 
 enum Msg {
@@ -232,13 +234,25 @@ fn run(
 }
 
 fn command(session: &Session, cmd: MediaCommand) -> Result<()> {
-    let op = match cmd {
-        MediaCommand::PlayPause => session.TryTogglePlayPauseAsync(),
-        MediaCommand::Next => session.TrySkipNextAsync(),
-        MediaCommand::Previous => session.TrySkipPreviousAsync(),
+    match cmd {
+        MediaCommand::Seek(ticks) => {
+            session
+                .TryChangePlaybackPositionAsync(ticks.min(i64::MAX as u64) as i64)
+                .api("TryChangePlaybackPositionAsync")?
+                .join()
+                .api("TryChangePlaybackPositionAsync.join")?;
+        }
+        MediaCommand::PlayPause | MediaCommand::Next | MediaCommand::Previous => {
+            let op = match cmd {
+                MediaCommand::PlayPause => session.TryTogglePlayPauseAsync(),
+                MediaCommand::Next => session.TrySkipNextAsync(),
+                MediaCommand::Previous => session.TrySkipPreviousAsync(),
+                MediaCommand::Seek(_) => return Ok(()),
+            }
+            .api("TryControlAsync")?;
+            op.join().api("TryControlAsync.join")?;
+        }
     }
-    .api("TryControlAsync")?;
-    op.join().api("TryControlAsync.join")?;
     Ok(())
 }
 

@@ -2,11 +2,13 @@
 //! [`nook_ui::module::Module`]; [`register_all`] wires them into a registry in
 //! the default layout order, followed by any [`plugins`] found on disk.
 
+pub mod bluetooth;
 pub mod calculator;
 pub mod calendar;
 pub mod clipboard;
 pub mod coffee;
 pub mod color_picker;
+pub mod controls;
 pub mod draw;
 pub mod file_shelf;
 pub mod font_detector;
@@ -27,6 +29,7 @@ pub mod text_extractor;
 pub mod timer;
 pub mod voice_memo;
 pub mod wallpaper;
+pub mod wifi;
 
 use nook_ui::module::Registry;
 
@@ -55,6 +58,9 @@ pub const DEFAULT_ORDER: &[&str] = &[
     "qr_code",
     "voice_memo",
     "plugins",
+    "controls",
+    "wifi",
+    "bluetooth",
 ];
 
 pub fn register_all(reg: &mut Registry) {
@@ -82,4 +88,7 @@ pub fn register_all(reg: &mut Registry) {
     // The plugin manager, then third-party tiles from the plugin folders.
     reg.register(Box::<plugins::PluginsTile>::default());
     plugins::register(reg);
+    reg.register(Box::<controls::Controls>::default());
+    reg.register(Box::<wifi::Wifi>::default());
+    reg.register(Box::<bluetooth::Bluetooth>::default());
 }

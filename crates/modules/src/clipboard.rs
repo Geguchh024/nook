@@ -8,9 +8,9 @@
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{
     Align2, Color32, ColorImage, Id, Pos2, Rect, Response, ScrollArea, Sense, TextureHandle,
-    TextureOptions, Ui, UiBuilder, pos2, vec2,
+    TextureOptions, Ui, pos2, vec2,
 };
-use nook_platform::clipboard::{ClipContent, ClipImage, ClipboardWatcher};
+use nook_platform::clipboard::{self, ClipContent, ClipImage, ClipboardWatcher};
 use nook_ui::bento::tile_header;
 use nook_ui::module::{Module, TileCtx, TileSize};
 use nook_ui::theme::{SIZE_LABEL, TILE_RADIUS, Theme, with_alpha};
@@ -28,6 +28,7 @@ struct Entry {
     id: u64,
     content: ClipContent,
     at: Instant,
+    day: i64,
     texture: Option<TextureHandle>,
 }
 
@@ -61,6 +62,8 @@ impl History {
         if let Some(i) = self.entries.iter().position(|e| e.content == content) {
             let mut e = self.entries.remove(i);
             e.at = Instant::now();
+            let local = nook_platform::system::local_time();
+            e.day = crate::calendar::days_from_civil(local.year, local.month, local.day);
             self.entries.insert(0, e);
             return;
         }
@@ -71,6 +74,10 @@ impl History {
                 id: self.next_id,
                 content,
                 at: Instant::now(),
+                day: {
+                    let local = nook_platform::system::local_time();
+                    crate::calendar::days_from_civil(local.year, local.month, local.day)
+                },
                 texture: None,
             },
         );
@@ -89,6 +96,10 @@ impl History {
     fn remove(&mut self, id: u64) {
         self.entries.retain(|e| e.id != id);
     }
+
+    fn expire(&mut self, max_age: Duration) {
+        self.entries.retain(|entry| entry.at.elapsed() < max_age);
+    }
 }
 
 #[derive(Default)]
@@ -98,23 +109,53 @@ pub struct Clipboard {
     /// Entry last copied back, and when (egui time).
     copied: Option<(u64, f64)>,
     open_page: bool,
+    editing: Option<(u64, String, bool)>,
+    edit_session: u64,
+    edit_focus_pending: bool,
+    retention_days: Option<u32>,
+    message: Option<String>,
+    filter: crate::kit::HistoryFilter,
 }
 
 impl Clipboard {
     fn copy(&mut self, id: u64, now: f64) {
-        let Some(e) = self.history.entries.iter().find(|e| e.id == id) else {
+        let Some(content) = self
+            .history
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .map(|entry| entry.content.clone())
+        else {
             return;
         };
-        if let Some(w) = &self.watcher {
-            w.set(e.content.clone());
+        let result = if let Some(watcher) = &self.watcher {
+            watcher.set(content.clone())
+        } else {
+            clipboard::copy_content(&content)
+        };
+        match result {
+            Ok(()) => {
+                self.copied = Some((id, now));
+                self.message = None;
+            }
+            Err(error) => self.message = Some(format!("Could not copy: {error}")),
         }
-        self.copied = Some((id, now));
     }
 
     fn just_copied(&self, id: u64, now: f64) -> bool {
         self.copied
             .is_some_and(|(c, at)| c == id && now - at < COPIED_FOR)
     }
+}
+
+fn retention_left(at: Instant, days: Option<u32>) -> Option<String> {
+    let duration = Duration::from_secs(u64::from(days?) * 86_400);
+    let remaining = duration.saturating_sub(at.elapsed());
+    let days = remaining.as_secs().div_ceil(86_400).max(1);
+    Some(format!(
+        "{days} {} left",
+        if days == 1 { "day" } else { "days" }
+    ))
 }
 
 /// "now", "5 min", "2 h", "3 d".
@@ -182,10 +223,44 @@ fn hover_box(ui: &mut Ui, rect: Rect, id: Id, radius: f32, theme: &Theme) -> Res
     resp
 }
 
-fn button_at(ui: &mut Ui, center: Pos2, size: f32, glyph: &'static str, theme: &Theme) -> Response {
+fn button_at(
+    ui: &mut Ui,
+    center: Pos2,
+    size: f32,
+    glyph: &'static str,
+    id: Id,
+    visible: bool,
+    theme: &Theme,
+) -> Response {
     let rect = Rect::from_center_size(center, vec2(size, size));
-    let mut child = ui.new_child(UiBuilder::new().max_rect(rect).id_salt(glyph));
-    widgets::icon_button(&mut child, glyph, size, false, theme)
+    let response = ui.interact(rect, id, Sense::click());
+    if visible || response.hovered() {
+        let painter = ui.painter();
+        let fill = if theme.dark {
+            Color32::from_white_alpha(28)
+        } else {
+            Color32::from_black_alpha(20)
+        };
+        if response.hovered() {
+            painter.circle_filled(rect.center(), size * 0.5, fill);
+        }
+        paint::icon(
+            painter,
+            rect.center(),
+            glyph,
+            size * 0.55,
+            if response.hovered() {
+                theme.accent
+            } else {
+                theme.text_dim
+            },
+            false,
+        );
+    }
+    if response.clicked() {
+        nook_ui::sound::play(ui.ctx(), nook_ui::sound::Cue::Tap);
+    }
+    response
 }
 
 impl Module for Clipboard {
@@ -213,18 +288,47 @@ impl Module for Clipboard {
         }
     }
 
+    fn set_retention_days(&mut self, days: Option<u32>) {
+        self.retention_days = days;
+    }
+
     fn on_tick(&mut self) {
-        let Some(w) = &self.watcher else {
-            return;
-        };
-        for content in w.poll() {
-            self.history.push(content);
+        if let Some(watcher) = &self.watcher {
+            for content in watcher.poll() {
+                self.history.push(content);
+            }
+        }
+        if let Some(days) = self.retention_days {
+            let max_age = Duration::from_secs(u64::from(days) * 86_400);
+            let before = self.history.entries.len();
+            self.history.expire(max_age);
+            if before != self.history.entries.len()
+                && let Some((id, _, _)) = self.editing.as_ref()
+                && !self.history.entries.iter().any(|entry| entry.id == *id)
+            {
+                self.editing = None;
+                self.edit_focus_pending = false;
+            }
         }
     }
 
     fn next_repaint(&self, tile_visible: bool) -> Option<Duration> {
         // Let the "Copied" confirmation expire on time.
-        (tile_visible && self.copied.is_some()).then(|| Duration::from_millis(250))
+        let copy_feedback =
+            (tile_visible && self.copied.is_some()).then_some(Duration::from_millis(250));
+        let expiry = self.retention_days.and_then(|days| {
+            let max_age = Duration::from_secs(u64::from(days) * 86_400);
+            self.history
+                .entries
+                .iter()
+                .map(|entry| max_age.saturating_sub(entry.at.elapsed()))
+                .min()
+        });
+        match (copy_feedback, expiry) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(value), None) | (None, Some(value)) => Some(value),
+            (None, None) => None,
+        }
     }
 
     fn take_page_request(&mut self) -> bool {
@@ -245,6 +349,8 @@ impl Module for Clipboard {
             pos2(rect.max.x - 8.0, rect.min.y + 9.0),
             20.0,
             icons::ARROWS_OUT_SIMPLE,
+            ui.id().with("clip-show-all"),
+            true,
             theme,
         )
         .on_hover_text("Show all")
@@ -345,6 +451,25 @@ impl Module for Clipboard {
             self.history.entries.clear();
         }
 
+        if let Some(message) = &self.message {
+            ui.painter().text(
+                pos2(body.min.x + 4.0, body.max.y - 4.0),
+                Align2::LEFT_BOTTOM,
+                message,
+                Theme::font(SIZE_LABEL - 1.0),
+                theme.text_dim,
+            );
+        }
+
+        let filter_area =
+            Rect::from_min_size(body.min, vec2(body.width(), body.height().min(220.0)));
+        let mut filter_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(filter_area)
+                .id_salt("clipboard-filter"),
+        );
+        let filter_height = crate::kit::history_filter(&mut filter_ui, &mut self.filter, theme);
+        let content_top = (body.min.y + filter_height + 6.0).min(body.max.y);
         if self.history.entries.is_empty() {
             ui.painter().text(
                 body.center(),
@@ -356,56 +481,81 @@ impl Module for Clipboard {
             return false;
         }
 
-        const COLS: usize = 4;
         const GAP: f32 = 8.0;
-        let card_w = (body.width() - GAP * (COLS - 1) as f32) / COLS as f32;
-        let card_h = 76.0;
+        const CARD_H: f32 = 76.0;
         let ctx = ui.ctx().clone();
         let mut copy = None;
         let mut delete = None;
-        let ids: Vec<u64> = self.history.entries.iter().map(|e| e.id).collect();
-        let rows = ids.len().div_ceil(COLS);
+        let mut edit = None;
+        let ids: Vec<u64> = self
+            .history
+            .entries
+            .iter()
+            .filter(|entry| {
+                let text = match &entry.content {
+                    ClipContent::Text(text) => text.as_str(),
+                    ClipContent::Image(_) => "",
+                };
+                self.filter.matches(text, entry.day)
+            })
+            .map(|e| e.id)
+            .collect();
 
+        if ids.is_empty() {
+            ui.painter().text(
+                pos2(body.center().x, content_top + 44.0),
+                Align2::CENTER_CENTER,
+                "No clipboard items match this search or date.",
+                Theme::font(SIZE_LABEL),
+                theme.text_dim,
+            );
+            return false;
+        }
+
+        let list_area = Rect::from_min_max(pos2(body.min.x, content_top), body.max);
+        let mut list_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(list_area)
+                .id_salt("clipboard-results"),
+        );
         ScrollArea::vertical()
             .id_salt("nook-clip-scroll")
-            .max_height(body.height())
+            .max_height((body.height() - (content_top - body.min.y) - 16.0).max(80.0))
             .auto_shrink([false, false])
-            .show(ui, |ui| {
+            .show(&mut list_ui, |ui| {
                 let (area, _) = ui.allocate_exact_size(
-                    vec2(body.width(), rows as f32 * (card_h + GAP) - GAP),
+                    vec2(body.width(), ids.len() as f32 * (CARD_H + GAP) - GAP),
                     Sense::hover(),
                 );
                 for (i, id) in ids.iter().copied().enumerate() {
-                    let (r, c) = (i / COLS, i % COLS);
                     let card = Rect::from_min_size(
-                        pos2(
-                            area.min.x + c as f32 * (card_w + GAP),
-                            area.min.y + r as f32 * (card_h + GAP),
-                        ),
-                        vec2(card_w, card_h),
+                        pos2(area.min.x, area.min.y + i as f32 * (CARD_H + GAP)),
+                        vec2(area.width(), CARD_H),
                     );
                     if !ui.is_rect_visible(card) {
                         continue;
                     }
                     widgets::card(ui.painter(), card, theme);
                     let resp = hover_box(ui, card, Id::new(("clip-card", id)), TILE_RADIUS, theme);
-                    if resp.clicked() {
-                        copy = Some(id);
-                    }
                     let copied = self.just_copied(id, now);
                     let Some(entry) = self.history.entries.iter_mut().find(|e| e.id == id) else {
                         continue;
                     };
-                    let inner = card.shrink(10.0);
-                    let footer_y = inner.max.y - 5.0;
+                    let actions_w = 92.0;
+                    let inner = card.shrink2(vec2(12.0, 8.0));
+                    let content = Rect::from_min_max(
+                        inner.min,
+                        pos2((inner.max.x - actions_w).max(inner.min.x), inner.max.y),
+                    );
+                    let action_y = inner.center().y;
                     let label = match entry.content.clone() {
                         ClipContent::Text(t) => {
                             text_block(
                                 ui,
-                                inner.min,
+                                pos2(content.min.x, content.min.y + 1.0),
                                 t.trim(),
-                                inner.width(),
-                                3,
+                                content.width(),
+                                2,
                                 Theme::font(SIZE_LABEL),
                                 theme.text,
                             );
@@ -414,8 +564,8 @@ impl Module for Clipboard {
                         ClipContent::Image(_) => match entry.texture(&ctx) {
                             Some((tex, img)) => {
                                 let area = Rect::from_min_max(
-                                    inner.min,
-                                    pos2(inner.max.x, footer_y - 9.0),
+                                    content.min,
+                                    pos2(content.max.x, content.max.y),
                                 );
                                 image(ui, fit(area, img.thumb_size), tex, 4.0);
                                 format!("{}×{}", img.width, img.height)
@@ -426,31 +576,160 @@ impl Module for Clipboard {
                     let (footer, color) = if copied {
                         ("Copied".to_owned(), theme.accent_fg())
                     } else {
-                        (format!("{label} · {}", age(entry.at)), theme.text_faint)
+                        let remaining = retention_left(entry.at, self.retention_days)
+                            .map(|text| format!(" · {text}"))
+                            .unwrap_or_default();
+                        (
+                            format!("{label} · {}{remaining}", age(entry.at)),
+                            theme.text_faint,
+                        )
                     };
                     ui.painter().text(
-                        pos2(inner.min.x, footer_y),
+                        pos2(content.min.x, content.max.y - 1.0),
                         Align2::LEFT_CENTER,
                         footer,
                         Theme::font(SIZE_LABEL - 1.0),
                         color,
                     );
-                    if resp.hovered()
-                        && button_at(
+                    let copy_resp = button_at(
+                        ui,
+                        pos2(inner.max.x - 72.0, action_y),
+                        24.0,
+                        icons::COPY_SIMPLE,
+                        Id::new(("clip-copy", id)),
+                        resp.hovered(),
+                        theme,
+                    )
+                    .on_hover_text("Copy")
+                    .clicked();
+                    let mut action_clicked = copy_resp;
+                    if copy_resp {
+                        copy = Some(id);
+                    }
+                    if let ClipContent::Text(text) = &entry.content {
+                        let long = text.chars().count() > 180;
+                        let edit_resp = button_at(
                             ui,
-                            pos2(card.max.x - 13.0, card.max.y - 13.0),
-                            20.0,
-                            icons::X,
+                            pos2(inner.max.x - 44.0, action_y),
+                            24.0,
+                            if long {
+                                icons::ARROWS_OUT_SIMPLE
+                            } else {
+                                icons::PENCIL_SIMPLE
+                            },
+                            Id::new(("clip-edit", id)),
+                            resp.hovered(),
                             theme,
                         )
-                        .on_hover_text("Remove")
-                        .clicked()
-                    {
+                        .on_hover_text(if long {
+                            "Enlarge and edit text"
+                        } else {
+                            "Edit text"
+                        })
+                        .clicked();
+                        if edit_resp {
+                            action_clicked = true;
+                            edit = Some((id, text.clone(), long));
+                        }
+                    }
+                    let delete_resp = button_at(
+                        ui,
+                        pos2(inner.max.x - 14.0, action_y),
+                        24.0,
+                        icons::TRASH,
+                        Id::new(("clip-delete", id)),
+                        resp.hovered(),
+                        theme,
+                    )
+                    .on_hover_text("Delete")
+                    .clicked();
+                    if delete_resp {
+                        action_clicked = true;
                         delete = Some(id);
                         copy = None;
+                        edit = None;
+                    }
+                    if resp.clicked() && !action_clicked {
+                        copy = Some(id);
                     }
                 }
             });
+
+        if let Some((id, text, enlarged)) = edit {
+            self.editing = Some((id, text, enlarged));
+            self.edit_session = self.edit_session.wrapping_add(1);
+            self.edit_focus_pending = true;
+        }
+        let mut save_edit = None;
+        let mut cancel_edit = false;
+        let mut editor_response = None;
+        if let Some((id, text, enlarged)) = &mut self.editing {
+            egui::Window::new("Edit clipboard text")
+                .id(Id::new("nook-clipboard-edit").with(self.edit_session))
+                .collapsible(false)
+                .resizable(true)
+                .default_width(if *enlarged { 640.0 } else { 440.0 })
+                .default_height(if *enlarged { 500.0 } else { 340.0 })
+                .show(ui.ctx(), |ui| {
+                    let editor_size = vec2(
+                        ui.available_width(),
+                        (ui.available_height() - 38.0).max(120.0),
+                    );
+                    editor_response = Some(
+                        ui.add_sized(
+                            editor_size,
+                            egui::TextEdit::multiline(text)
+                                .desired_width(ui.available_width())
+                                .desired_rows(if *enlarged { 20 } else { 8 })
+                                .cursor_at_end(true),
+                        ),
+                    );
+                    ui.horizontal(|ui| {
+                        if widgets::icon_button(ui, icons::CHECK, 26.0, true, theme)
+                            .on_hover_text("Save and copy")
+                            .clicked()
+                        {
+                            save_edit = Some((*id, text.clone()));
+                        }
+                        ui.label(egui::RichText::new("Save and copy").color(theme.text_dim));
+                        if ui.button("Cancel").clicked() {
+                            cancel_edit = true;
+                        }
+                    });
+                });
+        }
+        if self.edit_focus_pending
+            && let Some(response) = editor_response
+        {
+            response.request_focus();
+            self.edit_focus_pending = false;
+        }
+        if let Some((id, text)) = save_edit {
+            if let Some(entry) = self.history.entries.iter_mut().find(|entry| entry.id == id) {
+                entry.content = ClipContent::Text(text.clone());
+                entry.at = Instant::now();
+                let local = nook_platform::system::local_time();
+                entry.day = crate::calendar::days_from_civil(local.year, local.month, local.day);
+                let content = ClipContent::Text(text);
+                let result = if let Some(watcher) = &self.watcher {
+                    watcher.set(content.clone())
+                } else {
+                    clipboard::copy_content(&content)
+                };
+                match result {
+                    Ok(()) => {
+                        self.copied = Some((id, now));
+                        self.message = None;
+                    }
+                    Err(error) => self.message = Some(format!("Could not copy: {error}")),
+                }
+            }
+            self.editing = None;
+            self.edit_focus_pending = false;
+        } else if cancel_edit {
+            self.editing = None;
+            self.edit_focus_pending = false;
+        }
 
         if let Some(id) = delete {
             self.history.remove(id);

@@ -1,7 +1,7 @@
 # Nook
 
-A floating notch for Windows 10/11. A small glass pill sits at the top
-of the screen (center, or either corner). Hover it and it springs open into a bento grid of
+A floating notch for Windows 10/11. Choose the floating pill or a top-edge
+notch in Settings > Style. Hover it and it springs open into a bento grid of
 utilities. Move away and it folds back. It idles at 0% CPU.
 
 Built in Rust with eframe/egui (OpenGL), the `windows` crate (Win32, DWM,
@@ -148,6 +148,19 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
   collapse.
 - **Click** the glass (or empty space on any page), press **Ctrl+Alt+N**,
   or use the tray's **Pin open** to keep the panel open. A small pin shows at the top center.
+- UI actions have short sounds: buttons, switches, opening the panel, and
+  media transport each use a matching cue. Volume, brightness and media
+  seeking use a quiet movement tick throttled while dragging. Toggle
+  **Sound effects** in Settings → Behavior to silence or restore all Nook UI
+  cues. Playback is event-driven and bundled with the app; it adds no idle polling.
+- **Style:** Settings, Style: Pill or Notch. Pill floats below the work-area
+  edge; Notch touches the monitor's top edge with curved ears. Both styles
+  open into the same panel in place.
+- **Notch display:** choose Compact, Standard or Large size and Classic,
+  Digital or Dot matrix clock in Settings. These choices apply live.
+- **Notes and clipboard retention:** Settings → Advanced controls how long
+  saved notes and in-memory clipboard history are kept (1, 3, 5, 7, 10 or 15
+  days, 1 month, or Never). Finite periods show the remaining days in the list.
 - **Position:** Settings, Position: Left, Center or Right. In a corner
   the panel opens toward the other side.
 - **Always on top:** on by default. Turn it off in Settings or the tray
@@ -227,6 +240,25 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
 
 - **Tools** (second page of the grid). Each opens a full page; made Wide
   or Large, most show more on the tile itself.
+  - **Quick Controls** (Small by default): clicking the tile opens its page
+    without resizing the tile. It includes system master volume and mute,
+    brightness for the display holding Nook (DDC/CI, with a WMI fallback for
+    supported laptop panels), and experimental **Mute notifications**. Slider
+    thumbs track immediately while Windows writes are coalesced in the background.
+    The Sound effects setting uses a speaker icon to mute/unmute Nook cues.
+    **Output and app speakers** lists active Windows output devices and audio
+    apps with their available session icons; output and per-app routing open
+    Windows Sound and Volume Mixer settings, where those choices are applied.
+  - **Wi-Fi** and **Bluetooth** are separate Small-by-default tiles. Open a
+    tile to scan nearby networks/devices and connect, pair, or remove them.
+    Wi-Fi shows signal quality (Weak/Fair/Good/Excellent), not a misleading
+    percentage. Clicking an open or saved network connects immediately;
+    password-protected networks prompt for the password. Bluetooth separates
+    connected devices from nearby/paired devices and shows battery when
+    Windows reports it. Clicking a paired device opens Windows' connection UI
+    because Bluetooth connection is profile-specific. Both pages have More
+    settings links to Windows Settings; connection changes are announced
+    briefly inside the notch.
   - **QR code** (Ctrl+Alt+Q makes one from the clipboard): paste a link and
     the code draws as you type. Styles: dots, liquid, round lines, rounded,
     square; corner eyes round, circle, leaf or square; solid colors,
@@ -392,11 +424,14 @@ drained in `on_tick`.
 - [x] Timer: countdown (scroll or +/- to set, sound at zero, snooze) and
   stopwatch, ring and time mirrored in the pill. Pomodoro cycles still to do
 - [x] Clipboard history: text and images, in memory only, skips content
-  marked private; the expand button opens the full history page
+  marked private; the full page shows one responsive card per item. Hover to
+  copy or delete, and edit text entries in place before saving them back to
+  the clipboard.
 - [x] Color picker: loupe with zoom and pixel nudging, HEX/RGB/HSL/HSV/OKLCH,
   history page, Ctrl+Alt+P
-- [x] Media (SMTC): title, artist, album art, progress, previous /
-  play-pause / next; a note glyph in the pill while playing
+- [x] Media (SMTC): title, artist, album art, a full controller page with
+  seek bar and durations, previous / play-pause / next; a note glyph in the
+  pill while playing
 
 **Settings panel**
 

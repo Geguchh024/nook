@@ -1,6 +1,9 @@
 //! Settings: the gear tile in the bento grid and the in-notch settings page.
 
-use crate::config::{AccentSource, Config, GrainSize, Material, MonitorMode, Renderer};
+use crate::config::{
+    AccentSource, Config, GrainSize, Material, MonitorMode, NotchSize, Renderer, RetentionPeriod,
+    ShellStyle,
+};
 use crate::update::{self, Status};
 use egui::{
     Align, Align2, Area, Color32, Id, Layout, Order, Rect, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
@@ -20,11 +23,11 @@ const GAP: f32 = 8.0;
 const HEADER: f32 = 28.0;
 const ROW: f32 = 28.0;
 /// Height of the Appearance and Behavior cards (title + four rows).
-const TOP_CARD: f32 = 154.0;
+const TOP_CARD: f32 = 232.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
-const BODY: [f32; 2] = [4.0 * ROW + 14.0, 3.0 * ROW + 28.0];
+const BODY: [f32; 2] = [4.0 * ROW + 14.0, 5.0 * ROW + 36.0];
 /// Page height with every section collapsed, panel padding included.
 const BASE: f32 =
     2.0 * PANEL_PADDING + HEADER + GAP + TOP_CARD + GAP + DISCLOSURE + GAP + DISCLOSURE;
@@ -204,6 +207,51 @@ pub fn page(
 
             let mut lui = card_ui(ui, left);
             section_title(&mut lui, "Appearance", theme);
+            let mut style_idx = usize::from(cfg.shell_style == ShellStyle::Notch);
+            if row(&mut lui, "Style", theme, |ui| {
+                widgets::segmented(ui, &["Pill", "Notch"], &mut style_idx, theme)
+            }) {
+                cfg.shell_style = [ShellStyle::Pill, ShellStyle::Notch][style_idx];
+                out.changed = true;
+            }
+            let mut notch_size_idx = NotchSize::ALL
+                .iter()
+                .position(|&size| size == cfg.notch_size)
+                .unwrap_or(1);
+            if row(&mut lui, "Notch size", theme, |ui| {
+                if cfg.shell_style != ShellStyle::Notch {
+                    ui.disable();
+                }
+                widgets::segmented(
+                    ui,
+                    &["Compact", "Standard", "Large"],
+                    &mut notch_size_idx,
+                    theme,
+                )
+            }) {
+                cfg.notch_size = NotchSize::ALL[notch_size_idx];
+                out.changed = true;
+            }
+            let mut clock_idx = match cfg.clock_style {
+                crate::config::ClockStyle::Classic => 0,
+                crate::config::ClockStyle::Digital => 1,
+                crate::config::ClockStyle::DotMatrix => 2,
+            };
+            if row(&mut lui, "Clock", theme, |ui| {
+                widgets::segmented(
+                    ui,
+                    &["Classic", "Digital", "Dot matrix"],
+                    &mut clock_idx,
+                    theme,
+                )
+            }) {
+                cfg.clock_style = [
+                    crate::config::ClockStyle::Classic,
+                    crate::config::ClockStyle::Digital,
+                    crate::config::ClockStyle::DotMatrix,
+                ][clock_idx];
+                out.changed = true;
+            }
             let mut theme_idx = match cfg.theme {
                 ThemeMode::Auto => 0,
                 ThemeMode::Dark => 1,
@@ -248,15 +296,6 @@ pub fn page(
                 cfg.placement = Placement::ALL[pos_idx];
                 out.changed = true;
             }
-            let mut hide = cfg.hide_in_fullscreen;
-            if row(&mut lui, "Hide in fullscreen", theme, |ui| {
-                widgets::toggle(ui, &mut hide, theme)
-                    .on_hover_text("Fade the notch out while a game or video is fullscreen")
-            }) {
-                cfg.hide_in_fullscreen = hide;
-                out.changed = true;
-            }
-
             let mut rui = card_ui(ui, right);
             section_title(&mut rui, "Behavior", theme);
             let mut mon_idx = match cfg.monitor {
@@ -293,6 +332,37 @@ pub fn page(
             }) {
                 cfg.launch_at_startup = startup;
                 out.startup_toggled = true;
+                out.changed = true;
+            }
+            let mut sounds = cfg.sound_effects;
+            if row(&mut rui, "Sound effects", theme, |ui| {
+                widgets::icon_button(
+                    ui,
+                    if sounds {
+                        icons::SPEAKER_HIGH
+                    } else {
+                        icons::SPEAKER_SLASH
+                    },
+                    28.0,
+                    sounds,
+                    theme,
+                )
+                .on_hover_text(if sounds {
+                    "Mute Nook sound effects"
+                } else {
+                    "Unmute Nook sound effects"
+                })
+            }) {
+                sounds = !sounds;
+                cfg.sound_effects = sounds;
+                out.changed = true;
+            }
+            let mut hide = cfg.hide_in_fullscreen;
+            if row(&mut rui, "Hide in fullscreen", theme, |ui| {
+                widgets::toggle(ui, &mut hide, theme)
+                    .on_hover_text("Fade the notch out while a game or video is fullscreen")
+            }) {
+                cfg.hide_in_fullscreen = hide;
                 out.changed = true;
             }
 
@@ -656,6 +726,15 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
         "Daily: version, opens, minutes, tools used",
         theme,
     );
+    if retention_row(
+        &mut rui,
+        "Notes keep for",
+        &mut cfg.notes_retention,
+        "notes-retention",
+        theme,
+    ) {
+        out.changed = true;
+    }
 
     let mut renderer_idx = match cfg.renderer {
         Renderer::Auto => 0,
@@ -671,9 +750,21 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
     }
     hint(
         &mut lui,
-        &format!("Using {} · applies after restart", crate::diag::active_renderer()),
+        &format!(
+            "Using {} · applies after restart",
+            crate::diag::active_renderer()
+        ),
         theme,
     );
+    if retention_row(
+        &mut lui,
+        "Clipboard keep for",
+        &mut cfg.clipboard_retention,
+        "clipboard-retention",
+        theme,
+    ) {
+        out.changed = true;
+    }
 
     // "Open log" at the right, level with the Renderer row.
     rui.add_space(ROW - 26.0);
@@ -683,14 +774,41 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
         pos2(log_row.max.x - 120.0, log_row.center().y - 13.0),
         vec2(120.0, 26.0),
     );
-    if nook_modules::kit::button(ui, open_log, "Open log", Some(icons::FILE_TEXT), false, theme)
-        .on_hover_text("Shows nook.log in Explorer, to attach to a bug report")
-        .clicked()
+    if nook_modules::kit::button(
+        ui,
+        open_log,
+        "Open log",
+        Some(icons::FILE_TEXT),
+        false,
+        theme,
+    )
+    .on_hover_text("Shows nook.log in Explorer, to attach to a bug report")
+    .clicked()
         && let Some(path) = crate::diag::log_path()
         && let Err(e) = nook_platform::shell::reveal(&path)
     {
         tracing::warn!("revealing log: {e}");
     }
+}
+
+fn retention_row(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut RetentionPeriod,
+    id: &'static str,
+    theme: &Theme,
+) -> bool {
+    row(ui, label, theme, |ui| {
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(value.label())
+            .width(100.0)
+            .show_ui(ui, |ui| {
+                for period in RetentionPeriod::ALL {
+                    ui.selectable_value(value, period, period.label());
+                }
+            })
+            .response
+    })
 }
 
 /// Small faint line under a row.
@@ -740,5 +858,6 @@ fn row(
             .max_rect(rect)
             .layout(Layout::right_to_left(Align::Center)),
     );
-    control(&mut cui).changed()
+    let response = control(&mut cui);
+    response.changed() || response.clicked()
 }
