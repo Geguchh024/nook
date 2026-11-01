@@ -230,6 +230,10 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
 
 - **Tools** (second page of the grid). Each opens a full page; made Wide
   or Large, most show more on the tile itself.
+  - **Quick Controls:** Wi-Fi and Bluetooth when Windows exposes a radio,
+    master volume and mute when an audio endpoint is available, and an
+    experimental **Mute notifications** toggle. Brightness is unavailable in
+    this build.
   - **QR code** (Ctrl+Alt+Q makes one from the clipboard): paste a link and
     the code draws as you type. Styles: dots, liquid, round lines, rounded,
     square; corner eyes round, circle, leaf or square; solid colors,

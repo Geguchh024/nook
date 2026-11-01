@@ -1,5 +1,12 @@
 # Engineering notes
 
+## Quick Controls limitations
+
+- Wi-Fi and Bluetooth are exposed only when WinRT radio access is allowed and that radio exists. Windows may deny radio access on some device or account configurations.
+- **Mute notifications** is experimental. Windows has no stable public DND API for this unpackaged app, so this option writes `HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications\ToastEnabled`.
+- Brightness controls are not implemented in this build; no WMI or DDC/CI helper is included, so no nonfunctional brightness slider is shown.
+- Quick Controls reads state when its page opens and after user actions. The worker sleeps on its command channel while idle.
+
 Limits hit while building the shell on egui/eframe, how each one is handled,
 and the defaults chosen where the spec left room. Measured on Windows 11
 build 26300, 1920x1080 at 125% scale, AMD GPU.

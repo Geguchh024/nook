@@ -187,7 +187,7 @@ impl Shell {
     /// Left edge for a shell of `width` at anchor fraction `frac`.
     fn left_for(&self, window: Rect, width: f32, frac: f32) -> f32 {
         let side = if self.notch {
-            0.0
+            12.0
         } else {
             self.metrics.side_margin
         };
@@ -430,5 +430,17 @@ mod tests {
         // ...and one in the right corner keeps its right edge.
         let pill = shell.shape_for(window, m.collapsed, 0.0, 1.0).rect;
         assert_eq!(pill.max.x, right.max.x);
+    }
+
+    #[test]
+    fn notch_ear_radius_stays_inside_the_monitor_bounds() {
+        let mut shell = Shell::new(ShellMetrics::default(), ShellTimings::default());
+        shell.notch = true;
+        let window = Rect::from_min_size(Pos2::ZERO, vec2(1536.0, 300.0));
+        let left = shell.shape_for(window, shell.metrics.expanded, 1.0, 0.0);
+        let right = shell.shape_for(window, shell.metrics.expanded, 1.0, 1.0);
+        assert_eq!(left.rect.min.y, 0.0);
+        assert_eq!(left.rect.min.x - 12.0, window.min.x);
+        assert_eq!(right.rect.max.x + 12.0, window.max.x);
     }
 }

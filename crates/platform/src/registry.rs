@@ -3,8 +3,8 @@
 use crate::{Result, check, wide};
 use windows::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
-    RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
+    HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_DWORD, REG_SZ, RRF_RT_REG_DWORD,
+    RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
 };
 use windows::core::PCWSTR;
 
@@ -41,6 +41,23 @@ pub fn read_dword(hive: Hive, subkey: &str, value: &str) -> Option<u32> {
         )
     };
     err.is_ok().then_some(data)
+}
+
+/// Writes a `REG_DWORD`, creating the key if needed.
+pub fn write_dword(hive: Hive, subkey: &str, value: &str, data: u32) -> crate::Result<()> {
+    let (k, v) = (wide(subkey), wide(value));
+    // SAFETY: data points to a live u32 for the duration of the call.
+    let err = unsafe {
+        RegSetKeyValueW(
+            hive.key(),
+            PCWSTR(k.as_ptr()),
+            PCWSTR(v.as_ptr()),
+            REG_DWORD.0,
+            Some(&data as *const u32 as *const _),
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    check("RegSetKeyValueW", err)
 }
 
 /// Reads a `REG_SZ`; `None` if missing.

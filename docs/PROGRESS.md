@@ -17,3 +17,11 @@
 - Updated README usage notes for both shell styles.
 - Verification: `cargo test --workspace --offline` passed with `APPDATA` redirected to a writable workspace directory. `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. `cargo fmt --all --check` still reports formatting differences in untouched repository files; all edited Rust files were formatted directly.
 - Controls module (step 3) remains to be implemented.
+
+## Step 3 — Quick Controls
+
+- Added a responsive Controls page and background worker using channels; no idle polling.
+- Added Wi-Fi/Bluetooth radio helpers, Windows master volume/mute, and the experimental toast notification registry option.
+- Brightness is reported unavailable because no WMI or DDC/CI implementation is present. Unsupported radios and audio endpoints are omitted from the controls.
+- Workspace tests and workspace Clippy pass with the controls module and added Windows features.
+- Brightness remains unavailable: this build has no WMI or DDC/CI implementation. Radio and volume behavior still needs a hardware session to verify.

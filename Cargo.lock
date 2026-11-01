@@ -2170,6 +2170,7 @@ name = "nook-modules"
 version = "0.2.1"
 dependencies = [
  "base64",
+ "crossbeam-channel",
  "egui",
  "egui-phosphor",
  "if-addrs",

@@ -7,6 +7,7 @@ pub mod calendar;
 pub mod clipboard;
 pub mod coffee;
 pub mod color_picker;
+pub mod controls;
 pub mod draw;
 pub mod file_shelf;
 pub mod font_detector;
@@ -55,6 +56,7 @@ pub const DEFAULT_ORDER: &[&str] = &[
     "qr_code",
     "voice_memo",
     "plugins",
+    "controls",
 ];
 
 pub fn register_all(reg: &mut Registry) {
@@ -82,4 +84,5 @@ pub fn register_all(reg: &mut Registry) {
     // The plugin manager, then third-party tiles from the plugin folders.
     reg.register(Box::<plugins::PluginsTile>::default());
     plugins::register(reg);
+    reg.register(Box::<controls::Controls>::default());
 }
