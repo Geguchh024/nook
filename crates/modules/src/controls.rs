@@ -285,6 +285,7 @@ impl Module for Controls {
                                 let response =
                                     widgets::slider(ui, &mut volume, available, 0, theme);
                                 if response.changed() {
+                                    nook_ui::sound::scrub(ui.ctx(), response.id);
                                     self.volume_display = Some(volume);
                                     self.volume_pending = Some(volume);
                                     self.volume_due =
@@ -336,6 +337,7 @@ impl Module for Controls {
                                 let response =
                                     widgets::slider(ui, &mut brightness, available, 0, theme);
                                 if response.changed() {
+                                    nook_ui::sound::scrub(ui.ctx(), response.id);
                                     self.brightness_display = Some(brightness);
                                 }
                                 if response.drag_stopped() || response.clicked() {

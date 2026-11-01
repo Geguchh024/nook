@@ -19,6 +19,14 @@ pub fn toggle(ui: &mut Ui, on: &mut bool, theme: &Theme) -> Response {
     if resp.clicked() {
         *on = !*on;
         resp.mark_changed();
+        crate::sound::play(
+            ui.ctx(),
+            if *on {
+                crate::sound::Cue::ToggleOn
+            } else {
+                crate::sound::Cue::ToggleOff
+            },
+        );
     }
     let ctx = ui.ctx();
     let t = anim::spring(
@@ -110,6 +118,7 @@ pub fn segmented(ui: &mut Ui, options: &[&str], selected: &mut usize, theme: &Th
         if i != *selected {
             *selected = i;
             resp.mark_changed();
+            crate::sound::play(ui.ctx(), crate::sound::Cue::Tap);
         }
     }
     let pos = anim::spring(
@@ -248,6 +257,9 @@ pub fn icon_button(
     theme: &Theme,
 ) -> Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
+    if resp.clicked() {
+        crate::sound::play(ui.ctx(), crate::sound::Cue::Tap);
+    }
     let hover = anim::spring(
         ui.ctx(),
         resp.id.with("hover"),

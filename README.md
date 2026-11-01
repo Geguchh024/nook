@@ -148,6 +148,10 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
   collapse.
 - **Click** the glass (or empty space on any page), press **Ctrl+Alt+N**,
   or use the tray's **Pin open** to keep the panel open. A small pin shows at the top center.
+- UI actions have short sounds: buttons, switches, opening the panel, and
+  media transport each use a matching cue. Volume, brightness and media
+  seeking use a quiet movement tick throttled while dragging. Playback is
+  event-driven and bundled with the app; it adds no idle polling.
 - **Style:** Settings, Style: Pill or Notch. Pill floats below the work-area
   edge; Notch touches the monitor's top edge with curved ears. Both styles
   open into the same panel in place.

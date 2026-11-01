@@ -33,6 +33,23 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+fn play_ui_sound(cue: nook_ui::sound::Cue) {
+    use nook_ui::sound::Cue;
+    let bytes: &'static [u8] = match cue {
+        Cue::Tap => include_bytes!("../../../assets/Sounds/wav/user_tap.wav"),
+        Cue::ToggleOn => include_bytes!("../../../assets/Sounds/wav/nook_toggle_on.wav"),
+        Cue::ToggleOff => include_bytes!("../../../assets/Sounds/wav/user_toggle_off.wav"),
+        Cue::Expand => include_bytes!("../../../assets/Sounds/wav/user_expand.wav"),
+        Cue::TileExpand => include_bytes!("../../../assets/Sounds/wav/nook_expand.wav"),
+        Cue::Collapse => include_bytes!("../../../assets/Sounds/wav/nook_collapse.wav"),
+        Cue::Media => include_bytes!("../../../assets/Sounds/wav/user_media.wav"),
+        Cue::Scrub => include_bytes!("../../../assets/Sounds/wav/nook_scrub.wav"),
+    };
+    if let Err(error) = nook_platform::audio::play_memory(bytes) {
+        tracing::debug!("UI sound playback failed: {error}");
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Page {
     Bento,
@@ -1089,6 +1106,8 @@ impl eframe::App for NookApp {
         #[cfg(feature = "debug-overlay")]
         self.overlay.begin();
         let ctx = ui.ctx().clone();
+        nook_ui::sound::install(&ctx, play_ui_sound);
+        nook_ui::sound::begin_frame(&ctx);
         let theme = Theme::styled(
             self.dark(),
             self.accent(),
@@ -1107,6 +1126,7 @@ impl eframe::App for NookApp {
         let update_status = self.updater.status();
         let editing = self.editing;
         let page = self.page;
+        let was_open = self.shell.state.is_open();
         let badges: Vec<Badge> = self
             .registry
             .visible()
@@ -1178,6 +1198,17 @@ impl eframe::App for NookApp {
                 }
             },
         );
+        let is_open = self.shell.state.is_open();
+        if was_open != is_open {
+            nook_ui::sound::play(
+                &ctx,
+                if is_open {
+                    nook_ui::sound::Cue::Expand
+                } else {
+                    nook_ui::sound::Cue::Collapse
+                },
+            );
+        }
 
         if let Some(id) = clicked {
             self.stats.tool(id);
@@ -1281,6 +1312,9 @@ impl eframe::App for NookApp {
             }
         } else if self.frames < 3 {
             ctx.request_repaint();
+        }
+        if ctx.input(|input| input.pointer.primary_clicked()) && !nook_ui::sound::played(&ctx) {
+            nook_ui::sound::play(&ctx, nook_ui::sound::Cue::Tap);
         }
     }
 

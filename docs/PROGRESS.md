@@ -27,3 +27,12 @@
 - Volume is Windows master volume (system-wide); brightness targets the monitor containing the Nook window through DDC/CI. Laptop panels without DDC/CI remain unavailable.
 - `cargo test --workspace --offline --quiet` passed (72 modules, 39 platform, 33 UI, 12 app tests; 7 ignored) with `APPDATA` redirected to a writable workspace directory. `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
 - Launched the updated app with the preview config and Settings open. Radio and brightness behavior still needs a hardware session to verify.
+
+## Step 4 — UI sounds
+
+- Added event-driven cues for button clicks, switch on/off, panel expansion/collapse, and media transport. The app bundles the selected user-provided sounds and several original generated WAV cues.
+- Added a short slider movement tick for volume, brightness and media seeking, throttled to 65 ms per slider so audio playback remains light while dragging.
+- Playback uses the existing Windows `PlaySoundW` path and static embedded WAV data; no background thread or idle polling was added.
+- Added `assets/Sounds/generate_ui_sounds.py` to reproduce the original tones. The user-provided MP3s remain alongside the derived, trimmed WAV assets.
+- Verification: `cargo test --workspace --offline --quiet` passed (12 app, 72 modules, 39 platform and 33 UI tests; 7 ignored). `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+- Launched the rebuilt app with the isolated preview config (`shell_style = "notch"`) and Settings open.

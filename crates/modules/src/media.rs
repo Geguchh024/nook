@@ -370,6 +370,7 @@ impl Module for Media {
                 })
                 .inner;
             if response.changed() {
+                nook_ui::sound::scrub(ui.ctx(), response.id);
                 self.seek_preview = Some(fraction as f64 * duration);
             }
             if response.drag_stopped() || response.clicked() {
@@ -407,6 +408,7 @@ impl Module for Media {
             .on_hover_text("Previous")
             .clicked()
         {
+            nook_ui::sound::play(ui.ctx(), nook_ui::sound::Cue::Media);
             self.send(MediaCommand::Previous);
         }
         if now.can_toggle {
@@ -419,6 +421,7 @@ impl Module for Media {
                 .on_hover_text(tip)
                 .clicked()
             {
+                nook_ui::sound::play(ui.ctx(), nook_ui::sound::Cue::Media);
                 self.send(MediaCommand::PlayPause);
             }
         }
@@ -434,6 +437,7 @@ impl Module for Media {
             .on_hover_text("Next")
             .clicked()
         {
+            nook_ui::sound::play(ui.ctx(), nook_ui::sound::Cue::Media);
             self.send(MediaCommand::Next);
         }
         false

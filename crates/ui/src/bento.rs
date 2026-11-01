@@ -537,6 +537,7 @@ pub fn show(
                         }
                     } else if resp.clicked() && ready {
                         if compact && !is_open {
+                            crate::sound::play(&ctx, crate::sound::Cue::TileExpand);
                             expanded = Expanded {
                                 id: Some(tile.module.id()),
                                 since: now,
