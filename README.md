@@ -1,5 +1,21 @@
 # Nook
 
+> ### This is Nook's last open-source update
+>
+> We're sorry to announce that **Nook 0.3.0 is the final update of this
+> open-source project.** People loved Nook, and we're expanding our team
+> because we see something big in it. That means releases after this one will
+> not continue on this repository.
+>
+> From here on, the code in this repo is yours: fork it, change it, ship it,
+> do whatever you want with it (it stays MIT-licensed). On our side we'll keep
+> improving Nook with frequent updates. Thank you to everyone who used it,
+> filed a bug or wrote a plugin.
+>
+> The repository holds the source up to Nook 0.2.1. The 0.3.0 installer on the
+> [Releases](https://github.com/Geguchh024/nook/releases/latest) page is the
+> last build we publish here.
+
 A floating notch for Windows 10/11. A small glass pill sits at the top
 of the screen (center, or either corner). Hover it and it springs open into a bento grid of
 utilities. Move away and it folds back. It idles at 0% CPU.
