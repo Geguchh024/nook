@@ -98,6 +98,58 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
+/// Polygon outline for a top-edge notch. Ear arcs extend outside `rect` to
+/// meet the screen edge; the remaining corners round the panel bottom.
+pub fn notch_outline(rect: Rect, ear: f32, bottom: f32, steps: usize) -> Vec<Pos2> {
+    use std::f32::consts::{FRAC_PI_2, PI};
+
+    let (l, r, top, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let ear = ear.max(0.0).min(rect.width() * 0.25);
+    let bottom = bottom
+        .max(0.0)
+        .min(rect.height() * 0.5)
+        .min(rect.width() * 0.5);
+    let steps = steps.max(1);
+    let mut pts = Vec::with_capacity(steps * 4 + 8);
+    let arc = |pts: &mut Vec<Pos2>, cx: f32, cy: f32, rad: f32, a0: f32, a1: f32| {
+        if rad <= 0.0 {
+            pts.push(pos2(cx, cy));
+            return;
+        }
+        for i in 0..=steps {
+            let a = a0 + (a1 - a0) * (i as f32 / steps as f32);
+            pts.push(pos2(cx + rad * a.cos(), cy + rad * a.sin()));
+        }
+    };
+    pts.push(pos2(l - ear, top));
+    arc(&mut pts, l - ear, top + ear, ear, -FRAC_PI_2, 0.0);
+    pts.push(pos2(l, b - bottom));
+    arc(&mut pts, l + bottom, b - bottom, bottom, PI, FRAC_PI_2);
+    pts.push(pos2(r - bottom, b));
+    arc(&mut pts, r - bottom, b - bottom, bottom, FRAC_PI_2, 0.0);
+    pts.push(pos2(r, top + ear));
+    arc(&mut pts, r + ear, top + ear, ear, PI, 3.0 * FRAC_PI_2);
+    pts.push(pos2(r + ear, top));
+    pts
+}
+
+/// Even-odd point-in-polygon test for a closed polygon.
+pub fn polygon_contains(pts: &[Pos2], p: Pos2) -> bool {
+    if pts.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = pts.len() - 1;
+    for i in 0..pts.len() {
+        let (a, b) = (pts[i], pts[j]);
+        if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
 // ---------------------------------------------------------------------------
 // Bento grid
 
@@ -315,6 +367,21 @@ mod tests {
             let cross = (b - a).x * (c - b).y - (b - a).y * (c - b).x;
             assert!(cross >= -1e-3, "concave at {i}");
         }
+    }
+
+    #[test]
+    fn notch_outline_bounds_and_hit_test_follow_the_ears() {
+        let rect = Rect::from_min_size(pos2(100.0, 0.0), vec2(200.0, 100.0));
+        let pts = notch_outline(rect, 12.0, 20.0, 8);
+        let min_x = pts.iter().map(|p| p.x).fold(f32::INFINITY, f32::min);
+        let max_x = pts.iter().map(|p| p.x).fold(f32::NEG_INFINITY, f32::max);
+        let min_y = pts.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
+        let max_y = pts.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max);
+        assert_eq!((min_x, max_x, min_y, max_y), (88.0, 312.0, 0.0, 100.0));
+        assert!(polygon_contains(&pts, pos2(200.0, 50.0)));
+        assert!(!polygon_contains(&pts, pos2(90.0, 1.0)));
+        assert!(!polygon_contains(&pts, pos2(80.0, 50.0)));
+        assert!(!polygon_contains(&pts, pos2(200.0, 110.0)));
     }
 
     #[test]
