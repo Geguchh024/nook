@@ -247,9 +247,14 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
     thumbs track immediately while Windows writes are coalesced in the background.
   - **Wi-Fi** and **Bluetooth** are separate Small-by-default tiles. Open a
     tile to scan nearby networks/devices and connect, pair, or remove them.
-    Available device names can appear on larger tiles; connection changes are
-    announced briefly inside the notch. Bluetooth connection actions for
-    profile-specific devices may open Windows Bluetooth Settings.
+    Wi-Fi shows signal quality (Weak/Fair/Good/Excellent), not a misleading
+    percentage. Clicking an open or saved network connects immediately;
+    password-protected networks prompt for the password. Bluetooth separates
+    connected devices from nearby/paired devices and shows battery when
+    Windows reports it. Clicking a paired device opens Windows' connection UI
+    because Bluetooth connection is profile-specific. Both pages have More
+    settings links to Windows Settings; connection changes are announced
+    briefly inside the notch.
   - **QR code** (Ctrl+Alt+Q makes one from the clipboard): paste a link and
     the code draws as you type. Styles: dots, liquid, round lines, rounded,
     square; corner eyes round, circle, leaf or square; solid colors,

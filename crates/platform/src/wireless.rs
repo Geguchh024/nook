@@ -21,7 +21,7 @@ use windows::Win32::NetworkManagement::WiFi::{
     wlan_notification_acm_connection_complete, wlan_notification_acm_disconnected,
 };
 use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize, RoUninitialize};
-use windows::core::{HSTRING, PCWSTR};
+use windows::core::{HSTRING, Interface, PCWSTR};
 
 /// Wi-Fi network visible in the last user-requested scan.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,6 +48,8 @@ pub struct BluetoothDeviceInfo {
     pub name: String,
     pub paired: bool,
     pub connected: bool,
+    /// Battery percentage if the device reports it through Windows.
+    pub battery: Option<u8>,
     pub can_pair: bool,
 }
 
@@ -438,6 +440,7 @@ pub fn connect_wifi(ssid: &str, password: Option<&str>) -> Result<()> {
 }
 
 fn device_infos(selector: &HSTRING) -> Result<Vec<BluetoothDeviceInfo>> {
+    let battery_property = HSTRING::from("System.Devices.BatteryLife");
     let devices = DeviceInformation::FindAllAsyncAqsFilter(selector)
         .api("DeviceInformation::FindAllAsync")?
         .join()
@@ -452,6 +455,13 @@ fn device_infos(selector: &HSTRING) -> Result<Vec<BluetoothDeviceInfo>> {
         let name = device.Name().api("DeviceInformation::Name")?.to_string();
         let paired = pairing.IsPaired().unwrap_or(false);
         let can_pair = pairing.CanPair().unwrap_or(false);
+        let battery = device
+            .Properties()
+            .ok()
+            .and_then(|properties| properties.Lookup(&battery_property).ok())
+            .and_then(|value| value.cast::<windows::Foundation::IPropertyValue>().ok())
+            .and_then(|value| value.GetUInt8().ok())
+            .filter(|value| *value <= 100);
         let connected = BluetoothDevice::FromIdAsync(&HSTRING::from(&id))
             .ok()
             .and_then(|op| op.join().ok())
@@ -462,6 +472,7 @@ fn device_infos(selector: &HSTRING) -> Result<Vec<BluetoothDeviceInfo>> {
             name,
             paired,
             connected,
+            battery,
             can_pair,
         });
     }

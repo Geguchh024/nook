@@ -169,6 +169,11 @@ impl Bluetooth {
         let width = ui.available_width();
         let (row, _) = ui.allocate_exact_size(egui::vec2(width, 54.0), egui::Sense::hover());
         widgets::card(ui.painter(), row, theme);
+        let response = ui.interact(
+            row,
+            ui.id().with(("bluetooth-device", &device.id)),
+            egui::Sense::click(),
+        );
         let glyph = if device.connected {
             icons::BLUETOOTH_CONNECTED
         } else {
@@ -202,11 +207,14 @@ impl Bluetooth {
             ),
         );
         let state = if device.connected {
-            "Connected"
+            device
+                .battery
+                .map(|level| format!("Connected · {level}% battery"))
+                .unwrap_or_else(|| "Connected".into())
         } else if device.paired {
-            "Paired"
+            "Paired · click to connect".into()
         } else {
-            "Nearby"
+            "Nearby".into()
         };
         let mut text_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
         text_ui.vertical(|ui| {
@@ -220,6 +228,15 @@ impl Bluetooth {
                     .color(theme.text_dim),
             );
         });
+
+        if response.clicked() && device.paired && !device.connected {
+            if let Err(error) = wireless::open_bluetooth_settings() {
+                self.error = Some(error.to_string());
+            }
+        } else if response.clicked() && !device.paired && device.can_pair {
+            self.send(Command::Pair(device.id.clone(), device.name.clone(), false));
+            self.loading = true;
+        }
 
         let right = row.max.x - 8.0;
         if device.paired {
@@ -439,6 +456,11 @@ impl Module for Bluetooth {
                 }
                 ui.label(egui::RichText::new(if enabled { "Bluetooth on" } else { "Bluetooth off" }).font(Theme::font(SIZE_BODY)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if kit::button(ui, egui::Rect::from_min_size(ui.cursor().min, egui::vec2(112.0, 30.0)), "More settings", Some(icons::GEAR_SIX), false, theme).clicked()
+                        && let Err(error) = wireless::open_bluetooth_settings()
+                    {
+                        self.error = Some(error.to_string());
+                    }
                     if kit::button(ui, egui::Rect::from_min_size(ui.cursor().min, egui::vec2(98.0, 30.0)), "Refresh", Some(icons::ARROW_CLOCKWISE), false, theme).clicked() {
                         self.loading = true;
                         tx.send(Command::Refresh).ok();
@@ -454,7 +476,17 @@ impl Module for Bluetooth {
                 ui.label(egui::RichText::new(if self.loading { "Looking for devices…" } else { "Nearby and paired devices" }).font(Theme::font(SIZE_LABEL)).color(theme.text_dim));
                 let list_height = ui.available_height().max(90.0);
                 egui::ScrollArea::vertical().id_salt("bluetooth-devices").max_height(list_height).auto_shrink([false, false]).show(ui, |ui| {
-                    for device in self.devices.clone() {
+                    let connected: Vec<_> = self.devices.iter().filter(|device| device.connected).cloned().collect();
+                    let other: Vec<_> = self.devices.iter().filter(|device| !device.connected).cloned().collect();
+                    if !connected.is_empty() {
+                        ui.label(egui::RichText::new(format!("Connected · {}", connected.len())).font(Theme::font(SIZE_LABEL)).color(theme.text_dim));
+                        for device in connected {
+                            self.device_row(ui, &device, theme);
+                        }
+                        ui.add_space(6.0);
+                    }
+                    ui.label(egui::RichText::new("Available and paired").font(Theme::font(SIZE_LABEL)).color(theme.text_dim));
+                    for device in other {
                         self.device_row(ui, &device, theme);
                     }
                 });

@@ -69,3 +69,11 @@
 - Kept clipboard action hit targets active while the pointer moves onto each icon and gives Copy, Edit, and Delete distinct IDs. Clipboard writes now report queue/post failures rather than falsely reporting success.
 - Brightness previews use DDC/CI during dragging; laptop-panel WMI applies only the final value on release, avoiding stale slow writes reverting newer positions. Note expiry repaint scheduling ignores unsaved drafts.
 - Verification: `cargo test --workspace --offline --quiet` passed (159 passed, 7 ignored) with workspace-local `APPDATA`; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 9 — Wireless device status and actions
+
+- Wi-Fi network rows now show signal quality as Weak/Fair/Good/Excellent instead of a confusing raw “99%”. Selecting an open or saved network starts connecting immediately; networks needing a new password reveal the password field first.
+- Added a More settings action on both wireless pages. Bluetooth details separate connected devices from other paired/nearby devices, and row selection starts pairing or opens Windows' device connection UI for an already paired device.
+- Connected Bluetooth devices show a battery percentage when Windows reports the `System.Devices.BatteryLife` property. Battery data is device/driver dependent and absent otherwise.
+- Windows does not provide one generic Bluetooth connect operation for every profile, so already paired-device connection is handed to Windows Bluetooth Settings. Wi-Fi connections use WLAN directly where supported.
+- Verification: `cargo test --workspace --offline --quiet` passed (159 passed, 7 ignored) with workspace-local `APPDATA`; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

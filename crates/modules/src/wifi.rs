@@ -208,7 +208,15 @@ impl Wifi {
             egui::pos2(row.min.x + 34.0, row.min.y),
             egui::pos2((row.max.x - trailing).max(row.min.x + 40.0), row.max.y),
         );
-        let label = format!("{}  ·  {}%", network.ssid, network.signal);
+        // The WLAN API's 0–100 field is an adapter signal-quality score.
+        // Showing it as a percent looked like a battery/connection value.
+        let quality = match network.signal {
+            80..=100 => "Excellent signal",
+            60..=79 => "Good signal",
+            35..=59 => "Fair signal",
+            _ => "Weak signal",
+        };
+        let label = format!("{}  ·  {quality}", network.ssid);
         ui.put(
             label_rect,
             egui::Label::new(egui::RichText::new(label).font(Theme::font(SIZE_LABEL))).truncate(),
@@ -232,9 +240,27 @@ impl Wifi {
             );
         }
         if response.clicked() {
-            self.selected = Some(network.ssid.clone());
-            self.password.clear();
             self.error = None;
+            if network.connected {
+                self.selected = None;
+            } else if network.secured
+                && network.saved_profile.is_none()
+                && !network.password_supported
+            {
+                if let Err(error) = nook_platform::shell::open("ms-settings:network-wifi") {
+                    self.error = Some(error.to_string());
+                }
+            } else if network.secured
+                && network.saved_profile.is_none()
+                && network.password_supported
+            {
+                self.selected = Some(network.ssid.clone());
+                self.password.clear();
+            } else {
+                self.selected = None;
+                self.loading = true;
+                self.send(Command::Connect(network.ssid.clone(), None));
+            }
         }
     }
 }
@@ -432,6 +458,20 @@ impl Module for Wifi {
                         );
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if kit::button(
+                            ui,
+                            egui::Rect::from_min_size(ui.cursor().min, egui::vec2(112.0, 30.0)),
+                            "More settings",
+                            Some(icons::GEAR_SIX),
+                            false,
+                            theme,
+                        )
+                        .clicked()
+                            && let Err(error) =
+                                nook_platform::shell::open("ms-settings:network-wifi")
+                        {
+                            self.error = Some(error.to_string());
+                        }
                         if kit::button(
                             ui,
                             egui::Rect::from_min_size(ui.cursor().min, egui::vec2(98.0, 30.0)),
