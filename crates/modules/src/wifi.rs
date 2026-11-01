@@ -169,44 +169,73 @@ impl Wifi {
     }
 
     fn network_row(&mut self, ui: &mut egui::Ui, network: &WifiNetwork, theme: &Theme) {
-        ui.horizontal(|ui| {
+        let width = ui.available_width();
+        let (row, _) = ui.allocate_exact_size(egui::vec2(width, 42.0), egui::Sense::hover());
+        widgets::card(ui.painter(), row, theme);
+        let response = ui.interact(
+            row,
+            ui.id().with(("wifi-network", &network.ssid)),
+            egui::Sense::click(),
+        );
+        if self.selected.as_deref() == Some(network.ssid.as_str()) {
+            ui.painter().rect_stroke(
+                row,
+                nook_ui::theme::TILE_RADIUS,
+                egui::Stroke::new(1.0, theme.accent),
+                egui::StrokeKind::Inside,
+            );
+        }
+        paint::icon(
+            ui.painter(),
+            egui::pos2(row.min.x + 18.0, row.center().y),
+            icons::WIFI_HIGH,
+            17.0,
+            if network.connected {
+                theme.accent
+            } else {
+                theme.text_dim
+            },
+            network.connected,
+        );
+        let trailing = if network.connected {
+            84.0
+        } else if network.secured {
+            38.0
+        } else {
+            12.0
+        };
+        let label_rect = egui::Rect::from_min_max(
+            egui::pos2(row.min.x + 34.0, row.min.y),
+            egui::pos2((row.max.x - trailing).max(row.min.x + 40.0), row.max.y),
+        );
+        let label = format!("{}  ·  {}%", network.ssid, network.signal);
+        ui.put(
+            label_rect,
+            egui::Label::new(egui::RichText::new(label).font(Theme::font(SIZE_LABEL))).truncate(),
+        );
+        if network.connected {
+            ui.painter().text(
+                egui::pos2(row.max.x - 12.0, row.center().y),
+                egui::Align2::RIGHT_CENTER,
+                "Connected",
+                Theme::font(SIZE_LABEL - 1.0),
+                theme.accent,
+            );
+        } else if network.secured {
             paint::icon(
                 ui.painter(),
-                ui.cursor().left_center() + egui::vec2(9.0, 0.0),
-                icons::WIFI_HIGH,
-                18.0,
-                if network.connected {
-                    theme.accent
-                } else {
-                    theme.text_dim
-                },
-                network.connected,
+                egui::pos2(row.max.x - 18.0, row.center().y),
+                icons::LOCK_KEY,
+                15.0,
+                theme.text_faint,
+                false,
             );
-            let label = format!("{}  ·  {}%", network.ssid, network.signal);
-            let clicked = ui.selectable_label(
-                self.selected.as_deref() == Some(network.ssid.as_str()),
-                egui::RichText::new(label).font(Theme::font(SIZE_LABEL)),
-            );
-            if clicked.clicked() {
-                self.selected = Some(network.ssid.clone());
-                self.password.clear();
-                self.error = None;
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if network.connected {
-                    ui.label(egui::RichText::new("Connected").color(theme.accent));
-                } else if network.secured {
-                    paint::icon(
-                        ui.painter(),
-                        ui.cursor().right_center(),
-                        icons::LOCK_KEY,
-                        15.0,
-                        theme.text_faint,
-                        false,
-                    );
-                }
-            });
-        });
+        }
+        if response.clicked() {
+            self.selected = Some(network.ssid.clone());
+            self.password.clear();
+            self.error = None;
+        }
     }
 }
 
@@ -433,9 +462,12 @@ impl Module for Wifi {
                         .font(Theme::font(SIZE_LABEL))
                         .color(theme.text_dim),
                     );
+                    let reserved = if self.selected.is_some() { 92.0 } else { 44.0 };
+                    let list_height = (ui.available_height() - reserved).max(90.0);
                     egui::ScrollArea::vertical()
                         .id_salt("wifi-networks")
-                        .max_height(210.0)
+                        .max_height(list_height)
+                        .auto_shrink([false, false])
                         .show(ui, |ui| {
                             for network in self.state.networks.clone() {
                                 self.network_row(ui, &network, theme);

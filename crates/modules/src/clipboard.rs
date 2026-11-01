@@ -98,7 +98,9 @@ pub struct Clipboard {
     /// Entry last copied back, and when (egui time).
     copied: Option<(u64, f64)>,
     open_page: bool,
-    editing: Option<(u64, String)>,
+    editing: Option<(u64, String, bool)>,
+    edit_session: u64,
+    edit_focus_pending: bool,
 }
 
 impl Clipboard {
@@ -445,19 +447,26 @@ impl Module for Clipboard {
                         if copy_resp {
                             copy = Some(id);
                         }
-                        if matches!(entry.content, ClipContent::Text(_))
+                        if let ClipContent::Text(text) = &entry.content
                             && button_at(
                                 ui,
                                 pos2(inner.max.x - 44.0, action_y),
                                 24.0,
-                                icons::PENCIL_SIMPLE,
+                                if text.chars().count() > 180 {
+                                    icons::ARROWS_OUT_SIMPLE
+                                } else {
+                                    icons::PENCIL_SIMPLE
+                                },
                                 theme,
                             )
-                            .on_hover_text("Edit text")
+                            .on_hover_text(if text.chars().count() > 180 {
+                                "Enlarge and edit text"
+                            } else {
+                                "Edit text"
+                            })
                             .clicked()
-                            && let ClipContent::Text(text) = &entry.content
                         {
-                            edit = Some((id, text.clone()));
+                            edit = Some((id, text.clone(), text.chars().count() > 180));
                         }
                         if button_at(
                             ui,
@@ -479,32 +488,54 @@ impl Module for Clipboard {
                 }
             });
 
-        if let Some((id, text)) = edit {
-            self.editing = Some((id, text));
+        if let Some((id, text, enlarged)) = edit {
+            self.editing = Some((id, text, enlarged));
+            self.edit_session = self.edit_session.wrapping_add(1);
+            self.edit_focus_pending = true;
         }
         let mut save_edit = None;
         let mut cancel_edit = false;
-        if let Some((id, text)) = &mut self.editing {
+        let mut editor_response = None;
+        if let Some((id, text, enlarged)) = &mut self.editing {
             egui::Window::new("Edit clipboard text")
-                .id(Id::new("nook-clipboard-edit"))
+                .id(Id::new("nook-clipboard-edit").with(self.edit_session))
                 .collapsible(false)
                 .resizable(true)
-                .default_width(420.0)
+                .default_width(if *enlarged { 640.0 } else { 440.0 })
+                .default_height(if *enlarged { 500.0 } else { 340.0 })
                 .show(ui.ctx(), |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(text)
-                            .desired_width(ui.available_width())
-                            .desired_rows(8),
+                    let editor_size = vec2(
+                        ui.available_width(),
+                        (ui.available_height() - 38.0).max(120.0),
+                    );
+                    editor_response = Some(
+                        ui.add_sized(
+                            editor_size,
+                            egui::TextEdit::multiline(text)
+                                .desired_width(ui.available_width())
+                                .desired_rows(if *enlarged { 20 } else { 8 })
+                                .cursor_at_end(true),
+                        ),
                     );
                     ui.horizontal(|ui| {
-                        if ui.button("Save and copy").clicked() {
+                        if widgets::icon_button(ui, icons::CHECK, 26.0, true, theme)
+                            .on_hover_text("Save and copy")
+                            .clicked()
+                        {
                             save_edit = Some((*id, text.clone()));
                         }
+                        ui.label(egui::RichText::new("Save and copy").color(theme.text_dim));
                         if ui.button("Cancel").clicked() {
                             cancel_edit = true;
                         }
                     });
                 });
+        }
+        if self.edit_focus_pending
+            && let Some(response) = editor_response
+        {
+            response.request_focus();
+            self.edit_focus_pending = false;
         }
         if let Some((id, text)) = save_edit {
             if let Some(entry) = self.history.entries.iter_mut().find(|entry| entry.id == id) {
@@ -516,8 +547,10 @@ impl Module for Clipboard {
                 }
             }
             self.editing = None;
+            self.edit_focus_pending = false;
         } else if cancel_edit {
             self.editing = None;
+            self.edit_focus_pending = false;
         }
 
         if let Some(id) = delete {

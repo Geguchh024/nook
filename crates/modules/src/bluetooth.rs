@@ -166,83 +166,92 @@ impl Bluetooth {
     }
 
     fn device_row(&mut self, ui: &mut egui::Ui, device: &BluetoothDeviceInfo, theme: &Theme) {
-        ui.horizontal(|ui| {
-            paint::icon(
-                ui.painter(),
-                ui.cursor().left_center() + egui::vec2(10.0, 0.0),
-                if device.connected {
-                    icons::BLUETOOTH_CONNECTED
-                } else {
-                    icons::BLUETOOTH
-                },
-                18.0,
-                if device.connected {
-                    theme.accent
-                } else {
-                    theme.text_dim
-                },
-                device.connected,
+        let width = ui.available_width();
+        let (row, _) = ui.allocate_exact_size(egui::vec2(width, 54.0), egui::Sense::hover());
+        widgets::card(ui.painter(), row, theme);
+        let glyph = if device.connected {
+            icons::BLUETOOTH_CONNECTED
+        } else {
+            icons::BLUETOOTH
+        };
+        paint::icon(
+            ui.painter(),
+            egui::pos2(row.min.x + 20.0, row.center().y),
+            glyph,
+            18.0,
+            if device.connected {
+                theme.accent
+            } else {
+                theme.text_dim
+            },
+            device.connected,
+        );
+
+        let action_width = if device.paired {
+            if device.connected { 84.0 } else { 170.0 }
+        } else if device.can_pair {
+            88.0
+        } else {
+            0.0
+        };
+        let text_rect = egui::Rect::from_min_max(
+            egui::pos2(row.min.x + 38.0, row.min.y + 5.0),
+            egui::pos2(
+                (row.max.x - action_width - 12.0).max(row.min.x + 40.0),
+                row.max.y - 5.0,
+            ),
+        );
+        let state = if device.connected {
+            "Connected"
+        } else if device.paired {
+            "Paired"
+        } else {
+            "Nearby"
+        };
+        let mut text_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
+        text_ui.vertical(|ui| {
+            ui.add(
+                egui::Label::new(egui::RichText::new(&device.name).font(Theme::font(SIZE_LABEL)))
+                    .truncate(),
             );
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new(&device.name).font(Theme::font(SIZE_LABEL)));
-                let state = if device.connected {
-                    "Connected"
-                } else if device.paired {
-                    "Paired"
-                } else {
-                    "Nearby"
-                };
-                ui.label(
-                    egui::RichText::new(state)
-                        .font(Theme::font(SIZE_LABEL - 1.0))
-                        .color(theme.text_dim),
-                );
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if device.paired {
-                    if kit::button(
-                        ui,
-                        egui::Rect::from_min_size(ui.cursor().min, egui::vec2(72.0, 30.0)),
-                        "Remove",
-                        None,
-                        false,
-                        theme,
-                    )
-                    .clicked()
-                    {
-                        self.send(Command::Pair(device.id.clone(), device.name.clone(), true));
-                        self.loading = true;
-                    }
-                    if !device.connected
-                        && kit::button(
-                            ui,
-                            egui::Rect::from_min_size(ui.cursor().min, egui::vec2(82.0, 30.0)),
-                            "Connect",
-                            None,
-                            true,
-                            theme,
-                        )
-                        .clicked()
-                        && let Err(error) = wireless::open_bluetooth_settings()
-                    {
-                        self.error = Some(error.to_string());
-                    }
-                } else if device.can_pair
-                    && kit::button(
-                        ui,
-                        egui::Rect::from_min_size(ui.cursor().min, egui::vec2(72.0, 30.0)),
-                        "Pair",
-                        None,
-                        true,
-                        theme,
-                    )
-                    .clicked()
-                {
-                    self.send(Command::Pair(device.id.clone(), device.name.clone(), false));
-                    self.loading = true;
-                }
-            });
+            ui.label(
+                egui::RichText::new(state)
+                    .font(Theme::font(SIZE_LABEL - 1.0))
+                    .color(theme.text_dim),
+            );
         });
+
+        let right = row.max.x - 8.0;
+        if device.paired {
+            let remove_rect = egui::Rect::from_min_size(
+                egui::pos2(right - 72.0, row.center().y - 15.0),
+                egui::vec2(72.0, 30.0),
+            );
+            if kit::button(ui, remove_rect, "Remove", None, false, theme).clicked() {
+                self.send(Command::Pair(device.id.clone(), device.name.clone(), true));
+                self.loading = true;
+            }
+            if !device.connected {
+                let connect_rect = egui::Rect::from_min_size(
+                    egui::pos2(right - 158.0, row.center().y - 15.0),
+                    egui::vec2(80.0, 30.0),
+                );
+                if kit::button(ui, connect_rect, "Connect", None, true, theme).clicked()
+                    && let Err(error) = wireless::open_bluetooth_settings()
+                {
+                    self.error = Some(error.to_string());
+                }
+            }
+        } else if device.can_pair {
+            let pair_rect = egui::Rect::from_min_size(
+                egui::pos2(right - 80.0, row.center().y - 15.0),
+                egui::vec2(72.0, 30.0),
+            );
+            if kit::button(ui, pair_rect, "Pair", None, true, theme).clicked() {
+                self.send(Command::Pair(device.id.clone(), device.name.clone(), false));
+                self.loading = true;
+            }
+        }
     }
 }
 
@@ -443,7 +452,8 @@ impl Module for Bluetooth {
                 }
             } else {
                 ui.label(egui::RichText::new(if self.loading { "Looking for devices…" } else { "Nearby and paired devices" }).font(Theme::font(SIZE_LABEL)).color(theme.text_dim));
-                egui::ScrollArea::vertical().id_salt("bluetooth-devices").max_height(270.0).show(ui, |ui| {
+                let list_height = ui.available_height().max(90.0);
+                egui::ScrollArea::vertical().id_salt("bluetooth-devices").max_height(list_height).auto_shrink([false, false]).show(ui, |ui| {
                     for device in self.devices.clone() {
                         self.device_row(ui, &device, theme);
                     }

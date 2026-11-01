@@ -6,6 +6,7 @@ use nook_platform::controls::{self, Snapshot};
 use nook_ui::module::{Module, TileCtx, TileSize};
 use nook_ui::theme::{SIZE_BODY, SIZE_LABEL, Theme};
 use nook_ui::{icons, paint, widgets};
+use std::collections::VecDeque;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -35,22 +36,58 @@ impl Worker {
                     let _ = results.send(Err(error.to_string()));
                     return;
                 }
-                while let Ok(command) = commands.recv() {
+                let mut deferred = VecDeque::new();
+                loop {
+                    let command = match deferred.pop_front() {
+                        Some(command) => command,
+                        None => match commands.recv() {
+                            Ok(command) => command,
+                            Err(_) => break,
+                        },
+                    };
+                    // Slider samples are latest-wins while adjacent in the
+                    // queue; stale positions should never delay the thumb.
+                    let command = match command {
+                        Command::Volume(mut value) => {
+                            while let Ok(next) = commands.try_recv() {
+                                match next {
+                                    Command::Volume(latest) => value = latest,
+                                    other => {
+                                        deferred.push_back(other);
+                                        break;
+                                    }
+                                }
+                            }
+                            Command::Volume(value)
+                        }
+                        Command::Brightness(mut value) => {
+                            while let Ok(next) = commands.try_recv() {
+                                match next {
+                                    Command::Brightness(latest) => value = latest,
+                                    other => {
+                                        deferred.push_back(other);
+                                        break;
+                                    }
+                                }
+                            }
+                            Command::Brightness(value)
+                        }
+                        other => other,
+                    };
                     let result = match command {
                         Command::Stop => break,
                         Command::Volume(value) => controls::set_volume(value).map(|()| None),
+                        Command::Brightness(value) => controls::set_brightness(value).map(|_| None),
                         command => {
                             let action = match command {
                                 Command::Refresh => Ok(()),
-                                Command::Brightness(value) => {
-                                    controls::set_brightness(value).map(|_| ())
-                                }
                                 Command::Mute(muted) => controls::set_muted(muted),
                                 Command::Notifications(muted) => {
                                     controls::set_notifications_muted(muted)
                                 }
                                 Command::Stop => continue,
                                 Command::Volume(_) => continue,
+                                Command::Brightness(_) => continue,
                             };
                             action.map(|()| Some(controls::snapshot()))
                         }
@@ -92,8 +129,12 @@ pub struct Controls {
     refresh_on_page: bool,
     volume_due: Option<Instant>,
     volume_pending: Option<f32>,
+    brightness_due: Option<Instant>,
+    brightness_pending: Option<f32>,
     volume_display: Option<f32>,
     brightness_display: Option<f32>,
+    volume_overridden: bool,
+    brightness_overridden: bool,
 }
 
 impl Default for Controls {
@@ -105,8 +146,12 @@ impl Default for Controls {
             refresh_on_page: true,
             volume_due: None,
             volume_pending: None,
+            brightness_due: None,
+            brightness_pending: None,
             volume_display: None,
             brightness_display: None,
+            volume_overridden: false,
+            brightness_overridden: false,
         }
     }
 }
@@ -162,15 +207,26 @@ impl Module for Controls {
                 self.send(Command::Volume(value));
             }
         }
+        if self
+            .brightness_due
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.brightness_due = None;
+            if let Some(value) = self.brightness_pending.take() {
+                self.send(Command::Brightness(value));
+            }
+        }
         if let Some(worker) = &self.worker {
             while let Ok(result) = worker.rx.try_recv() {
                 match result {
                     Ok(Some(state)) => {
                         self.state = state;
-                        if self.volume_pending.is_none() {
+                        if !self.volume_overridden {
                             self.volume_display = state.volume;
                         }
-                        self.brightness_display = state.brightness;
+                        if !self.brightness_overridden {
+                            self.brightness_display = state.brightness;
+                        }
                     }
                     Ok(None) => {}
                     Err(error) => tracing::warn!("quick controls: {error}"),
@@ -229,6 +285,10 @@ impl Module for Controls {
         if clicked.clicked() {
             self.page_request = true;
             self.refresh_on_page = true;
+            self.volume_display = None;
+            self.brightness_display = None;
+            self.volume_overridden = false;
+            self.brightness_overridden = false;
         }
     }
 
@@ -283,6 +343,7 @@ impl Module for Controls {
                     if response.changed() {
                         nook_ui::sound::scrub(ui.ctx(), response.id);
                         self.volume_display = Some(volume);
+                        self.volume_overridden = true;
                         self.volume_pending = Some(volume);
                         self.volume_due = Some(Instant::now() + Duration::from_millis(50));
                         ui.ctx().request_repaint_after(Duration::from_millis(55));
@@ -314,9 +375,16 @@ impl Module for Controls {
                     if response.changed() {
                         nook_ui::sound::scrub(ui.ctx(), response.id);
                         self.brightness_display = Some(brightness);
+                        self.brightness_overridden = true;
+                        self.brightness_pending = Some(brightness);
+                        self.brightness_due = Some(Instant::now() + Duration::from_millis(110));
+                        ui.ctx().request_repaint_after(Duration::from_millis(115));
                     }
                     if response.drag_stopped() || response.clicked() {
-                        let _ = tx.send(Command::Brightness(brightness));
+                        self.brightness_due = None;
+                        if let Some(value) = self.brightness_pending.take() {
+                            let _ = tx.send(Command::Brightness(value));
+                        }
                     }
                 } else {
                     ui.label("Brightness is unavailable on this display");

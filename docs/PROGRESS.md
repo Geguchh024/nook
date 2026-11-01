@@ -53,3 +53,11 @@
 - Replaced the clipboard page's fixed four-column grid with one responsive full-width card per history item.
 - Hovering a text card exposes Copy, Edit and Delete; image cards expose Copy and Delete. Text editing uses a resizable multiline editor, and Save and copy updates the history item and system clipboard.
 - Verification: `cargo test --workspace --offline --quiet` passed with `APPDATA` redirected to a writable workspace directory (13 app, 72 modules, 40 platform and 33 UI tests passed; 7 ignored). `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 7 — Responsive pages and live slider feedback
+
+- Rebuilt Wi-Fi and Bluetooth entries as full-width compact cards with reserved icon and action areas, truncated long names, and scroll regions sized from remaining page height. Wi-Fi reserves room for the selected network's password/connect controls.
+- Clipboard cards now show an enlarge action for long text. The edit window grows for long entries, starts focused with the caret at the end, scrolls inside the text field, and has a compact save icon that writes the edited text to the clipboard.
+- Volume and brightness retain their optimistic values while asynchronous snapshots arrive, so stale snapshots cannot pull the slider thumb to an old level. Slider writes coalesce queued samples and send periodic latest values while dragging, with a final write on release.
+- Added the Windows `CREATE_NO_WINDOW` flag to the WMI fallback so PowerShell no longer flashes during brightness access. Brightness WMI writes are rate-limited during dragging and do not trigger a second WMI query after each write.
+- Verification: workspace clippy and tests pass (`cargo clippy --workspace --all-targets --offline -- -D warnings`; `cargo test --workspace --offline --quiet` with workspace-local `APPDATA`: 158 passed, 7 ignored).

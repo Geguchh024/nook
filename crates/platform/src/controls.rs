@@ -107,16 +107,20 @@ fn read_brightness() -> Option<f32> {
 }
 
 fn run_wmi(script: &str) -> Result<std::process::Output> {
-    ProcessCommand::new("powershell.exe")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
+    use std::os::windows::process::CommandExt;
+    use windows::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    let mut command = ProcessCommand::new("powershell.exe");
+    command.creation_flags(CREATE_NO_WINDOW.0).args([
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+    ]);
+    command
         .output()
         .map_err(|e| PlatformError::Other(format!("starting Windows brightness helper: {e}")))
 }

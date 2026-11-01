@@ -238,7 +238,8 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
   - **Quick Controls** (Small by default): clicking the tile opens its page
     without resizing the tile. It includes system master volume and mute,
     brightness for the display holding Nook (DDC/CI, with a WMI fallback for
-    supported laptop panels), and experimental **Mute notifications**.
+    supported laptop panels), and experimental **Mute notifications**. Slider
+    thumbs track immediately while Windows writes are coalesced in the background.
   - **Wi-Fi** and **Bluetooth** are separate Small-by-default tiles. Open a
     tile to scan nearby networks/devices and connect, pair, or remove them.
     Available device names can appear on larger tiles; connection changes are
