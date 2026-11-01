@@ -1,6 +1,9 @@
 //! Settings: the gear tile in the bento grid and the in-notch settings page.
 
-use crate::config::{AccentSource, Config, GrainSize, Material, MonitorMode, Renderer, ShellStyle};
+use crate::config::{
+    AccentSource, Config, GrainSize, Material, MonitorMode, NotchSize, Renderer, RetentionPeriod,
+    ShellStyle,
+};
 use crate::update::{self, Status};
 use egui::{
     Align, Align2, Area, Color32, Id, Layout, Order, Rect, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
@@ -20,11 +23,11 @@ const GAP: f32 = 8.0;
 const HEADER: f32 = 28.0;
 const ROW: f32 = 28.0;
 /// Height of the Appearance and Behavior cards (title + four rows).
-const TOP_CARD: f32 = 184.0;
+const TOP_CARD: f32 = 232.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
-const BODY: [f32; 2] = [4.0 * ROW + 14.0, 3.0 * ROW + 28.0];
+const BODY: [f32; 2] = [4.0 * ROW + 14.0, 5.0 * ROW + 36.0];
 /// Page height with every section collapsed, panel padding included.
 const BASE: f32 =
     2.0 * PANEL_PADDING + HEADER + GAP + TOP_CARD + GAP + DISCLOSURE + GAP + DISCLOSURE;
@@ -209,6 +212,44 @@ pub fn page(
                 widgets::segmented(ui, &["Pill", "Notch"], &mut style_idx, theme)
             }) {
                 cfg.shell_style = [ShellStyle::Pill, ShellStyle::Notch][style_idx];
+                out.changed = true;
+            }
+            let mut notch_size_idx = NotchSize::ALL
+                .iter()
+                .position(|&size| size == cfg.notch_size)
+                .unwrap_or(1);
+            if row(&mut lui, "Notch size", theme, |ui| {
+                if cfg.shell_style != ShellStyle::Notch {
+                    ui.disable();
+                }
+                widgets::segmented(
+                    ui,
+                    &["Compact", "Standard", "Large"],
+                    &mut notch_size_idx,
+                    theme,
+                )
+            }) {
+                cfg.notch_size = NotchSize::ALL[notch_size_idx];
+                out.changed = true;
+            }
+            let mut clock_idx = match cfg.clock_style {
+                crate::config::ClockStyle::Classic => 0,
+                crate::config::ClockStyle::Digital => 1,
+                crate::config::ClockStyle::DotMatrix => 2,
+            };
+            if row(&mut lui, "Clock", theme, |ui| {
+                widgets::segmented(
+                    ui,
+                    &["Classic", "Digital", "Dot matrix"],
+                    &mut clock_idx,
+                    theme,
+                )
+            }) {
+                cfg.clock_style = [
+                    crate::config::ClockStyle::Classic,
+                    crate::config::ClockStyle::Digital,
+                    crate::config::ClockStyle::DotMatrix,
+                ][clock_idx];
                 out.changed = true;
             }
             let mut theme_idx = match cfg.theme {
@@ -671,6 +712,15 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
         "Daily: version, opens, minutes, tools used",
         theme,
     );
+    if retention_row(
+        &mut rui,
+        "Notes keep for",
+        &mut cfg.notes_retention,
+        "notes-retention",
+        theme,
+    ) {
+        out.changed = true;
+    }
 
     let mut renderer_idx = match cfg.renderer {
         Renderer::Auto => 0,
@@ -692,6 +742,15 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
         ),
         theme,
     );
+    if retention_row(
+        &mut lui,
+        "Clipboard keep for",
+        &mut cfg.clipboard_retention,
+        "clipboard-retention",
+        theme,
+    ) {
+        out.changed = true;
+    }
 
     // "Open log" at the right, level with the Renderer row.
     rui.add_space(ROW - 26.0);
@@ -716,6 +775,26 @@ fn advanced_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: 
     {
         tracing::warn!("revealing log: {e}");
     }
+}
+
+fn retention_row(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut RetentionPeriod,
+    id: &'static str,
+    theme: &Theme,
+) -> bool {
+    row(ui, label, theme, |ui| {
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(value.label())
+            .width(100.0)
+            .show_ui(ui, |ui| {
+                for period in RetentionPeriod::ALL {
+                    ui.selectable_value(value, period, period.label());
+                }
+            })
+            .response
+    })
 }
 
 /// Small faint line under a row.

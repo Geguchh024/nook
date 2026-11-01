@@ -61,3 +61,11 @@
 - Volume and brightness retain their optimistic values while asynchronous snapshots arrive, so stale snapshots cannot pull the slider thumb to an old level. Slider writes coalesce queued samples and send periodic latest values while dragging, with a final write on release.
 - Added the Windows `CREATE_NO_WINDOW` flag to the WMI fallback so PowerShell no longer flashes during brightness access. Brightness WMI writes are rate-limited during dragging and do not trigger a second WMI query after each write.
 - Verification: workspace clippy and tests pass (`cargo clippy --workspace --all-targets --offline -- -D warnings`; `cargo test --workspace --offline --quiet` with workspace-local `APPDATA`: 158 passed, 7 ignored).
+
+## Step 8 — Notch customization, retention and clipboard actions
+
+- Added live Compact, Standard and Large notch sizes plus Classic, Digital and Dot matrix clock rendering.
+- Added configurable Notes and Clipboard retention in Settings → Advanced: 1, 3, 5, 7, 10 or 15 days, 1 month, or Never. Notes are recycled when possible and removed otherwise; failed deletion keeps the note and resets its expiry. Clipboard history is in memory, so its retention applies for the current session. Finite retention shows a days-left label.
+- Kept clipboard action hit targets active while the pointer moves onto each icon and gives Copy, Edit, and Delete distinct IDs. Clipboard writes now report queue/post failures rather than falsely reporting success.
+- Brightness previews use DDC/CI during dragging; laptop-panel WMI applies only the final value on release, avoiding stale slow writes reverting newer positions. Note expiry repaint scheduling ignores unsaved drafts.
+- Verification: `cargo test --workspace --offline --quiet` passed (159 passed, 7 ignored) with workspace-local `APPDATA`; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

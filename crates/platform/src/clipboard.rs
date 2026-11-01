@@ -120,11 +120,15 @@ impl ClipboardWatcher {
     }
 
     /// Puts `content` back on the clipboard.
-    pub fn set(&self, content: ClipContent) {
-        if self.writes.send(content).is_ok() {
-            // SAFETY: posting to our worker's window; fails harmlessly if gone.
-            let _ = unsafe { PostMessageW(Some(self.hwnd()), WM_WRITE, WPARAM(0), LPARAM(0)) };
-        }
+    pub fn set(&self, content: ClipContent) -> Result<()> {
+        self.writes
+            .send(content)
+            .map_err(|_| PlatformError::Other("clipboard worker stopped".into()))?;
+        // SAFETY: posting to our worker's window; an error means the queued
+        // write cannot be delivered to its message loop.
+        unsafe { PostMessageW(Some(self.hwnd()), WM_WRITE, WPARAM(0), LPARAM(0)) }
+            .api("PostMessageW(clipboard write)")?;
+        Ok(())
     }
 
     fn hwnd(&self) -> HWND {
@@ -144,6 +148,11 @@ impl Drop for ClipboardWatcher {
 /// writes opened without one).
 pub fn copy_text(text: &str) -> Result<()> {
     with_writer(|hwnd| write(hwnd, &ClipContent::Text(text.to_owned())))
+}
+
+/// Writes a text or image history item to the clipboard from any thread.
+pub fn copy_content(content: &ClipContent) -> Result<()> {
+    with_writer(|hwnd| write(hwnd, content))
 }
 
 /// The text on the clipboard, if any, from any thread.

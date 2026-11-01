@@ -58,6 +58,89 @@ pub enum ShellStyle {
     Notch,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotchSize {
+    Compact,
+    #[default]
+    Standard,
+    Large,
+}
+
+impl NotchSize {
+    pub const ALL: [Self; 3] = [Self::Compact, Self::Standard, Self::Large];
+
+    pub fn points(self) -> egui::Vec2 {
+        match self {
+            Self::Compact => egui::vec2(160.0, 28.0),
+            Self::Standard => egui::vec2(200.0, 32.0),
+            Self::Large => egui::vec2(250.0, 40.0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClockStyle {
+    #[default]
+    Classic,
+    Digital,
+    DotMatrix,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetentionPeriod {
+    OneDay,
+    ThreeDays,
+    FiveDays,
+    SevenDays,
+    TenDays,
+    FifteenDays,
+    OneMonth,
+    #[default]
+    Never,
+}
+
+impl RetentionPeriod {
+    pub const ALL: [Self; 8] = [
+        Self::OneDay,
+        Self::ThreeDays,
+        Self::FiveDays,
+        Self::SevenDays,
+        Self::TenDays,
+        Self::FifteenDays,
+        Self::OneMonth,
+        Self::Never,
+    ];
+
+    pub const fn days(self) -> Option<u32> {
+        match self {
+            Self::OneDay => Some(1),
+            Self::ThreeDays => Some(3),
+            Self::FiveDays => Some(5),
+            Self::SevenDays => Some(7),
+            Self::TenDays => Some(10),
+            Self::FifteenDays => Some(15),
+            Self::OneMonth => Some(30),
+            Self::Never => None,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::OneDay => "1 day",
+            Self::ThreeDays => "3 days",
+            Self::FiveDays => "5 days",
+            Self::SevenDays => "7 days",
+            Self::TenDays => "10 days",
+            Self::FifteenDays => "15 days",
+            Self::OneMonth => "1 month",
+            Self::Never => "Never",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GrainSize {
@@ -95,6 +178,10 @@ pub struct ModulesConfig {
 #[serde(default)]
 pub struct Config {
     pub shell_style: ShellStyle,
+    pub notch_size: NotchSize,
+    pub clock_style: ClockStyle,
+    pub clipboard_retention: RetentionPeriod,
+    pub notes_retention: RetentionPeriod,
     /// Play the short UI sound cues.
     pub sound_effects: bool,
     pub theme: ThemeMode,
@@ -138,6 +225,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             shell_style: ShellStyle::Pill,
+            notch_size: NotchSize::Standard,
+            clock_style: ClockStyle::Classic,
+            clipboard_retention: RetentionPeriod::Never,
+            notes_retention: RetentionPeriod::Never,
             sound_effects: true,
             theme: ThemeMode::Auto,
             accent: AccentSource::Wallpaper,
@@ -322,5 +413,22 @@ mod tests {
         let text = toml::to_string_pretty(&cfg).expect("serialize");
         let back: Config = toml::from_str(&text).expect("parse");
         assert!(!back.sound_effects);
+    }
+
+    #[test]
+    fn notch_clock_and_retention_settings_round_trip() {
+        let cfg = Config {
+            notch_size: NotchSize::Large,
+            clock_style: ClockStyle::DotMatrix,
+            clipboard_retention: RetentionPeriod::SevenDays,
+            notes_retention: RetentionPeriod::OneMonth,
+            ..Config::default()
+        };
+        let text = toml::to_string_pretty(&cfg).expect("serialize");
+        let back: Config = toml::from_str(&text).expect("parse");
+        assert_eq!(back.notch_size, NotchSize::Large);
+        assert_eq!(back.clock_style, ClockStyle::DotMatrix);
+        assert_eq!(back.clipboard_retention, RetentionPeriod::SevenDays);
+        assert_eq!(back.notes_retention, RetentionPeriod::OneMonth);
     }
 }

@@ -210,6 +210,11 @@ impl NookApp {
         registry.arrange(&cfg.modules.order, &cfg.modules.disabled);
         registry.set_sizes(&cfg.modules.sizes);
         for m in registry.all_mut() {
+            match m.id() {
+                "clipboard" => m.set_retention_days(cfg.clipboard_retention.days()),
+                "notes" => m.set_retention_days(cfg.notes_retention.days()),
+                _ => {}
+            }
             m.attach(&ctx);
         }
         let hotkeys = match register_hotkeys(&cfg, &registry, &ctx) {
@@ -226,6 +231,7 @@ impl NookApp {
 
         let timings = timings(&cfg);
         let mut shell = Shell::new(ShellMetrics::default(), timings);
+        shell.metrics.notch_collapsed = cfg.notch_size.points();
         shell.placement = cfg.placement;
         shell.notch = cfg.shell_style == crate::config::ShellStyle::Notch;
         // Dev flags (screenshots/demos): `--pinned` starts expanded and
@@ -775,7 +781,14 @@ fn icon_font(size: f32, fill: bool) -> FontId {
 /// Collapsed pill: live badges from modules (ring + label on the left,
 /// glyphs and pulse dots on the right), inset by the same ink margin on
 /// both sides.
-fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Rect, theme: &Theme) {
+fn draw_pill(
+    badges: Vec<Badge>,
+    battery: Option<Battery>,
+    clock_style: crate::config::ClockStyle,
+    ui: &mut Ui,
+    rect: Rect,
+    theme: &Theme,
+) {
     const PAD: f32 = 15.0;
     let painter = ui.painter();
     let cy = rect.center().y;
@@ -838,15 +851,7 @@ fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Re
             );
         }
         None => {
-            ink_text(
-                painter,
-                &clock.time,
-                Theme::font_semibold(SIZE_BODY),
-                theme.pill_text,
-                left,
-                cy,
-                false,
-            );
+            draw_clock(painter, &clock.time, clock_style, left, cy, theme.pill_text);
         }
     }
 
@@ -924,6 +929,88 @@ fn draw_pill(badges: Vec<Badge>, battery: Option<Battery>, ui: &mut Ui, rect: Re
     // One wake-up when the minute changes; nothing in between.
     ui.ctx()
         .request_repaint_after(Duration::from_secs(u64::from(clock.secs_to_next_minute)));
+}
+
+fn draw_clock(
+    painter: &egui::Painter,
+    value: &str,
+    style: crate::config::ClockStyle,
+    left: f32,
+    cy: f32,
+    color: Color32,
+) {
+    match style {
+        crate::config::ClockStyle::Classic => {
+            ink_text(
+                painter,
+                value,
+                Theme::font_semibold(SIZE_BODY),
+                color,
+                left,
+                cy,
+                false,
+            );
+        }
+        crate::config::ClockStyle::Digital => {
+            ink_text(
+                painter,
+                value,
+                egui::FontId::monospace(SIZE_BODY),
+                color,
+                left,
+                cy,
+                false,
+            );
+        }
+        crate::config::ClockStyle::DotMatrix => dot_matrix_clock(painter, value, left, cy, color),
+    }
+}
+
+fn dot_matrix_clock(painter: &egui::Painter, value: &str, left: f32, cy: f32, color: Color32) {
+    const CELL: f32 = 2.8;
+    const CHAR_GAP: f32 = 2.0;
+    let step = 4.0 * CELL + CHAR_GAP + CELL;
+    let mut x0 = left;
+    for ch in value.chars() {
+        if let Some(rows) = dot_glyph(ch) {
+            for (row, bits) in rows.iter().enumerate() {
+                for col in 0..5 {
+                    if bits & (1 << (4 - col)) != 0 {
+                        painter.circle_filled(
+                            pos2(
+                                x0 + col as f32 * CELL + CELL * 0.5,
+                                cy - 3.0 * CELL + row as f32 * CELL,
+                            ),
+                            CELL * 0.34,
+                            color,
+                        );
+                    }
+                }
+            }
+        }
+        x0 += step;
+    }
+}
+
+fn dot_glyph(ch: char) -> Option<[u8; 7]> {
+    Some(match ch.to_ascii_uppercase() {
+        '0' => [14, 17, 19, 21, 25, 17, 14],
+        '1' => [4, 12, 4, 4, 4, 4, 14],
+        '2' => [14, 17, 1, 2, 4, 8, 31],
+        '3' => [30, 1, 1, 14, 1, 1, 30],
+        '4' => [2, 6, 10, 18, 31, 2, 2],
+        '5' => [31, 16, 16, 30, 1, 1, 30],
+        '6' => [14, 16, 16, 30, 17, 17, 14],
+        '7' => [31, 1, 2, 4, 8, 8, 8],
+        '8' => [14, 17, 17, 14, 17, 17, 14],
+        '9' => [14, 17, 17, 15, 1, 1, 14],
+        ':' => [0, 4, 4, 0, 4, 4, 0],
+        'A' => [14, 17, 17, 31, 17, 17, 17],
+        'M' => [17, 27, 21, 21, 17, 17, 17],
+        'P' => [30, 17, 17, 30, 16, 16, 16],
+        ' ' => [0; 7],
+        _ => return None,
+    })
 }
 
 fn battery_icon(b: Battery, theme: &Theme) -> (&'static str, Color32) {
@@ -1161,6 +1248,7 @@ impl eframe::App for NookApp {
             .filter_map(|m| m.collapsed_badge())
             .collect();
         let battery = self.sys.battery;
+        let clock_style = self.cfg.clock_style;
         let composited = self.backdrop.is_some();
         // Stay open while typing in the panel or playing a plugin game (and
         // the window has focus) or while files are dragged over it.
@@ -1176,7 +1264,7 @@ impl eframe::App for NookApp {
             &theme,
             hidden,
             composited,
-            |ui, rect, _alpha| draw_pill(badges, battery, ui, rect, &theme),
+            |ui, rect, _alpha| draw_pill(badges, battery, clock_style, ui, rect, &theme),
             |ui, cctx| match page {
                 Page::Bento => {
                     let mut tiles = registry.grid_mut(editing);
@@ -1286,9 +1374,17 @@ impl eframe::App for NookApp {
             self.shell.timings = timings(&self.cfg);
             self.shell.placement = self.cfg.placement;
             self.shell.notch = self.cfg.shell_style == crate::config::ShellStyle::Notch;
+            self.shell.metrics.notch_collapsed = self.cfg.notch_size.points();
             self.shape_dirty = true;
             self.watcher.set_monitor_mode(self.cfg.monitor);
             nook_modules::plugins::set_dev_mode(self.cfg.plugin_dev);
+            for module in self.registry.all_mut() {
+                match module.id() {
+                    "clipboard" => module.set_retention_days(self.cfg.clipboard_retention.days()),
+                    "notes" => module.set_retention_days(self.cfg.notes_retention.days()),
+                    _ => {}
+                }
+            }
             self.stats.set_enabled(self.cfg.usage_stats);
             // Re-sample now so a monitor switch does not wait for the watcher.
             self.sys.monitor =

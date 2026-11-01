@@ -14,6 +14,7 @@ enum Command {
     Refresh,
     Volume(f32),
     Brightness(f32),
+    BrightnessPreview(f32),
     Mute(bool),
     Notifications(bool),
     Stop,
@@ -78,6 +79,9 @@ impl Worker {
                         Command::Stop => break,
                         Command::Volume(value) => controls::set_volume(value).map(|()| None),
                         Command::Brightness(value) => controls::set_brightness(value).map(|_| None),
+                        Command::BrightnessPreview(value) => {
+                            controls::set_brightness_preview(value).map(|()| None)
+                        }
                         command => {
                             let action = match command {
                                 Command::Refresh => Ok(()),
@@ -88,6 +92,7 @@ impl Worker {
                                 Command::Stop => continue,
                                 Command::Volume(_) => continue,
                                 Command::Brightness(_) => continue,
+                                Command::BrightnessPreview(_) => continue,
                             };
                             action.map(|()| Some(controls::snapshot()))
                         }
@@ -207,13 +212,15 @@ impl Module for Controls {
                 self.send(Command::Volume(value));
             }
         }
+        // Brightness previews target DDC/CI only. Laptop-panel WMI writes are
+        // sent once on release, avoiding slow stale updates during a drag.
         if self
             .brightness_due
             .is_some_and(|deadline| Instant::now() >= deadline)
         {
             self.brightness_due = None;
-            if let Some(value) = self.brightness_pending.take() {
-                self.send(Command::Brightness(value));
+            if let Some(value) = self.brightness_pending {
+                self.send(Command::BrightnessPreview(value));
             }
         }
         if let Some(worker) = &self.worker {
@@ -377,8 +384,8 @@ impl Module for Controls {
                         self.brightness_display = Some(brightness);
                         self.brightness_overridden = true;
                         self.brightness_pending = Some(brightness);
-                        self.brightness_due = Some(Instant::now() + Duration::from_millis(110));
-                        ui.ctx().request_repaint_after(Duration::from_millis(115));
+                        self.brightness_due = Some(Instant::now() + Duration::from_millis(55));
+                        ui.ctx().request_repaint_after(Duration::from_millis(60));
                     }
                     if response.drag_stopped() || response.clicked() {
                         self.brightness_due = None;

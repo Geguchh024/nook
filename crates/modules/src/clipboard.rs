@@ -8,9 +8,9 @@
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{
     Align2, Color32, ColorImage, Id, Pos2, Rect, Response, ScrollArea, Sense, TextureHandle,
-    TextureOptions, Ui, UiBuilder, pos2, vec2,
+    TextureOptions, Ui, pos2, vec2,
 };
-use nook_platform::clipboard::{ClipContent, ClipImage, ClipboardWatcher};
+use nook_platform::clipboard::{self, ClipContent, ClipImage, ClipboardWatcher};
 use nook_ui::bento::tile_header;
 use nook_ui::module::{Module, TileCtx, TileSize};
 use nook_ui::theme::{SIZE_LABEL, TILE_RADIUS, Theme, with_alpha};
@@ -89,6 +89,10 @@ impl History {
     fn remove(&mut self, id: u64) {
         self.entries.retain(|e| e.id != id);
     }
+
+    fn expire(&mut self, max_age: Duration) {
+        self.entries.retain(|entry| entry.at.elapsed() < max_age);
+    }
 }
 
 #[derive(Default)]
@@ -101,23 +105,49 @@ pub struct Clipboard {
     editing: Option<(u64, String, bool)>,
     edit_session: u64,
     edit_focus_pending: bool,
+    retention_days: Option<u32>,
+    message: Option<String>,
 }
 
 impl Clipboard {
     fn copy(&mut self, id: u64, now: f64) {
-        let Some(e) = self.history.entries.iter().find(|e| e.id == id) else {
+        let Some(content) = self
+            .history
+            .entries
+            .iter()
+            .find(|e| e.id == id)
+            .map(|entry| entry.content.clone())
+        else {
             return;
         };
-        if let Some(w) = &self.watcher {
-            w.set(e.content.clone());
+        let result = if let Some(watcher) = &self.watcher {
+            watcher.set(content.clone())
+        } else {
+            clipboard::copy_content(&content)
+        };
+        match result {
+            Ok(()) => {
+                self.copied = Some((id, now));
+                self.message = None;
+            }
+            Err(error) => self.message = Some(format!("Could not copy: {error}")),
         }
-        self.copied = Some((id, now));
     }
 
     fn just_copied(&self, id: u64, now: f64) -> bool {
         self.copied
             .is_some_and(|(c, at)| c == id && now - at < COPIED_FOR)
     }
+}
+
+fn retention_left(at: Instant, days: Option<u32>) -> Option<String> {
+    let duration = Duration::from_secs(u64::from(days?) * 86_400);
+    let remaining = duration.saturating_sub(at.elapsed());
+    let days = remaining.as_secs().div_ceil(86_400).max(1);
+    Some(format!(
+        "{days} {} left",
+        if days == 1 { "day" } else { "days" }
+    ))
 }
 
 /// "now", "5 min", "2 h", "3 d".
@@ -185,10 +215,44 @@ fn hover_box(ui: &mut Ui, rect: Rect, id: Id, radius: f32, theme: &Theme) -> Res
     resp
 }
 
-fn button_at(ui: &mut Ui, center: Pos2, size: f32, glyph: &'static str, theme: &Theme) -> Response {
+fn button_at(
+    ui: &mut Ui,
+    center: Pos2,
+    size: f32,
+    glyph: &'static str,
+    id: Id,
+    visible: bool,
+    theme: &Theme,
+) -> Response {
     let rect = Rect::from_center_size(center, vec2(size, size));
-    let mut child = ui.new_child(UiBuilder::new().max_rect(rect).id_salt(glyph));
-    widgets::icon_button(&mut child, glyph, size, false, theme)
+    let response = ui.interact(rect, id, Sense::click());
+    if visible || response.hovered() {
+        let painter = ui.painter();
+        let fill = if theme.dark {
+            Color32::from_white_alpha(28)
+        } else {
+            Color32::from_black_alpha(20)
+        };
+        if response.hovered() {
+            painter.circle_filled(rect.center(), size * 0.5, fill);
+        }
+        paint::icon(
+            painter,
+            rect.center(),
+            glyph,
+            size * 0.55,
+            if response.hovered() {
+                theme.accent
+            } else {
+                theme.text_dim
+            },
+            false,
+        );
+    }
+    if response.clicked() {
+        nook_ui::sound::play(ui.ctx(), nook_ui::sound::Cue::Tap);
+    }
+    response
 }
 
 impl Module for Clipboard {
@@ -216,18 +280,47 @@ impl Module for Clipboard {
         }
     }
 
+    fn set_retention_days(&mut self, days: Option<u32>) {
+        self.retention_days = days;
+    }
+
     fn on_tick(&mut self) {
-        let Some(w) = &self.watcher else {
-            return;
-        };
-        for content in w.poll() {
-            self.history.push(content);
+        if let Some(watcher) = &self.watcher {
+            for content in watcher.poll() {
+                self.history.push(content);
+            }
+        }
+        if let Some(days) = self.retention_days {
+            let max_age = Duration::from_secs(u64::from(days) * 86_400);
+            let before = self.history.entries.len();
+            self.history.expire(max_age);
+            if before != self.history.entries.len()
+                && let Some((id, _, _)) = self.editing.as_ref()
+                && !self.history.entries.iter().any(|entry| entry.id == *id)
+            {
+                self.editing = None;
+                self.edit_focus_pending = false;
+            }
         }
     }
 
     fn next_repaint(&self, tile_visible: bool) -> Option<Duration> {
         // Let the "Copied" confirmation expire on time.
-        (tile_visible && self.copied.is_some()).then(|| Duration::from_millis(250))
+        let copy_feedback =
+            (tile_visible && self.copied.is_some()).then_some(Duration::from_millis(250));
+        let expiry = self.retention_days.and_then(|days| {
+            let max_age = Duration::from_secs(u64::from(days) * 86_400);
+            self.history
+                .entries
+                .iter()
+                .map(|entry| max_age.saturating_sub(entry.at.elapsed()))
+                .min()
+        });
+        match (copy_feedback, expiry) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(value), None) | (None, Some(value)) => Some(value),
+            (None, None) => None,
+        }
     }
 
     fn take_page_request(&mut self) -> bool {
@@ -248,6 +341,8 @@ impl Module for Clipboard {
             pos2(rect.max.x - 8.0, rect.min.y + 9.0),
             20.0,
             icons::ARROWS_OUT_SIMPLE,
+            ui.id().with("clip-show-all"),
+            true,
             theme,
         )
         .on_hover_text("Show all")
@@ -348,6 +443,16 @@ impl Module for Clipboard {
             self.history.entries.clear();
         }
 
+        if let Some(message) = &self.message {
+            ui.painter().text(
+                pos2(body.min.x + 4.0, body.max.y - 4.0),
+                Align2::LEFT_BOTTOM,
+                message,
+                Theme::font(SIZE_LABEL - 1.0),
+                theme.text_dim,
+            );
+        }
+
         if self.history.entries.is_empty() {
             ui.painter().text(
                 body.center(),
@@ -369,7 +474,7 @@ impl Module for Clipboard {
 
         ScrollArea::vertical()
             .id_salt("nook-clip-scroll")
-            .max_height(body.height())
+            .max_height((body.height() - 24.0).max(80.0))
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 let (area, _) = ui.allocate_exact_size(
@@ -425,7 +530,13 @@ impl Module for Clipboard {
                     let (footer, color) = if copied {
                         ("Copied".to_owned(), theme.accent_fg())
                     } else {
-                        (format!("{label} · {}", age(entry.at)), theme.text_faint)
+                        let remaining = retention_left(entry.at, self.retention_days)
+                            .map(|text| format!(" · {text}"))
+                            .unwrap_or_default();
+                        (
+                            format!("{label} · {}{remaining}", age(entry.at)),
+                            theme.text_faint,
+                        )
                     };
                     ui.painter().text(
                         pos2(content.min.x, content.max.y - 1.0),
@@ -434,55 +545,65 @@ impl Module for Clipboard {
                         Theme::font(SIZE_LABEL - 1.0),
                         color,
                     );
-                    if resp.hovered() {
-                        let copy_resp = button_at(
+                    let copy_resp = button_at(
+                        ui,
+                        pos2(inner.max.x - 72.0, action_y),
+                        24.0,
+                        icons::COPY_SIMPLE,
+                        Id::new(("clip-copy", id)),
+                        resp.hovered(),
+                        theme,
+                    )
+                    .on_hover_text("Copy")
+                    .clicked();
+                    let mut action_clicked = copy_resp;
+                    if copy_resp {
+                        copy = Some(id);
+                    }
+                    if let ClipContent::Text(text) = &entry.content {
+                        let long = text.chars().count() > 180;
+                        let edit_resp = button_at(
                             ui,
-                            pos2(inner.max.x - 72.0, action_y),
+                            pos2(inner.max.x - 44.0, action_y),
                             24.0,
-                            icons::COPY_SIMPLE,
-                            theme,
-                        )
-                        .on_hover_text("Copy")
-                        .clicked();
-                        if copy_resp {
-                            copy = Some(id);
-                        }
-                        if let ClipContent::Text(text) = &entry.content
-                            && button_at(
-                                ui,
-                                pos2(inner.max.x - 44.0, action_y),
-                                24.0,
-                                if text.chars().count() > 180 {
-                                    icons::ARROWS_OUT_SIMPLE
-                                } else {
-                                    icons::PENCIL_SIMPLE
-                                },
-                                theme,
-                            )
-                            .on_hover_text(if text.chars().count() > 180 {
-                                "Enlarge and edit text"
+                            if long {
+                                icons::ARROWS_OUT_SIMPLE
                             } else {
-                                "Edit text"
-                            })
-                            .clicked()
-                        {
-                            edit = Some((id, text.clone(), text.chars().count() > 180));
-                        }
-                        if button_at(
-                            ui,
-                            pos2(inner.max.x - 14.0, action_y),
-                            24.0,
-                            icons::TRASH,
+                                icons::PENCIL_SIMPLE
+                            },
+                            Id::new(("clip-edit", id)),
+                            resp.hovered(),
                             theme,
                         )
-                        .on_hover_text("Delete")
-                        .clicked()
-                        {
-                            delete = Some(id);
-                            copy = None;
-                            edit = None;
+                        .on_hover_text(if long {
+                            "Enlarge and edit text"
+                        } else {
+                            "Edit text"
+                        })
+                        .clicked();
+                        if edit_resp {
+                            action_clicked = true;
+                            edit = Some((id, text.clone(), long));
                         }
-                    } else if resp.clicked() {
+                    }
+                    let delete_resp = button_at(
+                        ui,
+                        pos2(inner.max.x - 14.0, action_y),
+                        24.0,
+                        icons::TRASH,
+                        Id::new(("clip-delete", id)),
+                        resp.hovered(),
+                        theme,
+                    )
+                    .on_hover_text("Delete")
+                    .clicked();
+                    if delete_resp {
+                        action_clicked = true;
+                        delete = Some(id);
+                        copy = None;
+                        edit = None;
+                    }
+                    if resp.clicked() && !action_clicked {
                         copy = Some(id);
                     }
                 }
@@ -541,9 +662,18 @@ impl Module for Clipboard {
             if let Some(entry) = self.history.entries.iter_mut().find(|entry| entry.id == id) {
                 entry.content = ClipContent::Text(text.clone());
                 entry.at = Instant::now();
-                self.copied = Some((id, now));
-                if let Some(watcher) = &self.watcher {
-                    watcher.set(ClipContent::Text(text));
+                let content = ClipContent::Text(text);
+                let result = if let Some(watcher) = &self.watcher {
+                    watcher.set(content.clone())
+                } else {
+                    clipboard::copy_content(&content)
+                };
+                match result {
+                    Ok(()) => {
+                        self.copied = Some((id, now));
+                        self.message = None;
+                    }
+                    Err(error) => self.message = Some(format!("Could not copy: {error}")),
                 }
             }
             self.editing = None;

@@ -45,6 +45,8 @@ impl Placement {
 #[derive(Clone, Copy, Debug)]
 pub struct ShellMetrics {
     pub collapsed: Vec2,
+    /// Compact bounds used when the shell is in notch mode.
+    pub notch_collapsed: Vec2,
     /// Extra size while the pointer rests on the closed pill.
     pub hover_swell: Vec2,
     pub expanded: Vec2,
@@ -60,6 +62,7 @@ impl Default for ShellMetrics {
     fn default() -> Self {
         Self {
             collapsed: vec2(140.0, 34.0),
+            notch_collapsed: vec2(200.0, 32.0),
             hover_swell: vec2(12.0, 2.0),
             expanded: vec2(568.0, 236.0),
             collapsed_radius: 17.0,
@@ -259,7 +262,7 @@ impl Shell {
         let open = targets.shell_open && !hidden;
         let expanded = self.expanded();
         let collapsed = if self.notch {
-            vec2(200.0, 32.0)
+            m.notch_collapsed
         } else {
             m.collapsed
         };

@@ -72,17 +72,6 @@ fn title(text: &str) -> String {
         .to_owned()
 }
 
-/// "now", "5 min", "3 h", "2 d".
-fn ago(when: SystemTime, now: SystemTime) -> String {
-    let secs = now.duration_since(when).map(|d| d.as_secs()).unwrap_or(0);
-    match secs {
-        0..60 => "now".into(),
-        60..3600 => format!("{} min", secs / 60),
-        3600..86_400 => format!("{} h", secs / 3600),
-        _ => format!("{} d", secs / 86_400),
-    }
-}
-
 fn notes_dir() -> Option<PathBuf> {
     std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("Nook").join("notes"))
 }
@@ -119,6 +108,7 @@ pub struct Notes {
     open_page: bool,
     /// Put the cursor in the editor on the next page frame.
     focus_editor: bool,
+    retention_days: Option<u32>,
 }
 
 impl Notes {
@@ -247,7 +237,8 @@ impl Notes {
                         if note.dirty.is_some() {
                             "Editing".to_owned()
                         } else {
-                            ago(note.modified, now)
+                            retention_left(note.modified, now, self.retention_days)
+                                .unwrap_or_default()
                         },
                         Theme::font(SIZE_LABEL - 1.0),
                         theme.text_faint,
@@ -347,20 +338,75 @@ impl Module for Notes {
         }
     }
 
+    fn set_retention_days(&mut self, days: Option<u32>) {
+        self.retention_days = days;
+    }
+
     fn on_tick(&mut self) {
         for n in &mut self.notes {
             if n.dirty.is_some_and(|at| at.elapsed() >= SAVE_AFTER) {
                 n.save();
             }
         }
+        let Some(days) = self.retention_days else {
+            return;
+        };
+        let max_age = Duration::from_secs(u64::from(days) * 86_400);
+        let current_path = self.notes.get(self.current).map(|note| note.path.clone());
+        let mut keep = Vec::with_capacity(self.notes.len());
+        for mut note in self.notes.drain(..) {
+            if SystemTime::now()
+                .duration_since(note.modified)
+                .is_ok_and(|age| age >= max_age)
+                && note.dirty.is_none()
+                && note.path.exists()
+            {
+                if let Err(error) = shell::recycle(&note.path) {
+                    tracing::warn!("notes: recycling expired {}: {error}", note.path.display());
+                    if let Err(remove_error) = std::fs::remove_file(&note.path) {
+                        tracing::warn!(
+                            "notes: removing expired {}: {remove_error}",
+                            note.path.display()
+                        );
+                        note.modified = SystemTime::now();
+                        keep.push(note);
+                    }
+                }
+            } else {
+                keep.push(note);
+            }
+        }
+        self.notes = keep;
+        self.current = current_path
+            .and_then(|path| self.notes.iter().position(|note| note.path == path))
+            .unwrap_or_else(|| self.current.min(self.notes.len().saturating_sub(1)));
     }
 
     fn next_repaint(&self, _tile_visible: bool) -> Option<Duration> {
-        self.notes
+        let dirty = self
+            .notes
             .iter()
             .filter_map(|n| n.dirty)
             .map(|at| SAVE_AFTER.saturating_sub(at.elapsed()) + Duration::from_millis(5))
-            .min()
+            .min();
+        let expiry = self.retention_days.and_then(|days| {
+                let max_age = Duration::from_secs(u64::from(days) * 86_400);
+                let now = SystemTime::now();
+                self.notes
+                    .iter()
+                    .filter(|note| note.dirty.is_none() && note.path.exists())
+                    .map(|note| {
+                        max_age.saturating_sub(
+                            now.duration_since(note.modified).unwrap_or(Duration::ZERO),
+                        )
+                    })
+                    .min()
+            });
+        match (dirty, expiry) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(value), None) | (None, Some(value)) => Some(value),
+            (None, None) => None,
+        }
     }
 
     fn take_page_request(&mut self) -> bool {
@@ -430,6 +476,17 @@ impl Module for Notes {
     }
 }
 
+fn retention_left(modified: SystemTime, now: SystemTime, days: Option<u32>) -> Option<String> {
+    let period = Duration::from_secs(u64::from(days?) * 86_400);
+    let elapsed = now.duration_since(modified).unwrap_or(Duration::ZERO);
+    let remaining = period.saturating_sub(elapsed);
+    let left = remaining.as_secs().div_ceil(86_400).max(1);
+    Some(format!(
+        "{left} {} left",
+        if left == 1 { "day" } else { "days" }
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,12 +498,13 @@ mod tests {
     }
 
     #[test]
-    fn relative_times() {
+    fn retention_countdown_uses_remaining_days() {
         let now = SystemTime::now();
-        assert_eq!(ago(now, now), "now");
-        assert_eq!(ago(now - Duration::from_secs(300), now), "5 min");
-        assert_eq!(ago(now - Duration::from_secs(7200), now), "2 h");
-        assert_eq!(ago(now - Duration::from_secs(3 * 86_400), now), "3 d");
+        assert_eq!(
+            retention_left(now - Duration::from_secs(2 * 86_400), now, Some(3)).as_deref(),
+            Some("1 day left")
+        );
+        assert_eq!(retention_left(now, now, None), None);
     }
 
     #[test]

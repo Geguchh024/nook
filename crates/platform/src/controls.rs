@@ -162,6 +162,22 @@ fn set_wmi_brightness(value: f32) -> Result<bool> {
 }
 
 pub fn set_brightness(value: f32) -> Result<bool> {
+    match set_ddc_brightness(value)? {
+        Some(true) => Ok(true),
+        Some(false) | None => set_wmi_brightness(value),
+    }
+}
+
+/// Updates an external display through DDC/CI without invoking the slower
+/// laptop-panel WMI fallback. Used for live preview while a slider is dragged.
+pub fn set_brightness_preview(value: f32) -> Result<()> {
+    match set_ddc_brightness(value)? {
+        Some(true) => Ok(()),
+        Some(false) | None => Ok(()),
+    }
+}
+
+fn set_ddc_brightness(value: f32) -> Result<Option<bool>> {
     let set = with_physical_monitors(|monitors| {
         for monitor in monitors {
             if let Some((min, _, max)) = monitor_brightness(monitor) {
@@ -177,10 +193,7 @@ pub fn set_brightness(value: f32) -> Result<bool> {
         }
         Ok(false)
     })?;
-    match set {
-        Some(true) => Ok(true),
-        Some(false) | None => set_wmi_brightness(value),
-    }
+    Ok(set)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

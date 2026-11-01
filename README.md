@@ -156,6 +156,11 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
 - **Style:** Settings, Style: Pill or Notch. Pill floats below the work-area
   edge; Notch touches the monitor's top edge with curved ears. Both styles
   open into the same panel in place.
+- **Notch display:** choose Compact, Standard or Large size and Classic,
+  Digital or Dot matrix clock in Settings. These choices apply live.
+- **Notes and clipboard retention:** Settings → Advanced controls how long
+  saved notes and in-memory clipboard history are kept (1, 3, 5, 7, 10 or 15
+  days, 1 month, or Never). Finite periods show the remaining days in the list.
 - **Position:** Settings, Position: Left, Center or Right. In a corner
   the panel opens toward the other side.
 - **Always on top:** on by default. Turn it off in Settings or the tray
