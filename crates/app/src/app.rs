@@ -208,6 +208,7 @@ impl NookApp {
         let timings = timings(&cfg);
         let mut shell = Shell::new(ShellMetrics::default(), timings);
         shell.placement = cfg.placement;
+        shell.notch = cfg.shell_style == crate::config::ShellStyle::Notch;
         // Dev flags (screenshots/demos): `--pinned` starts expanded and
         // pinned, `--settings` additionally opens the settings page.
         // `--page=<module id>` opens that module's page.
@@ -424,7 +425,12 @@ impl NookApp {
         };
         let scale = window::dpi(self.hwnd) as f32 / 96.0;
         let h = (self.shell.window_size().y * scale).ceil() as i32;
-        let rect = (mon.work.left, mon.work.top, mon.work.width(), h);
+        let area = if self.shell.notch {
+            mon.bounds
+        } else {
+            mon.work
+        };
+        let rect = (area.left, area.top, area.width(), h);
         if self.anchor != Some(rect) {
             match window::set_rect(self.hwnd, rect.0, rect.1, rect.2, rect.3) {
                 Ok(()) => {
@@ -537,10 +543,16 @@ impl NookApp {
     /// Pushes the shell's current shape to the compositor (sub-pixel clip
     /// of the glass) and to the hit tester (screen pixels, plus the debug
     /// overlay if enabled). Only does work when the shape changed.
-    fn update_shape(&mut self, ctx: &egui::Context, shape: Option<Squircle>, extra: Option<Rect>) {
+    fn update_shape(
+        &mut self,
+        ctx: &egui::Context,
+        shape: Option<Squircle>,
+        shell_outline: Option<&[egui::Pos2]>,
+        extra: Option<Rect>,
+    ) {
         let ppp = ctx.pixels_per_point();
-        let outline: Vec<(f32, f32)> = shape
-            .map(|s| s.outline().iter().map(|p| (p.x * ppp, p.y * ppp)).collect())
+        let outline: Vec<(f32, f32)> = shell_outline
+            .map(|points| points.iter().map(|p| (p.x * ppp, p.y * ppp)).collect())
             .unwrap_or_default();
         let key = (outline, extra);
         if self.pushed.as_ref() == Some(&key) && !self.shape_dirty {
@@ -558,17 +570,8 @@ impl NookApp {
                 .map(|(x, y, _, _)| (x as f32, y as f32))
                 .unwrap_or_default();
             let mut polygons = Vec::with_capacity(2);
-            if let Some(s) = shape {
-                // A point of slack so the anti-aliased edge still counts.
-                let padded =
-                    Squircle::new(s.rect.expand(1.0), s.radius + 1.0).with_exponent(s.exponent);
-                polygons.push(
-                    padded
-                        .outline()
-                        .iter()
-                        .map(|p| (ox + p.x * ppp, oy + p.y * ppp))
-                        .collect(),
-                );
+            if shape.is_some() {
+                polygons.push(outline.iter().map(|&(x, y)| (ox + x, oy + y)).collect());
             }
             if let Some(r) = extra {
                 let (x0, y0) = (ox + r.min.x * ppp, oy + r.min.y * ppp);
@@ -1221,6 +1224,8 @@ impl eframe::App for NookApp {
         if settings_out.changed {
             self.shell.timings = timings(&self.cfg);
             self.shell.placement = self.cfg.placement;
+            self.shell.notch = self.cfg.shell_style == crate::config::ShellStyle::Notch;
+            self.shape_dirty = true;
             self.watcher.set_monitor_mode(self.cfg.monitor);
             nook_modules::plugins::set_dev_mode(self.cfg.plugin_dev);
             self.stats.set_enabled(self.cfg.usage_stats);
@@ -1256,7 +1261,12 @@ impl eframe::App for NookApp {
         let overlay_rect: Option<Rect> = None;
 
         self.update_tint(&ctx, &theme, &out);
-        self.update_shape(&ctx, out.visible.then_some(out.shape), overlay_rect);
+        self.update_shape(
+            &ctx,
+            out.visible.then_some(out.shape),
+            out.visible.then_some(out.outline.as_slice()),
+            overlay_rect,
+        );
 
         // Reveal the window once real frames have been presented.
         self.frames = self.frames.saturating_add(1);

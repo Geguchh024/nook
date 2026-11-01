@@ -3,7 +3,7 @@
 ## Step 1 — shell style configuration
 
 - Added the `shell_style` config enum and TOML parsing with `pill` as the backward-compatible default.
-- Added the spring segmented Style control to Settings; it persists through the existing settings path. Renderer integration is still pending, so the choice does not yet change the shell shape.
+- Added the spring segmented Style control to Settings; it persists through the existing settings path and switches the shell live.
 - `cargo test --workspace` could not resolve uncached dependencies because access to `index.crates.io` is unavailable. Clippy could not run for the same reason.
 - Commit: `6a7711e` (`Add configurable shell style setting`).
 
@@ -11,5 +11,9 @@
 
 - Added a sampled concave-ear/bottom-rounded polygon outline and an even-odd point-in-polygon helper to `crates/ui/src/geometry.rs`.
 - Added geometry bounds and hit-test coverage for the body, ear gap, and outside points.
-- The existing shell, compositor, and hit tester still use `Squircle`; carrying this polygon through those APIs remains pending.
-- Verification: formatted the edited Rust files. Workspace tests and clippy remain blocked by unavailable crates.io dependencies.
+- Routed the notch outline through the renderer, Composition clip and hit tester. Notch mode uses monitor bounds at y=0, a 200×32 compact shell, and animates bottom radius into the expanded panel.
+- Updated gradient and grain fills to triangulate concave outlines, avoiding fill across the notch ear gaps.
+- Raised the Settings appearance card height so the additional Style row has its own space.
+- Updated README usage notes for both shell styles.
+- Verification: `cargo test --workspace --offline` passed with `APPDATA` redirected to a writable workspace directory. `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. `cargo fmt --all --check` still reports formatting differences in untouched repository files; all edited Rust files were formatted directly.
+- Controls module (step 3) remains to be implemented.

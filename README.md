@@ -1,7 +1,7 @@
 # Nook
 
-A floating notch for Windows 10/11. A small glass pill sits at the top
-of the screen (center, or either corner). Hover it and it springs open into a bento grid of
+A floating notch for Windows 10/11. Choose the floating pill or a top-edge
+notch in Settings > Style. Hover it and it springs open into a bento grid of
 utilities. Move away and it folds back. It idles at 0% CPU.
 
 Built in Rust with eframe/egui (OpenGL), the `windows` crate (Win32, DWM,
@@ -148,6 +148,9 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
   collapse.
 - **Click** the glass (or empty space on any page), press **Ctrl+Alt+N**,
   or use the tray's **Pin open** to keep the panel open. A small pin shows at the top center.
+- **Style:** Settings, Style: Pill or Notch. Pill floats below the work-area
+  edge; Notch touches the monitor's top edge with curved ears. Both styles
+  open into the same panel in place.
 - **Position:** Settings, Position: Left, Center or Right. In a corner
   the panel opens toward the other side.
 - **Always on top:** on by default. Turn it off in Settings or the tray
