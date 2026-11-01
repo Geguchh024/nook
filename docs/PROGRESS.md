@@ -85,3 +85,11 @@
 - Added direct links to Windows Sound settings for default output selection and App volume settings for per-app speaker routing. Nook does not claim to change routes itself: public Core Audio APIs do not expose a supported default-endpoint switch or a generic running-session endpoint reassignment for this unpackaged app.
 - Device/session enumeration and icon extraction run only on the controls worker after the page opens or refreshes; the worker waits on its channel at idle.
 - Verification: `cargo test --workspace --offline --quiet` passed (159 passed, 7 ignored) with workspace-local `APPDATA`; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 11 — Settings placement and Bluetooth connected devices
+
+- Moved Hide in fullscreen from Appearance into the right-hand Behavior card.
+- Bluetooth now merges paired/nearby results with both classic Bluetooth and Bluetooth LE connected-device selectors, preserving connected state and available battery data when duplicate device IDs are returned.
+- The Bluetooth page always labels its Connected devices section and clearly says when none are currently connected.
+- Added a regression test ensuring connected-selector data upgrades a paired row instead of being dropped as a duplicate.
+- Verification: `cargo test --workspace --offline --quiet` passed (160 passed, 7 ignored) with workspace-local `APPDATA`; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

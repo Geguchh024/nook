@@ -296,15 +296,6 @@ pub fn page(
                 cfg.placement = Placement::ALL[pos_idx];
                 out.changed = true;
             }
-            let mut hide = cfg.hide_in_fullscreen;
-            if row(&mut lui, "Hide in fullscreen", theme, |ui| {
-                widgets::toggle(ui, &mut hide, theme)
-                    .on_hover_text("Fade the notch out while a game or video is fullscreen")
-            }) {
-                cfg.hide_in_fullscreen = hide;
-                out.changed = true;
-            }
-
             let mut rui = card_ui(ui, right);
             section_title(&mut rui, "Behavior", theme);
             let mut mon_idx = match cfg.monitor {
@@ -364,6 +355,14 @@ pub fn page(
             }) {
                 sounds = !sounds;
                 cfg.sound_effects = sounds;
+                out.changed = true;
+            }
+            let mut hide = cfg.hide_in_fullscreen;
+            if row(&mut rui, "Hide in fullscreen", theme, |ui| {
+                widgets::toggle(ui, &mut hide, theme)
+                    .on_hover_text("Fade the notch out while a game or video is fullscreen")
+            }) {
+                cfg.hide_in_fullscreen = hide;
                 out.changed = true;
             }
 

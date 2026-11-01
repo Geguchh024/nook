@@ -478,12 +478,14 @@ impl Module for Bluetooth {
                 egui::ScrollArea::vertical().id_salt("bluetooth-devices").max_height(list_height).auto_shrink([false, false]).show(ui, |ui| {
                     let connected: Vec<_> = self.devices.iter().filter(|device| device.connected).cloned().collect();
                     let other: Vec<_> = self.devices.iter().filter(|device| !device.connected).cloned().collect();
+                    ui.label(egui::RichText::new(if connected.is_empty() { "Connected devices".to_owned() } else { format!("Connected devices · {}", connected.len()) }).font(Theme::font(SIZE_LABEL)).color(theme.text_dim));
                     if !connected.is_empty() {
-                        ui.label(egui::RichText::new(format!("Connected · {}", connected.len())).font(Theme::font(SIZE_LABEL)).color(theme.text_dim));
                         for device in connected {
                             self.device_row(ui, &device, theme);
                         }
                         ui.add_space(6.0);
+                    } else {
+                        ui.label(egui::RichText::new("No devices are currently connected.").color(theme.text_faint));
                     }
                     ui.label(egui::RichText::new("Available and paired").font(Theme::font(SIZE_LABEL)).color(theme.text_dim));
                     for device in other {

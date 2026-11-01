@@ -6,7 +6,7 @@ use crate::{PlatformError, Result, Win32Context};
 use crossbeam_channel::Sender;
 use std::thread;
 use std::time::Duration;
-use windows::Devices::Bluetooth::{BluetoothConnectionStatus, BluetoothDevice};
+use windows::Devices::Bluetooth::{BluetoothConnectionStatus, BluetoothDevice, BluetoothLEDevice};
 use windows::Devices::Enumeration::{DeviceInformation, DeviceInformationUpdate, DeviceWatcher};
 use windows::Foundation::TypedEventHandler;
 use windows::Win32::Foundation::HANDLE;
@@ -439,7 +439,10 @@ pub fn connect_wifi(ssid: &str, password: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn device_infos(selector: &HSTRING) -> Result<Vec<BluetoothDeviceInfo>> {
+fn device_infos(
+    selector: &HSTRING,
+    connected_by_selector: bool,
+) -> Result<Vec<BluetoothDeviceInfo>> {
     let battery_property = HSTRING::from("System.Devices.BatteryLife");
     let devices = DeviceInformation::FindAllAsyncAqsFilter(selector)
         .api("DeviceInformation::FindAllAsync")?
@@ -462,11 +465,12 @@ fn device_infos(selector: &HSTRING) -> Result<Vec<BluetoothDeviceInfo>> {
             .and_then(|value| value.cast::<windows::Foundation::IPropertyValue>().ok())
             .and_then(|value| value.GetUInt8().ok())
             .filter(|value| *value <= 100);
-        let connected = BluetoothDevice::FromIdAsync(&HSTRING::from(&id))
-            .ok()
-            .and_then(|op| op.join().ok())
-            .and_then(|radio| radio.ConnectionStatus().ok())
-            .is_some_and(|state| state == BluetoothConnectionStatus::Connected);
+        let connected = connected_by_selector
+            || BluetoothDevice::FromIdAsync(&HSTRING::from(&id))
+                .ok()
+                .and_then(|op| op.join().ok())
+                .and_then(|radio| radio.ConnectionStatus().ok())
+                .is_some_and(|state| state == BluetoothConnectionStatus::Connected);
         found.push(BluetoothDeviceInfo {
             id,
             name,
@@ -493,14 +497,45 @@ pub fn scan_bluetooth() -> Result<BluetoothSnapshot> {
         .api("BluetoothDevice::GetDeviceSelectorFromPairingState(paired)")?;
     let nearby = BluetoothDevice::GetDeviceSelectorFromPairingState(false)
         .api("BluetoothDevice::GetDeviceSelectorFromPairingState(nearby)")?;
-    let mut all = device_infos(&paired)?;
-    all.extend(device_infos(&nearby)?);
+    let mut all = device_infos(&paired, false)?;
+    merge_bluetooth_devices(&mut all, device_infos(&nearby, false)?);
+
+    // BluetoothDevice covers classic profiles. BluetoothLEDevice has its own
+    // connection-status selector; merge both so LE peripherals show up even
+    // when their ID cannot be opened through BluetoothDevice::FromIdAsync.
+    if let Ok(selector) =
+        BluetoothDevice::GetDeviceSelectorFromConnectionStatus(BluetoothConnectionStatus::Connected)
+        && let Ok(devices) = device_infos(&selector, true)
+    {
+        merge_bluetooth_devices(&mut all, devices);
+    }
+    if let Ok(selector) = BluetoothLEDevice::GetDeviceSelectorFromConnectionStatus(
+        BluetoothConnectionStatus::Connected,
+    ) && let Ok(devices) = device_infos(&selector, true)
+    {
+        merge_bluetooth_devices(&mut all, devices);
+    }
     all.sort_by_key(|device| device.name.to_lowercase());
-    all.dedup_by(|a, b| a.id == b.id);
     Ok(BluetoothSnapshot {
         enabled,
         devices: all,
     })
+}
+
+fn merge_bluetooth_devices(
+    target: &mut Vec<BluetoothDeviceInfo>,
+    incoming: Vec<BluetoothDeviceInfo>,
+) {
+    for device in incoming {
+        if let Some(existing) = target.iter_mut().find(|item| item.id == device.id) {
+            existing.connected |= device.connected;
+            existing.paired |= device.paired;
+            existing.can_pair |= device.can_pair;
+            existing.battery = existing.battery.or(device.battery);
+        } else {
+            target.push(device);
+        }
+    }
 }
 
 /// Pairs an unpaired Bluetooth device, or removes an existing pairing.
@@ -653,10 +688,36 @@ impl Drop for BluetoothWatcher {
 
 #[cfg(test)]
 mod tests {
-    use super::xml_escape;
+    use super::{BluetoothDeviceInfo, merge_bluetooth_devices, xml_escape};
 
     #[test]
     fn escapes_profile_text_for_wlan_xml() {
         assert_eq!(xml_escape("a&b<\"'"), "a&amp;b&lt;&quot;&apos;");
+    }
+
+    #[test]
+    fn connected_selector_updates_a_paired_device_in_place() {
+        let mut devices = vec![BluetoothDeviceInfo {
+            id: "device-id".into(),
+            name: "Headphones".into(),
+            paired: true,
+            connected: false,
+            battery: Some(72),
+            can_pair: false,
+        }];
+        merge_bluetooth_devices(
+            &mut devices,
+            vec![BluetoothDeviceInfo {
+                id: "device-id".into(),
+                name: "Headphones".into(),
+                paired: true,
+                connected: true,
+                battery: None,
+                can_pair: false,
+            }],
+        );
+        assert_eq!(devices.len(), 1);
+        assert!(devices[0].connected);
+        assert_eq!(devices[0].battery, Some(72));
     }
 }
