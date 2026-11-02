@@ -201,6 +201,10 @@ pub struct Config {
     pub control_hex: String,
     /// Top offset of the closed pill, in logical points. Notch mode stays attached to the edge.
     pub pill_margin: u8,
+    /// Opacity of the single outer shell outline, in percent.
+    pub shell_border: u8,
+    /// Strength of the outer shell shadow, in percent.
+    pub shell_shadow: u8,
     /// Film-grain strength in percent; 0 turns the grain off.
     pub grain: u8,
     pub grain_size: GrainSize,
@@ -248,6 +252,8 @@ impl Default for Config {
             surface_hex: String::new(),
             control_hex: String::new(),
             pill_margin: 6,
+            shell_border: 100,
+            shell_shadow: 0,
             grain: DEFAULT_GRAIN,
             grain_size: GrainSize::Fine,
             placement: Placement::Center,
@@ -286,6 +292,8 @@ impl Config {
             surface_tint: parse_hex(&self.surface_hex),
             control_tint: parse_hex(&self.control_hex),
             oled: self.material == Material::Oled,
+            shell_border: self.shell_border.min(100) as f32 / 100.0,
+            shell_shadow: self.shell_shadow.min(100) as f32 / 100.0,
             grain: self.grain.min(100) as f32 / 100.0,
             grain_px: self.grain_size.pixels(),
         }
@@ -299,6 +307,8 @@ impl Config {
         self.background_hex = d.background_hex;
         self.surface_hex = d.surface_hex;
         self.control_hex = d.control_hex;
+        self.shell_border = d.shell_border;
+        self.shell_shadow = d.shell_shadow;
         self.grain = d.grain;
         self.grain_size = d.grain_size;
     }

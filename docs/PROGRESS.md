@@ -1,5 +1,12 @@
 # Progress
 
+## Step 17 — Main shell border and shadow
+
+- Added independent Border and Shadow sliders to Customize. Both render around the main shell outline only; they do not add an outline to every tile or button.
+- The border reuses the same outline color sent to the acrylic compositor, and the shadow is drawn beneath the shell with the existing squircle shape.
+- Reset style restores both shell effects.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
 ## Step 16 — OLED material, color selectors and pill margin
 
 - Added an OLED material preset that paints the expanded shell pure black with restrained dark surfaces, while keeping Acrylic and Solid available.

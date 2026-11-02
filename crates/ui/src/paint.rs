@@ -154,6 +154,9 @@ pub fn glass(
     fill: bool,
 ) {
     let o = |c: Color32| with_alpha(c, opacity);
+    if fill && theme.shell_shadow > 0.01 {
+        glow(painter, shape, Color32::BLACK, theme.shell_shadow * opacity);
+    }
     if fill {
         let (top, bottom) = theme.glass_at(progress);
         fill_gradient(painter, outline, o(top), o(bottom));

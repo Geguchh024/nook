@@ -41,6 +41,9 @@ pub struct Look {
     pub control_tint: Option<Color32>,
     /// Force a pure black shell and OLED-friendly dark surfaces.
     pub oled: bool,
+    /// Opacity of the shell rim and shadow.
+    pub shell_border: f32,
+    pub shell_shadow: f32,
     /// Film-grain strength, 0..1.
     pub grain: f32,
     /// Size of one grain speck in physical pixels.
@@ -55,6 +58,8 @@ impl Default for Look {
             surface_tint: None,
             control_tint: None,
             oled: false,
+            shell_border: 1.0,
+            shell_shadow: 0.0,
             grain: 0.35,
             grain_px: 1.0,
         }
@@ -86,6 +91,8 @@ pub struct Theme {
     pub tile_rim: Color32,
     /// Fill tint for secondary action buttons.
     pub control_fill: Color32,
+    /// Strength of the outer drop shadow, 0..1.
+    pub shell_shadow: f32,
     pub text: Color32,
     pub text_dim: Color32,
     pub text_faint: Color32,
@@ -166,7 +173,10 @@ impl Theme {
                     },
                     glass_alpha,
                 ),
-                rim: Color32::from_rgba_unmultiplied(0, 0, 0, 110),
+                rim: with_alpha(
+                    Color32::from_rgba_unmultiplied(0, 0, 0, 110),
+                    look.shell_border,
+                ),
                 highlight: Color32::from_rgba_unmultiplied(255, 255, 255, 46),
                 noise_alpha: (grain * GRAIN_MAX_DARK).round() as u8,
                 grain_px,
@@ -181,6 +191,7 @@ impl Theme {
                         0.10
                     },
                 ),
+                shell_shadow: look.shell_shadow.clamp(0.0, 1.0),
                 text: Color32::from_rgb(242, 242, 245),
                 text_dim: Color32::from_rgb(168, 168, 178),
                 text_faint: Color32::from_rgb(110, 110, 120),
@@ -195,7 +206,10 @@ impl Theme {
                     tinted(Color32::from_rgb(236, 236, 240), 0.20),
                     glass_alpha,
                 ),
-                rim: Color32::from_rgba_unmultiplied(0, 0, 0, 40),
+                rim: with_alpha(
+                    Color32::from_rgba_unmultiplied(0, 0, 0, 40),
+                    look.shell_border,
+                ),
                 highlight: Color32::from_rgba_unmultiplied(255, 255, 255, 200),
                 noise_alpha: (grain * GRAIN_MAX_LIGHT).round() as u8,
                 grain_px,
@@ -210,6 +224,7 @@ impl Theme {
                         0.07
                     },
                 ),
+                shell_shadow: look.shell_shadow.clamp(0.0, 1.0),
                 text: Color32::from_rgb(24, 24, 28),
                 text_dim: Color32::from_rgb(92, 92, 104),
                 text_faint: Color32::from_rgb(150, 150, 160),
@@ -295,6 +310,7 @@ impl Ink {
             tile_bottom: z,
             tile_rim: z,
             control_fill: z,
+            shell_shadow: 0.0,
             text: z,
             text_dim: z,
             text_faint: z,

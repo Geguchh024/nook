@@ -641,6 +641,29 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
         cfg.grain_size = GrainSize::ALL[size_idx];
         out.changed = true;
     }
+    let mut border = cfg.shell_border.min(100) as f32 / 100.0;
+    if row(&mut rui, "Shell border", theme, |ui| {
+        let resp = widgets::slider(ui, &mut border, 110.0, 18, theme);
+        value_label(ui, &format!("{}%", cfg.shell_border), theme);
+        resp
+    }) {
+        cfg.shell_border = (border * 100.0).round() as u8;
+        out.changed = true;
+    }
+    let mut shadow = cfg.shell_shadow.min(100) as f32 / 100.0;
+    if row(&mut rui, "Shell shadow", theme, |ui| {
+        let resp = widgets::slider(ui, &mut shadow, 110.0, 19, theme);
+        let label = if cfg.shell_shadow == 0 {
+            "Off".to_owned()
+        } else {
+            format!("{}%", cfg.shell_shadow)
+        };
+        value_label(ui, &label, theme);
+        resp
+    }) {
+        cfg.shell_shadow = (shadow * 100.0).round() as u8;
+        out.changed = true;
+    }
     let w = rui.available_width();
     let (reset_row, _) = rui.allocate_exact_size(vec2(w, ROW), Sense::hover());
     let reset = Rect::from_min_size(
