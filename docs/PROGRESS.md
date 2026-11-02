@@ -232,3 +232,10 @@
 - Tightened media tile size detection so a 2×2 Large tile uses the full player; only 2×1 Wide and 1×2 Tall use the compact transport layout.
 - Added a focused regression test for Small, Wide, Tall and Large logical footprints.
 - Verification: `cargo test --workspace --offline --quiet` passed (164 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 19 — Media access status
+
+- The media worker now reports startup failures to the module channel, and the media page explains when Windows denies system media access instead of claiming playback is idle.
+- Verified on this machine that the unpackaged Inno/dev build receives `E_ACCESSDENIED` from SMTC. Microsoft's API documentation requires the `globalMediaControl` package capability; the current installer cannot declare it without moving to Windows package identity.
+- README documents this Windows packaging requirement and the current build limitation.
+- Verification: `cargo test --workspace --offline --quiet` passed (164 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

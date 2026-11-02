@@ -433,6 +433,9 @@ drained in `on_tick`.
   seek bar and durations, previous / play-pause / next; a note glyph in the
   pill while playing
 
+Windows requires the `globalMediaControl` package capability for SMTC session
+access ([Microsoft documentation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/app-capability-declarations)). The current Inno Setup and `cargo run` builds have no package identity, so Windows may deny media access; Nook now shows that unavailable state instead of reporting that nothing is playing. Enabling SMTC in distributed builds requires packaging Nook with that capability.
+
 **Settings panel**
 
 - [x] Theme, accent, material, monitor, hover delay, startup

@@ -77,10 +77,16 @@ enum Msg {
     Command(MediaCommand),
 }
 
+#[derive(Debug)]
+pub enum MediaEvent {
+    Snapshot(Option<NowPlaying>),
+    Unavailable(String),
+}
+
 /// Handle to the worker thread. Dropping it stops the worker.
 pub struct MediaWatcher {
     tx: Sender<Msg>,
-    rx: Receiver<Option<NowPlaying>>,
+    rx: Receiver<MediaEvent>,
 }
 
 impl MediaWatcher {
@@ -95,6 +101,8 @@ impl MediaWatcher {
             .spawn(move || {
                 if let Err(e) = run(&worker_rx, &wake, &snap_tx, &on_change) {
                     tracing::warn!("media controls unavailable: {e}");
+                    let _ = snap_tx.send(MediaEvent::Unavailable(e.to_string()));
+                    on_change();
                 }
             })
             .map_err(|e| PlatformError::Other(format!("spawning media thread: {e}")))?;
@@ -103,7 +111,7 @@ impl MediaWatcher {
 
     /// Latest snapshot since the last call, if any (`Some(None)` means the
     /// session went away).
-    pub fn poll(&self) -> Option<Option<NowPlaying>> {
+    pub fn poll(&self) -> Option<MediaEvent> {
         self.rx.try_iter().last()
     }
 
@@ -166,7 +174,7 @@ type ArtKey = (String, String, String);
 fn run(
     rx: &Receiver<Msg>,
     wake: &Sender<Msg>,
-    out: &Sender<Option<NowPlaying>>,
+    out: &Sender<MediaEvent>,
     on_change: &dyn Fn(),
 ) -> Result<()> {
     // SAFETY: initializes WinRT for this worker thread only.
@@ -208,7 +216,7 @@ fn run(
                     None
                 }
             });
-        if out.send(snapshot).is_err() {
+        if out.send(MediaEvent::Snapshot(snapshot)).is_err() {
             return Ok(());
         }
         on_change();

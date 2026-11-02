@@ -11,7 +11,7 @@ use egui::{
     Align2, Color32, ColorImage, Pos2, Rect, Response, TextureHandle, TextureOptions, Ui,
     UiBuilder, pos2, vec2,
 };
-use nook_platform::media::{MediaCommand, MediaWatcher, NowPlaying};
+use nook_platform::media::{MediaCommand, MediaEvent, MediaWatcher, NowPlaying};
 use nook_ui::module::{Badge, BadgeArtwork, Module, TileCtx, TileSize};
 use nook_ui::theme::{SIZE_BODY, SIZE_LABEL, Theme, with_alpha};
 use nook_ui::{icons, paint, widgets};
@@ -44,6 +44,7 @@ pub struct Media {
     /// Texture for `now.art`, keyed by the art's allocation.
     art: Option<(usize, TextureHandle)>,
     badge_art: Option<(usize, BadgeArtwork)>,
+    unavailable: Option<String>,
     page_request: bool,
     seek_preview: Option<f64>,
 }
@@ -148,25 +149,34 @@ impl Module for Media {
     }
 
     fn on_tick(&mut self) {
-        if let Some(snapshot) = self.watcher.as_ref().and_then(MediaWatcher::poll) {
-            self.now = snapshot;
-            self.seek_preview = None;
-            let art = self.now.as_ref().and_then(|now| now.art.as_ref());
-            let key = art.map(|art| Arc::as_ptr(art) as usize);
-            if self.badge_art.as_ref().map(|(key, _)| *key) != key {
-                self.badge_art = art.map(|art| {
-                    (
-                        Arc::as_ptr(art) as usize,
-                        BadgeArtwork {
-                            width: art.width,
-                            height: art.height,
-                            rgba: Arc::from(art.rgba.clone()),
-                        },
-                    )
-                });
-            }
-            if self.now.as_ref().and_then(|n| n.art.as_ref()).is_none() {
-                self.art = None;
+        if let Some(event) = self.watcher.as_ref().and_then(MediaWatcher::poll) {
+            match event {
+                MediaEvent::Snapshot(snapshot) => {
+                    self.unavailable = None;
+                    self.now = snapshot;
+                    self.seek_preview = None;
+                    let art = self.now.as_ref().and_then(|now| now.art.as_ref());
+                    let key = art.map(|art| Arc::as_ptr(art) as usize);
+                    if self.badge_art.as_ref().map(|(key, _)| *key) != key {
+                        self.badge_art = art.map(|art| {
+                            (
+                                Arc::as_ptr(art) as usize,
+                                BadgeArtwork {
+                                    width: art.width,
+                                    height: art.height,
+                                    rgba: Arc::from(art.rgba.clone()),
+                                },
+                            )
+                        });
+                    }
+                    if self.now.as_ref().and_then(|n| n.art.as_ref()).is_none() {
+                        self.art = None;
+                    }
+                }
+                MediaEvent::Unavailable(error) => {
+                    self.now = None;
+                    self.unavailable = Some(error);
+                }
             }
         }
     }
@@ -202,7 +212,13 @@ impl Module for Media {
                 ui.painter().text(
                     c + vec2(0.0, 18.0),
                     Align2::CENTER_CENTER,
-                    if medium { "Media" } else { "Nothing playing" },
+                    if self.unavailable.is_some() {
+                        "Media unavailable"
+                    } else if medium {
+                        "Media"
+                    } else {
+                        "Nothing playing"
+                    },
                     Theme::font(SIZE_LABEL),
                     theme.text_dim,
                 );
@@ -523,7 +539,11 @@ impl Module for Media {
             ui.painter().text(
                 body.center(),
                 Align2::CENTER_CENTER,
-                "Nothing is playing",
+                if self.unavailable.is_some() {
+                    "Windows denied access to system media. This build needs the global media control package capability."
+                } else {
+                    "Nothing is playing"
+                },
                 Theme::font(SIZE_BODY),
                 theme.text_dim,
             );
