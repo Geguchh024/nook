@@ -4,6 +4,15 @@
 //! Time is passed in explicitly (seconds), so the logic is deterministic and
 //! testable without a window.
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MotionEasing {
+    Smooth,
+    #[default]
+    Spring,
+    Bouncy,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShellTimings {
     /// Hover must last this long before the shell expands.
@@ -12,6 +21,9 @@ pub struct ShellTimings {
     pub collapse_grace: f64,
     /// On collapse, content fades for this long before the shell shrinks.
     pub content_fade_out: f64,
+    /// Approximate shell travel time in seconds.
+    pub duration: f64,
+    pub easing: MotionEasing,
 }
 
 impl Default for ShellTimings {
@@ -20,6 +32,8 @@ impl Default for ShellTimings {
             hover_delay: 0.120,
             collapse_grace: 0.250,
             content_fade_out: 0.100,
+            duration: 0.370,
+            easing: MotionEasing::Spring,
         }
     }
 }
@@ -154,6 +168,8 @@ mod tests {
         hover_delay: 0.12,
         collapse_grace: 0.25,
         content_fade_out: 0.10,
+        duration: 0.37,
+        easing: MotionEasing::Spring,
     };
 
     #[test]

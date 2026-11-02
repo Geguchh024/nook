@@ -1038,6 +1038,8 @@ fn timings(cfg: &Config) -> ShellTimings {
     ShellTimings {
         hover_delay: cfg.hover_delay_ms as f64 / 1000.0,
         collapse_grace: cfg.collapse_grace_ms as f64 / 1000.0,
+        duration: cfg.motion_duration_ms as f64 / 1000.0,
+        easing: cfg.motion_easing,
         ..ShellTimings::default()
     }
 }

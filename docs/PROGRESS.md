@@ -1,5 +1,11 @@
 # Progress
 
+## Step 18 — Motion controls
+
+- Added a collapsible Motion section beneath Customize with open and close delays, hover glow, animation duration, Smooth/Spring/Bouncy easing and Reset motion.
+- The existing hover and collapse delays moved into this section. Duration and easing tune the shell's current spring; animation remains event driven and does not add background polling.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
 ## Step 17 — Main shell border and shadow
 
 - Added independent Border and Shadow sliders to Customize. Both render around the main shell outline only; they do not add an outline to every tile or button.

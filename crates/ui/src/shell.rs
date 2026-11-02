@@ -9,7 +9,7 @@
 use crate::anim::{self, ease_out_cubic};
 use crate::geometry::{CORNER_EXPONENT, Squircle, lerp, notch_outline, polygon_contains};
 use crate::paint;
-use crate::shell_state::{ShellState, ShellTimings};
+use crate::shell_state::{MotionEasing, ShellState, ShellTimings};
 use crate::spring::SpringParams;
 use crate::theme::Theme;
 use egui::emath::TSTransform;
@@ -276,7 +276,13 @@ impl Shell {
         } else {
             collapsed
         };
-        let shell_params = SpringParams::shell();
+        let duration = self.timings.duration.clamp(0.15, 0.8) as f32;
+        let stiffness = (30.0 / duration.powi(2)).clamp(80.0, 1600.0);
+        let shell_params = match self.timings.easing {
+            MotionEasing::Smooth => SpringParams::critical(stiffness),
+            MotionEasing::Spring => SpringParams::with_overshoot(stiffness, 0.04),
+            MotionEasing::Bouncy => SpringParams::with_overshoot(stiffness, 0.14),
+        };
         let w = anim::spring_from(
             &ctx,
             self.id.with("w"),
@@ -289,7 +295,7 @@ impl Shell {
             self.id.with("h"),
             collapsed.y,
             if open { expanded.y } else { rest.y },
-            SpringParams::with_overshoot(220.0, 0.04),
+            shell_params,
         );
         let opacity = anim::spring_from(
             &ctx,
@@ -339,6 +345,9 @@ impl Shell {
         }
 
         let painter = ui.painter().clone();
+        if hovered && theme.hover_glow > 0.01 {
+            paint::glow(&painter, &shape, theme.accent, theme.hover_glow);
+        }
         paint::glass(
             &painter,
             &shape,

@@ -27,14 +27,15 @@ const TOP_CARD: f32 = 232.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
-const BODY: [f32; 2] = [8.0 * ROW + 16.0, 5.0 * ROW + 36.0];
+const BODY: [f32; 3] = [8.0 * ROW + 16.0, 6.0 * ROW + 12.0, 5.0 * ROW + 36.0];
 /// Page height with every section collapsed, panel padding included.
 const BASE: f32 =
-    2.0 * PANEL_PADDING + HEADER + GAP + TOP_CARD + GAP + DISCLOSURE + GAP + DISCLOSURE;
+    2.0 * PANEL_PADDING + HEADER + GAP + TOP_CARD + GAP + 3.0 * DISCLOSURE + 2.0 * GAP;
 
 /// Collapsible sections, in page order.
 const CUSTOMIZE: usize = 0;
-const ADVANCED: usize = 1;
+const MOTION: usize = 1;
+const ADVANCED: usize = 2;
 
 /// Which collapsible section is open (at most one at a time).
 fn open_section(ctx: &egui::Context) -> Option<usize> {
@@ -308,17 +309,6 @@ pub fn page(
                 cfg.monitor = [MonitorMode::Primary, MonitorMode::Cursor][mon_idx];
                 out.changed = true;
             }
-            const DELAYS: [u32; 3] = [60, 120, 250];
-            let mut delay_idx = DELAYS
-                .iter()
-                .position(|&d| d == cfg.hover_delay_ms)
-                .unwrap_or(1);
-            if row(&mut rui, "Hover delay", theme, |ui| {
-                widgets::segmented(ui, &["Fast", "Normal", "Calm"], &mut delay_idx, theme)
-            }) {
-                cfg.hover_delay_ms = DELAYS[delay_idx];
-                out.changed = true;
-            }
             let mut on_top = cfg.on_top;
             if row(&mut rui, "Always on top", theme, |ui| {
                 widgets::toggle(ui, &mut on_top, theme)
@@ -368,7 +358,7 @@ pub fn page(
 
             let open = open_section(&ctx);
             let mut y = top.max.y + GAP;
-            for section in [CUSTOMIZE, ADVANCED] {
+            for section in [CUSTOMIZE, MOTION, ADVANCED] {
                 let t = reveal(&ctx, section, open == Some(section));
                 let card = Rect::from_min_size(
                     pos2(panel.min.x, y),
@@ -379,6 +369,14 @@ pub fn page(
                 let head = Rect::from_min_size(card.min, vec2(card.width(), DISCLOSURE));
                 let (glyph, title, summary) = match section {
                     CUSTOMIZE => (icons::PALETTE, "Customize", customize_summary(cfg)),
+                    MOTION => (
+                        icons::ARROW_CLOCKWISE,
+                        "Motion",
+                        format!(
+                            "{} ms · {} ms open delay",
+                            cfg.motion_duration_ms, cfg.hover_delay_ms
+                        ),
+                    ),
                     _ => (icons::SLIDERS_HORIZONTAL, "Advanced", advanced_summary(cfg)),
                 };
                 if widgets::disclosure_header(ui, head, glyph, title, &summary, t, theme).clicked()
@@ -407,6 +405,7 @@ pub fn page(
                     bui.multiply_opacity(fade * fade);
                     match section {
                         CUSTOMIZE => customize_body(&mut bui, body, theme, cfg, &mut out),
+                        MOTION => motion_body(&mut bui, body, theme, cfg, &mut out),
                         _ => advanced_body(&mut bui, body, theme, cfg, &mut out),
                     }
                 }
@@ -706,6 +705,108 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
         {
             tracing::warn!("opening color settings: {e}");
         }
+    }
+}
+
+/// Shell hover timing and spring feel, grouped below Customize.
+fn motion_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut PageOutput) {
+    let inner = rect.shrink2(vec2(14.0, 6.0));
+    let gap = 20.0;
+    let col_w = (inner.width() - gap) * 0.5;
+    let mut left = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_size(inner.min, vec2(col_w, inner.height())))
+            .layout(Layout::top_down(Align::Min)),
+    );
+    let mut right = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_size(
+                pos2(inner.min.x + col_w + gap, inner.min.y),
+                vec2(col_w, inner.height()),
+            ))
+            .layout(Layout::top_down(Align::Min)),
+    );
+
+    let mut open_delay = cfg.hover_delay_ms.min(600) as f32 / 600.0;
+    if row(&mut left, "Open delay", theme, |ui| {
+        let resp = widgets::slider(ui, &mut open_delay, 105.0, 30, theme);
+        value_label(ui, &format!("{} ms", cfg.hover_delay_ms), theme);
+        resp
+    }) {
+        cfg.hover_delay_ms = (open_delay * 600.0).round() as u32;
+        out.changed = true;
+    }
+    let mut close_delay = cfg.collapse_grace_ms.min(800) as f32 / 800.0;
+    if row(&mut left, "Close delay", theme, |ui| {
+        let resp = widgets::slider(ui, &mut close_delay, 105.0, 31, theme);
+        value_label(ui, &format!("{} ms", cfg.collapse_grace_ms), theme);
+        resp
+    }) {
+        cfg.collapse_grace_ms = (close_delay * 800.0).round() as u32;
+        out.changed = true;
+    }
+    let mut glow = cfg.hover_glow.min(100) as f32 / 100.0;
+    if row(&mut left, "Hover glow", theme, |ui| {
+        let resp = widgets::slider(ui, &mut glow, 105.0, 32, theme);
+        let label = if cfg.hover_glow == 0 {
+            "Off".to_owned()
+        } else {
+            format!("{}%", cfg.hover_glow)
+        };
+        value_label(ui, &label, theme);
+        resp
+    }) {
+        cfg.hover_glow = (glow * 100.0).round() as u8;
+        out.changed = true;
+    }
+
+    let mut duration = cfg.motion_duration_ms.saturating_sub(150).min(650) as f32 / 650.0;
+    if row(&mut right, "Duration", theme, |ui| {
+        let resp = widgets::slider(ui, &mut duration, 105.0, 33, theme);
+        value_label(ui, &format!("{} ms", cfg.motion_duration_ms), theme);
+        resp
+    }) {
+        cfg.motion_duration_ms = 150 + (duration * 650.0).round() as u16;
+        out.changed = true;
+    }
+    let mut easing = match cfg.motion_easing {
+        nook_ui::shell_state::MotionEasing::Smooth => 0,
+        nook_ui::shell_state::MotionEasing::Spring => 1,
+        nook_ui::shell_state::MotionEasing::Bouncy => 2,
+    };
+    if row(&mut right, "Easing", theme, |ui| {
+        widgets::segmented(ui, &["Smooth", "Spring", "Bouncy"], &mut easing, theme)
+    }) {
+        cfg.motion_easing = [
+            nook_ui::shell_state::MotionEasing::Smooth,
+            nook_ui::shell_state::MotionEasing::Spring,
+            nook_ui::shell_state::MotionEasing::Bouncy,
+        ][easing];
+        out.changed = true;
+    }
+    let width = right.available_width();
+    let (reset_row, _) = right.allocate_exact_size(vec2(width, ROW), Sense::hover());
+    let reset = Rect::from_min_size(
+        pos2(reset_row.max.x - 124.0, reset_row.center().y - 13.0),
+        vec2(124.0, 26.0),
+    );
+    if nook_modules::kit::button(
+        ui,
+        reset,
+        "Reset motion",
+        Some(icons::ARROW_COUNTER_CLOCKWISE),
+        false,
+        theme,
+    )
+    .clicked()
+    {
+        let defaults = Config::default();
+        cfg.hover_delay_ms = defaults.hover_delay_ms;
+        cfg.collapse_grace_ms = defaults.collapse_grace_ms;
+        cfg.hover_glow = defaults.hover_glow;
+        cfg.motion_duration_ms = defaults.motion_duration_ms;
+        cfg.motion_easing = defaults.motion_easing;
+        out.changed = true;
     }
 }
 

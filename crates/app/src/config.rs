@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use nook_ui::module::TileSize;
 use nook_ui::shell::Placement;
+use nook_ui::shell_state::MotionEasing;
 use nook_ui::theme::{Look, ThemeMode, parse_hex};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -205,6 +206,11 @@ pub struct Config {
     pub shell_border: u8,
     /// Strength of the outer shell shadow, in percent.
     pub shell_shadow: u8,
+    /// Hover glow around the shell, in percent.
+    pub hover_glow: u8,
+    /// Shell open/close animation duration, milliseconds.
+    pub motion_duration_ms: u16,
+    pub motion_easing: MotionEasing,
     /// Film-grain strength in percent; 0 turns the grain off.
     pub grain: u8,
     pub grain_size: GrainSize,
@@ -254,6 +260,9 @@ impl Default for Config {
             pill_margin: 6,
             shell_border: 100,
             shell_shadow: 0,
+            hover_glow: 12,
+            motion_duration_ms: 370,
+            motion_easing: MotionEasing::Spring,
             grain: DEFAULT_GRAIN,
             grain_size: GrainSize::Fine,
             placement: Placement::Center,
@@ -294,6 +303,7 @@ impl Config {
             oled: self.material == Material::Oled,
             shell_border: self.shell_border.min(100) as f32 / 100.0,
             shell_shadow: self.shell_shadow.min(100) as f32 / 100.0,
+            hover_glow: self.hover_glow.min(100) as f32 / 100.0,
             grain: self.grain.min(100) as f32 / 100.0,
             grain_px: self.grain_size.pixels(),
         }
