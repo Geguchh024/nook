@@ -258,3 +258,10 @@
 - Replaced the right-angle resize mark with a high-contrast curved corner arc, widened its drag target, and show the diagonal resize cursor while active.
 - Dragging continues to choose the nearest supported Small, Wide, Tall, or Large footprint.
 - Verification: `cargo test --workspace --offline --quiet` passed (165 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 23 — Enumerate wireless devices with unknown radio state
+
+- Wi-Fi and Bluetooth scans now proceed when Windows cannot report the radio state, while still skipping scans when the radio is explicitly off.
+- Detail pages distinguish an unavailable status from a confirmed Off state and still render device/network results when enumeration succeeds.
+- Added a regression test for unknown-radio enumeration; Bluetooth APIs requiring package capabilities can still return no devices in the current unpackaged build.
+- Verification: `cargo test --workspace --offline --quiet` passed (166 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

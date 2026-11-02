@@ -468,12 +468,19 @@ impl Module for Bluetooth {
             // Separate identity from actions and allow wrapping: the page can
             // be constrained by a small display or Windows scaling.
             ui.horizontal_wrapped(|ui| {
-                let mut enabled = self.enabled.unwrap_or(false);
+                let detected_on = !self.devices.is_empty();
+                let mut enabled = self.enabled.unwrap_or(detected_on);
                 if widgets::toggle(ui, &mut enabled, theme).changed() {
                     self.enabled = Some(enabled);
                     tx.send(Command::Radio(enabled)).ok();
                 }
-                ui.label(egui::RichText::new(if enabled { "Bluetooth on" } else { "Bluetooth off" }).font(Theme::font(SIZE_BODY)));
+                ui.label(egui::RichText::new(if self.enabled.is_none() && !detected_on {
+                    "Bluetooth status unavailable"
+                } else if enabled {
+                    "Bluetooth on"
+                } else {
+                    "Bluetooth off"
+                }).font(Theme::font(SIZE_BODY)));
             });
             ui.horizontal_wrapped(|ui| {
                 let (more_rect, _) = ui.allocate_exact_size(
@@ -494,7 +501,7 @@ impl Module for Bluetooth {
                     tx.send(Command::Refresh).ok();
                 }
             });
-            if self.enabled != Some(true) {
+            if self.enabled == Some(false) {
                 ui.label(egui::RichText::new("Turn Bluetooth on to discover nearby devices.").color(theme.text_dim));
                 if ui.link("Open Windows Bluetooth settings").clicked() {
                     let _ = wireless::open_bluetooth_settings();

@@ -277,7 +277,10 @@ fn network_entries(
 /// or presses Refresh.
 pub fn scan_wifi() -> Result<WifiSnapshot> {
     let enabled = controls::radio_enabled(RadioKind::Wifi);
-    if enabled != Some(true) {
+    // Radio state may be unavailable to an unpackaged desktop process. Still
+    // query WLAN when the state is unknown; the WLAN API can independently
+    // report interfaces and networks.
+    if !should_enumerate(enabled) {
         return Ok(WifiSnapshot {
             enabled,
             ..WifiSnapshot::default()
@@ -487,7 +490,8 @@ fn device_infos(
 /// details or asks for a refresh.
 pub fn scan_bluetooth() -> Result<BluetoothSnapshot> {
     let enabled = controls::radio_enabled(RadioKind::Bluetooth);
-    if enabled != Some(true) {
+    // Device enumeration remains useful when WinRT cannot report radio state.
+    if !should_enumerate(enabled) {
         return Ok(BluetoothSnapshot {
             enabled,
             devices: Vec::new(),
@@ -520,6 +524,10 @@ pub fn scan_bluetooth() -> Result<BluetoothSnapshot> {
         enabled,
         devices: all,
     })
+}
+
+fn should_enumerate(enabled: Option<bool>) -> bool {
+    enabled != Some(false)
 }
 
 fn merge_bluetooth_devices(
@@ -688,7 +696,14 @@ impl Drop for BluetoothWatcher {
 
 #[cfg(test)]
 mod tests {
-    use super::{BluetoothDeviceInfo, merge_bluetooth_devices, xml_escape};
+    use super::{BluetoothDeviceInfo, merge_bluetooth_devices, should_enumerate, xml_escape};
+
+    #[test]
+    fn unknown_radio_state_does_not_block_device_enumeration() {
+        assert!(should_enumerate(None));
+        assert!(should_enumerate(Some(true)));
+        assert!(!should_enumerate(Some(false)));
+    }
 
     #[test]
     fn escapes_profile_text_for_wlan_xml() {

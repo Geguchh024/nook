@@ -444,15 +444,23 @@ impl Module for Wifi {
                 // Keep the connection state and actions in separate rows so
                 // the controls reflow instead of colliding on narrow panels.
                 ui.horizontal_wrapped(|ui| {
-                    let mut enabled = self.state.enabled.unwrap_or(false);
+                    let detected_on =
+                        self.state.current_ssid.is_some() || !self.state.networks.is_empty();
+                    let mut enabled = self.state.enabled.unwrap_or(detected_on);
                     if widgets::toggle(ui, &mut enabled, theme).changed() {
                         self.state.enabled = Some(enabled);
                         self.loading = true;
                         tx.send(Command::Radio(enabled)).ok();
                     }
                     ui.label(
-                        egui::RichText::new(if enabled { "Wi-Fi on" } else { "Wi-Fi off" })
-                            .font(Theme::font(SIZE_BODY)),
+                        egui::RichText::new(if self.state.enabled.is_none() && !detected_on {
+                            "Wi-Fi status unavailable"
+                        } else if enabled {
+                            "Wi-Fi on"
+                        } else {
+                            "Wi-Fi off"
+                        })
+                        .font(Theme::font(SIZE_BODY)),
                     );
                     if let Some(ssid) = &self.state.current_ssid {
                         ui.add(
@@ -496,7 +504,7 @@ impl Module for Wifi {
                         tx.send(Command::Refresh).ok();
                     }
                 });
-                if self.state.enabled != Some(true) {
+                if self.state.enabled == Some(false) {
                     ui.label(
                         egui::RichText::new("Turn Wi-Fi on to see nearby networks.")
                             .color(theme.text_dim),
