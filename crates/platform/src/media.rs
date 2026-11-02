@@ -186,7 +186,7 @@ fn run(
     let mut watched: Option<Watched> = None;
     let mut art: Option<(ArtKey, Option<Arc<Art>>)> = None;
     loop {
-        let session = manager.GetCurrentSession().ok();
+        let session = select_session(&manager);
         let id = session
             .as_ref()
             .and_then(|s| s.SourceAppUserModelId().ok())
@@ -231,6 +231,38 @@ fn run(
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }
     }
+}
+
+/// Prefer a session that is actually playing across the full Windows session
+/// list. Some apps publish SMTC sessions without becoming `GetCurrentSession`.
+/// Keep the system's current session as the fallback so paused media remains
+/// available in Nook too.
+fn select_session(manager: &Manager) -> Option<Session> {
+    let current = manager.GetCurrentSession().ok();
+    let sessions = manager.GetSessions().ok();
+    if let Some(sessions) = sessions {
+        let mut first = None;
+        if let Ok(count) = sessions.Size() {
+            for index in 0..count {
+                let Ok(session) = sessions.GetAt(index) else {
+                    continue;
+                };
+                if first.is_none() {
+                    first = Some(session.clone());
+                }
+                if session
+                    .GetPlaybackInfo()
+                    .ok()
+                    .and_then(|info| info.PlaybackStatus().ok())
+                    == Some(Status::Playing)
+                {
+                    return Some(session);
+                }
+            }
+        }
+        return current.or(first);
+    }
+    current
 }
 
 fn command(session: &Session, cmd: MediaCommand) -> Result<()> {

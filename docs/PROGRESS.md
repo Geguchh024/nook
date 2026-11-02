@@ -196,3 +196,9 @@
 - Radio state checks no longer require `Radio::RequestAccessAsync` to return permission to change a radio. That permission gate could report Wi-Fi or Bluetooth as off even when the radio was on in Windows.
 - Radio changes still request and check access before applying the change; only the read path changed.
 - Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 13 — Media session discovery
+
+- The SMTC worker now searches Windows' complete media-session list and prefers a session with active playback, falling back to the current/first session so paused media remains controllable.
+- This covers players that publish a session but are not selected as Windows' single current session; all discovery remains on the existing event-driven media worker.
+- Verification: workspace tests and clippy are being run for this change.
