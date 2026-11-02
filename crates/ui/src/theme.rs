@@ -45,6 +45,7 @@ pub struct Look {
     pub shell_border: f32,
     pub shell_shadow: f32,
     pub hover_glow: f32,
+    pub component_radius: f32,
     /// Film-grain strength, 0..1.
     pub grain: f32,
     /// Size of one grain speck in physical pixels.
@@ -62,6 +63,7 @@ impl Default for Look {
             shell_border: 1.0,
             shell_shadow: 0.0,
             hover_glow: 0.12,
+            component_radius: 13.0,
             grain: 0.35,
             grain_px: 1.0,
         }
@@ -96,6 +98,7 @@ pub struct Theme {
     /// Strength of the outer drop shadow, 0..1.
     pub shell_shadow: f32,
     pub hover_glow: f32,
+    pub component_radius: f32,
     pub text: Color32,
     pub text_dim: Color32,
     pub text_faint: Color32,
@@ -198,6 +201,7 @@ impl Theme {
                 ),
                 shell_shadow: look.shell_shadow.clamp(0.0, 1.0),
                 hover_glow: look.hover_glow.clamp(0.0, 1.0),
+                component_radius: look.component_radius.clamp(0.0, 24.0),
                 text: Color32::from_rgb(242, 242, 245),
                 text_dim: Color32::from_rgb(168, 168, 178),
                 text_faint: Color32::from_rgb(110, 110, 120),
@@ -240,6 +244,7 @@ impl Theme {
                 ),
                 shell_shadow: look.shell_shadow.clamp(0.0, 1.0),
                 hover_glow: look.hover_glow.clamp(0.0, 1.0),
+                component_radius: look.component_radius.clamp(0.0, 24.0),
                 text: Color32::from_rgb(24, 24, 28),
                 text_dim: Color32::from_rgb(92, 92, 104),
                 text_faint: Color32::from_rgb(150, 150, 160),
@@ -327,6 +332,7 @@ impl Ink {
             control_fill: z,
             shell_shadow: 0.0,
             hover_glow: 0.0,
+            component_radius: 0.0,
             text: z,
             text_dim: z,
             text_faint: z,

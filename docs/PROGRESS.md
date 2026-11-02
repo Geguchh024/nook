@@ -1,5 +1,11 @@
 # Progress
 
+## Step 23 — Shared button corner style
+
+- Added a Button corner control under Customize. Shared module action buttons and chips now use the adjustable continuous-corner shape, with 13 points as the default.
+- The layout editor's separate Size/Radius switch continues to set tile/plugin-container corners individually; the shared control applies to buttons and chips across module pages.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
 ## Step 22 — Custom background color picker
 
 - Added an arbitrary-color picker for the main glass background alongside the preset swatches.

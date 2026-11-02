@@ -681,6 +681,15 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
         cfg.media_in_closed_notch = media_closed;
         out.changed = true;
     }
+    let mut component_radius = cfg.component_radius.min(24) as f32 / 24.0;
+    if row(&mut rui, "Button corner", theme, |ui| {
+        let resp = widgets::slider(ui, &mut component_radius, 110.0, 24, theme);
+        value_label(ui, &format!("{}", cfg.component_radius), theme);
+        resp
+    }) {
+        cfg.component_radius = (component_radius * 24.0).round() as u8;
+        out.changed = true;
+    }
     let w = rui.available_width();
     let (reset_row, _) = rui.allocate_exact_size(vec2(w, ROW), Sense::hover());
     let reset = Rect::from_min_size(

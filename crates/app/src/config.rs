@@ -215,6 +215,8 @@ pub struct Config {
     pub motion_easing: MotionEasing,
     /// Show a small media glyph in the collapsed notch when audio is playing.
     pub media_in_closed_notch: bool,
+    /// Radius of shared component buttons, in logical points.
+    pub component_radius: u8,
     /// Film-grain strength in percent; 0 turns the grain off.
     pub grain: u8,
     pub grain_size: GrainSize,
@@ -268,6 +270,7 @@ impl Default for Config {
             motion_duration_ms: 370,
             motion_easing: MotionEasing::Spring,
             media_in_closed_notch: true,
+            component_radius: 13,
             grain: DEFAULT_GRAIN,
             grain_size: GrainSize::Fine,
             placement: Placement::Center,
@@ -310,6 +313,7 @@ impl Config {
             shell_border: self.shell_border.min(100) as f32 / 100.0,
             shell_shadow: self.shell_shadow.min(100) as f32 / 100.0,
             hover_glow: self.hover_glow.min(100) as f32 / 100.0,
+            component_radius: self.component_radius.min(24) as f32,
             grain: self.grain.min(100) as f32 / 100.0,
             grain_px: self.grain_size.pixels(),
         }
@@ -325,6 +329,7 @@ impl Config {
         self.control_hex = d.control_hex;
         self.shell_border = d.shell_border;
         self.shell_shadow = d.shell_shadow;
+        self.component_radius = d.component_radius;
         self.grain = d.grain;
         self.grain_size = d.grain_size;
     }

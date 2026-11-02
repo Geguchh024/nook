@@ -8,9 +8,25 @@ use egui::{
     Align, Align2, Color32, FontId, Id, Layout, Pos2, Rect, Response, Sense, Shape, Stroke,
     TextEdit, Ui, UiBuilder, pos2, vec2,
 };
+use nook_ui::geometry::Squircle;
 use nook_ui::module::TileCtx;
 use nook_ui::theme::{SIZE_ICON, SIZE_LABEL, Theme, mix, with_alpha};
 use nook_ui::{anim, icons, paint, widgets};
+
+fn continuous_fill(ui: &Ui, rect: Rect, radius: f32, color: Color32) {
+    ui.painter().add(Shape::convex_polygon(
+        Squircle::new(rect, radius).outline(),
+        color,
+        Stroke::NONE,
+    ));
+}
+
+fn continuous_stroke(ui: &Ui, rect: Rect, radius: f32, stroke: Stroke) {
+    ui.painter().add(PathShape::closed_line(
+        Squircle::new(rect, radius).outline(),
+        stroke,
+    ));
+}
 
 /// Search and local-calendar date filter shared by history-style pages.
 #[derive(Clone, Debug)]
@@ -359,7 +375,7 @@ pub fn button(
             theme.text,
         )
     };
-    painter.rect_filled(r, r.height() * 0.5, fill);
+    continuous_fill(ui, r, theme.component_radius, fill);
     let font = Theme::font_semibold(SIZE_LABEL);
     let galley = painter.layout_no_wrap(label.to_owned(), font, fg);
     let icon_w = match (icon, label.is_empty()) {
@@ -402,13 +418,13 @@ pub fn chip(ui: &mut Ui, rect: Rect, label: &str, selected: bool, theme: &Theme)
         with_alpha(theme.accent, if theme.dark { 0.32 } else { 0.18 }),
         on,
     );
-    painter.rect_filled(rect, rect.height() * 0.5, fill);
+    continuous_fill(ui, rect, theme.component_radius, fill);
     if on > 0.01 {
-        painter.rect_stroke(
+        continuous_stroke(
+            ui,
             rect,
-            rect.height() * 0.5,
+            theme.component_radius,
             Stroke::new(1.0, with_alpha(theme.accent, 0.7 * on)),
-            egui::StrokeKind::Inside,
         );
     }
     let color = mix(
