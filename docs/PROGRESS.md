@@ -1,5 +1,11 @@
 # Progress
 
+## Step 25 — Select a connected display
+
+- Added a Display mode beside Primary and Follow cursor. Settings lists connected displays with resolution and virtual-desktop coordinates; choosing one updates the live target and is saved.
+- The app currently owns one native overlay window, so this step supports targeting one display at a time. Rendering a separate, fully interactive notch on every display needs a multi-window shell architecture and is not represented as a working All screens toggle.
+- Verification: workspace tests passed (162 passed, 7 ignored); workspace clippy passed with `-D warnings`.
+
 ## Step 24 — OLED theme lock and sound toggle
 
 - Disabled the Theme segmented control while OLED material is selected and added an explanation tooltip; the user's selected theme value remains saved.

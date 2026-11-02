@@ -27,6 +27,8 @@ pub enum MonitorMode {
     Primary,
     /// Follow the monitor under the mouse cursor.
     Cursor,
+    /// Use the connected display selected in Settings.
+    Display,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +195,8 @@ pub struct Config {
     pub accent: AccentSource,
     pub accent_hex: String,
     pub monitor: MonitorMode,
+    /// Zero-based entry in the sorted connected-display list.
+    pub monitor_display: u8,
     pub material: Material,
     /// Glass opacity over the blurred backdrop, in percent (Glass material).
     pub glass_opacity: u8,
@@ -258,6 +262,7 @@ impl Default for Config {
             accent: AccentSource::Wallpaper,
             accent_hex: "#7C5CFF".into(),
             monitor: MonitorMode::Primary,
+            monitor_display: 0,
             material: Material::Acrylic,
             glass_opacity: DEFAULT_GLASS_OPACITY,
             background_hex: String::new(),

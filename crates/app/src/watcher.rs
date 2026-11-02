@@ -11,7 +11,7 @@ use crossbeam_channel::Sender;
 use nook_platform::monitor::{self, Monitor};
 use nook_platform::{Hwnd, fullscreen, system};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -32,21 +32,35 @@ pub struct SystemState {
 #[derive(Default)]
 pub struct WatcherControl {
     pub monitor_mode: AtomicU8,
+    pub monitor_display: AtomicUsize,
     pub stop: AtomicBool,
 }
 
 impl WatcherControl {
-    pub fn set_monitor_mode(&self, mode: MonitorMode) {
-        self.monitor_mode
-            .store(matches!(mode, MonitorMode::Cursor) as u8, Ordering::Relaxed);
+    pub fn set_target(&self, mode: MonitorMode, display: u8) {
+        self.monitor_mode.store(
+            match mode {
+                MonitorMode::Primary => 0,
+                MonitorMode::Cursor => 1,
+                MonitorMode::Display => 2,
+            },
+            Ordering::Relaxed,
+        );
+        self.monitor_display
+            .store(display as usize, Ordering::Relaxed);
     }
 }
 
-pub fn sample(own: Hwnd, mode_cursor: bool) -> SystemState {
-    let monitor = if mode_cursor {
-        monitor::under_cursor()
-    } else {
-        monitor::primary()
+pub fn sample(own: Hwnd, mode: MonitorMode, display: u8) -> SystemState {
+    let monitor = match mode {
+        MonitorMode::Primary => monitor::primary(),
+        MonitorMode::Cursor => monitor::under_cursor(),
+        MonitorMode::Display => monitor::all()
+            .get(display as usize)
+            .copied()
+            .ok_or_else(|| {
+                nook_platform::PlatformError::Other("selected display is not connected".into())
+            }),
     };
     SystemState {
         fullscreen: fullscreen::foreground_is_fullscreen(own),
@@ -76,8 +90,13 @@ pub fn spawn(
         .spawn(move || {
             let mut last: Option<SystemState> = None;
             while !control.stop.load(Ordering::Relaxed) {
-                let cursor = control.monitor_mode.load(Ordering::Relaxed) == 1;
-                let now = sample(own, cursor);
+                let mode = match control.monitor_mode.load(Ordering::Relaxed) {
+                    1 => MonitorMode::Cursor,
+                    2 => MonitorMode::Display,
+                    _ => MonitorMode::Primary,
+                };
+                let display = control.monitor_display.load(Ordering::Relaxed) as u8;
+                let now = sample(own, mode, display);
                 if last != Some(now) {
                     last = Some(now);
                     if tx.send(now).is_err() {

@@ -311,12 +311,58 @@ pub fn page(
             let mut mon_idx = match cfg.monitor {
                 MonitorMode::Primary => 0,
                 MonitorMode::Cursor => 1,
+                MonitorMode::Display => 2,
             };
             if row(&mut rui, "Monitor", theme, |ui| {
-                widgets::segmented(ui, &["Primary", "Follow cursor"], &mut mon_idx, theme)
+                widgets::segmented(
+                    ui,
+                    &["Primary", "Follow cursor", "Display"],
+                    &mut mon_idx,
+                    theme,
+                )
             }) {
-                cfg.monitor = [MonitorMode::Primary, MonitorMode::Cursor][mon_idx];
+                cfg.monitor = [
+                    MonitorMode::Primary,
+                    MonitorMode::Cursor,
+                    MonitorMode::Display,
+                ][mon_idx];
                 out.changed = true;
+            }
+            if cfg.monitor == MonitorMode::Display {
+                let displays = nook_platform::monitor::all();
+                if !displays.is_empty() {
+                    let mut display_idx = (cfg.monitor_display as usize).min(displays.len() - 1);
+                    let names: Vec<String> = displays
+                        .iter()
+                        .enumerate()
+                        .map(|(index, display)| {
+                            format!(
+                                "Display {} · {}×{} · {}, {}",
+                                index + 1,
+                                display.bounds.width(),
+                                display.bounds.height(),
+                                display.bounds.left,
+                                display.bounds.top,
+                            )
+                        })
+                        .collect();
+                    row(&mut rui, "Choose display", theme, |ui| {
+                        egui::ComboBox::from_id_salt("nook-target-display")
+                            .selected_text(&names[display_idx])
+                            .show_ui(ui, |ui| {
+                                for (index, name) in names.iter().enumerate() {
+                                    ui.selectable_value(&mut display_idx, index, name);
+                                }
+                            })
+                            .response
+                    });
+                    if display_idx != cfg.monitor_display as usize {
+                        cfg.monitor_display = display_idx as u8;
+                        out.changed = true;
+                    }
+                } else {
+                    hint(&mut rui, "No additional displays are connected", theme);
+                }
             }
             let mut on_top = cfg.on_top;
             if row(&mut rui, "Always on top", theme, |ui| {

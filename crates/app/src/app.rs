@@ -2,7 +2,7 @@
 //! watcher, and keeps the OS window (position, region, material) in sync
 //! with what the shell draws.
 
-use crate::config::{AccentSource, Config, Material, MonitorMode};
+use crate::config::{AccentSource, Config, Material};
 use crate::settings::{self, SETTINGS_ID, SettingsTile};
 use crate::stats::{self, Stats};
 use crate::tray::{Tray, TrayCommand};
@@ -189,8 +189,8 @@ impl NookApp {
         };
 
         let watcher = Arc::new(WatcherControl::default());
-        watcher.set_monitor_mode(cfg.monitor);
-        let sys = watcher::sample(hwnd, cfg.monitor == MonitorMode::Cursor);
+        watcher.set_target(cfg.monitor, cfg.monitor_display);
+        let sys = watcher::sample(hwnd, cfg.monitor, cfg.monitor_display);
         let (sys_tx, sys_rx) = unbounded();
         watcher::spawn(hwnd, watcher.clone(), sys_tx, ctx.clone()).context("spawning watcher")?;
 
@@ -1389,7 +1389,8 @@ impl eframe::App for NookApp {
             self.shell.metrics.notch_collapsed = self.cfg.notch_size.points();
             self.shell.metrics.top_margin = self.cfg.pill_margin as f32;
             self.shape_dirty = true;
-            self.watcher.set_monitor_mode(self.cfg.monitor);
+            self.watcher
+                .set_target(self.cfg.monitor, self.cfg.monitor_display);
             nook_modules::plugins::set_dev_mode(self.cfg.plugin_dev);
             for module in self.registry.all_mut() {
                 match module.id() {
@@ -1401,7 +1402,7 @@ impl eframe::App for NookApp {
             self.stats.set_enabled(self.cfg.usage_stats);
             // Re-sample now so a monitor switch does not wait for the watcher.
             self.sys.monitor =
-                watcher::sample(self.hwnd, self.cfg.monitor == MonitorMode::Cursor).monitor;
+                watcher::sample(self.hwnd, self.cfg.monitor, self.cfg.monitor_display).monitor;
             self.save_config();
         }
         // Back to the grid once the panel has fully collapsed.
