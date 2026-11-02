@@ -11,3 +11,5 @@ node_modules/
 
 # Private dashboard link for the stats Worker.
 /telemetry/.stats-url
+
+.agents
