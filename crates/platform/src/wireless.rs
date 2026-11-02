@@ -292,22 +292,36 @@ pub fn scan_wifi() -> Result<WifiSnapshot> {
     }
     let client = WlanClient::open()?;
     let interfaces = client.interfaces()?;
-    let Some(interface) = interfaces.first() else {
+    if interfaces.is_empty() {
         return Ok(WifiSnapshot {
             enabled,
             ..WifiSnapshot::default()
         });
-    };
-    // SAFETY: interface GUID belongs to the enumerated adapter.
-    let result = unsafe { WlanScan(client.0, &interface.InterfaceGuid, None, None, None) };
-    if result != 0 {
+    }
+    let mut last_error = None;
+    let mut requested = false;
+    for interface in &interfaces {
+        // SAFETY: each GUID belongs to an interface returned by WlanEnumInterfaces.
+        let result = unsafe { WlanScan(client.0, &interface.InterfaceGuid, None, None, None) };
+        if result == 0 {
+            requested = true;
+        } else {
+            last_error = Some(result);
+        }
+    }
+    if !requested {
         return Err(PlatformError::Code {
             call: "WlanScan",
-            code: result,
+            code: last_error.unwrap_or(1),
         });
     }
     thread::sleep(Duration::from_millis(1600));
-    let mut networks = network_entries(&client, interface)?;
+    let mut networks = Vec::new();
+    for interface in &interfaces {
+        if let Ok(found) = network_entries(&client, interface) {
+            merge_wifi_networks(&mut networks, found);
+        }
+    }
     networks.sort_by(|a, b| b.signal.cmp(&a.signal).then_with(|| a.ssid.cmp(&b.ssid)));
     let current_ssid = networks
         .iter()
@@ -329,19 +343,35 @@ fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+fn merge_wifi_networks(target: &mut Vec<WifiNetwork>, incoming: Vec<WifiNetwork>) {
+    for network in incoming {
+        if let Some(existing) = target.iter_mut().find(|item| item.ssid == network.ssid) {
+            existing.signal = existing.signal.max(network.signal);
+            existing.secured |= network.secured;
+            existing.password_supported |= network.password_supported;
+            existing.connected |= network.connected;
+            existing.saved_profile = existing.saved_profile.take().or(network.saved_profile);
+        } else {
+            target.push(network);
+        }
+    }
+}
+
 /// Connects to an open or WPA2-Personal network, saving a current-user WLAN
 /// profile so Windows can reconnect later. Unsupported security schemes fail
 /// explicitly so the UI can offer Windows network settings as fallback.
 pub fn connect_wifi(ssid: &str, password: Option<&str>) -> Result<()> {
     let client = WlanClient::open()?;
     let interfaces = client.interfaces()?;
-    let interface = interfaces
-        .first()
-        .ok_or_else(|| PlatformError::Other("no Wi-Fi adapter is available".into()))?;
-    let networks = network_entries(&client, interface)?;
-    let network = networks
+    let (interface, network) = interfaces
         .iter()
-        .find(|network| network.ssid == ssid)
+        .find_map(|interface| {
+            let networks = network_entries(&client, interface).ok()?;
+            networks
+                .into_iter()
+                .find(|network| network.ssid == ssid)
+                .map(|network| (interface, network))
+        })
         .ok_or_else(|| PlatformError::Other("network is no longer in scan range".into()))?;
     let profile_name = network
         .saved_profile
@@ -786,8 +816,8 @@ impl Drop for BluetoothWatcher {
 #[cfg(test)]
 mod tests {
     use super::{
-        BluetoothDeviceInfo, merge_bluetooth_devices, merge_connected_classic_devices,
-        should_enumerate, xml_escape,
+        BluetoothDeviceInfo, WifiNetwork, merge_bluetooth_devices, merge_connected_classic_devices,
+        merge_wifi_networks, should_enumerate, xml_escape,
     };
 
     #[test]
@@ -865,5 +895,22 @@ mod tests {
         assert_eq!(devices[1].name, "Speaker");
         assert!(devices[1].connected);
         assert!(!devices[1].paired);
+    }
+
+    #[test]
+    fn wifi_merge_keeps_best_signal_and_connected_state_across_adapters() {
+        let network = |signal, connected| WifiNetwork {
+            ssid: "Home Wi-Fi".into(),
+            signal,
+            secured: true,
+            password_supported: true,
+            saved_profile: None,
+            connected,
+        };
+        let mut networks = vec![network(54, false)];
+        merge_wifi_networks(&mut networks, vec![network(87, true)]);
+        assert_eq!(networks.len(), 1);
+        assert_eq!(networks[0].signal, 87);
+        assert!(networks[0].connected);
     }
 }

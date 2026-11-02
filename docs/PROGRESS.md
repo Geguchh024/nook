@@ -283,3 +283,10 @@
 - Added a Win32 connected-device enumeration fallback for unpackaged desktop builds where WinRT Bluetooth selectors may be capability-gated; WinRT continues to provide paired and BLE discovery when available.
 - The fallback displays connected names and merges them into matching WinRT records, but does not claim battery data or pairing actions when Windows cannot provide those properties.
 - Verification: `cargo test --workspace --offline --quiet` passed (168 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 27 — Scan all Wi-Fi adapters
+
+- User-requested Wi-Fi scans now start on every enumerated WLAN adapter and combine duplicate SSIDs using the strongest signal and connected state.
+- Connecting to a selected SSID now uses the adapter that reported it instead of always choosing the first adapter.
+- Added coverage for combining per-adapter network results.
+- Verification: `cargo test --workspace --offline --quiet` passed (169 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
