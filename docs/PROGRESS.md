@@ -220,3 +220,9 @@
 - Copying a clipboard entry now displays a brief “Copied: …” notice inside the collapsed notch; long text is shortened and copied images show “Copied image”.
 - The notice uses the existing timed badge renderer and expires after the same 1.2-second confirmation shown in the Clipboard tile.
 - Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 17 — Collapsed media artwork
+
+- The collapsed notch now uses the current SMTC cover art in place of the clock when Windows supplies it; the media glyph and animated level bars remain visible alongside it.
+- Artwork is cached by track and uploaded as an egui texture only when its identity changes; modules reuse shared image bytes between frames.
+- Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

@@ -12,7 +12,7 @@ use egui::{
     UiBuilder, pos2, vec2,
 };
 use nook_platform::media::{MediaCommand, MediaWatcher, NowPlaying};
-use nook_ui::module::{Badge, Module, TileCtx, TileSize};
+use nook_ui::module::{Badge, BadgeArtwork, Module, TileCtx, TileSize};
 use nook_ui::theme::{SIZE_BODY, SIZE_LABEL, Theme, with_alpha};
 use nook_ui::{icons, paint, widgets};
 use std::sync::Arc;
@@ -26,6 +26,7 @@ pub struct Media {
     now: Option<NowPlaying>,
     /// Texture for `now.art`, keyed by the art's allocation.
     art: Option<(usize, TextureHandle)>,
+    badge_art: Option<(usize, BadgeArtwork)>,
     page_request: bool,
     seek_preview: Option<f64>,
 }
@@ -115,8 +116,9 @@ impl Module for Media {
         self.now
             .as_ref()
             .is_some_and(|now| now.playing)
-            .then_some(Badge::Audio {
+            .then_some(Badge::Media {
                 icon: icons::MUSIC_NOTES,
+                artwork: self.badge_art.as_ref().map(|(_, art)| art.clone()),
             })
     }
 
@@ -132,6 +134,20 @@ impl Module for Media {
         if let Some(snapshot) = self.watcher.as_ref().and_then(MediaWatcher::poll) {
             self.now = snapshot;
             self.seek_preview = None;
+            let art = self.now.as_ref().and_then(|now| now.art.as_ref());
+            let key = art.map(|art| Arc::as_ptr(art) as usize);
+            if self.badge_art.as_ref().map(|(key, _)| *key) != key {
+                self.badge_art = art.map(|art| {
+                    (
+                        Arc::as_ptr(art) as usize,
+                        BadgeArtwork {
+                            width: art.width,
+                            height: art.height,
+                            rgba: Arc::from(art.rgba.clone()),
+                        },
+                    )
+                });
+            }
             if self.now.as_ref().and_then(|n| n.art.as_ref()).is_none() {
                 self.art = None;
             }

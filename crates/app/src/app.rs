@@ -10,7 +10,9 @@ use crate::update::{self, Updater};
 use crate::watcher::{self, SystemState, WatcherControl};
 use anyhow::{Context as _, Result};
 use crossbeam_channel::{Receiver, unbounded};
-use egui::{Color32, FontFamily, FontId, Rect, Ui, pos2, vec2};
+use egui::{
+    Color32, ColorImage, FontFamily, FontId, Rect, TextureHandle, TextureOptions, Ui, pos2, vec2,
+};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use nook_platform::backdrop::{Backdrop, Tint};
@@ -114,6 +116,7 @@ pub struct NookApp {
     system_accent: Option<Color32>,
     material: Applied,
     material_key: Option<(bool, bool, Material)>,
+    media_badge_texture: Option<(usize, TextureHandle)>,
     /// Created lazily the first time the glass material is wanted.
     backdrop: Option<Backdrop>,
     backdrop_failed: bool,
@@ -289,6 +292,7 @@ impl NookApp {
                 .map(|[r, g, b]| Color32::from_rgb(r, g, b)),
             material: Applied::Opaque,
             material_key: None,
+            media_badge_texture: None,
             backdrop: None,
             backdrop_failed: false,
             hit,
@@ -791,6 +795,7 @@ fn icon_font(size: f32, fill: bool) -> FontId {
 /// both sides.
 fn draw_pill(
     badges: Vec<Badge>,
+    media_texture: Option<egui::TextureId>,
     battery: Option<Battery>,
     clock_style: crate::config::ClockStyle,
     ui: &mut Ui,
@@ -831,7 +836,7 @@ fn draw_pill(
         return;
     }
 
-    // Left: a running timer's ring + countdown, otherwise the clock.
+    // Left: a running timer, otherwise current media art or the clock.
     let ring = badges.iter().find_map(|b| match b {
         Badge::Ring { progress, label } => Some((*progress, label.clone())),
         _ => None,
@@ -859,7 +864,23 @@ fn draw_pill(
             );
         }
         None => {
-            draw_clock(painter, &clock.time, clock_style, left, cy, theme.pill_text);
+            if let (Some(_art), Some(texture)) = (
+                badges.iter().find_map(|badge| match badge {
+                    Badge::Media { artwork, .. } => artwork.as_ref(),
+                    _ => None,
+                }),
+                media_texture,
+            ) {
+                let size = 25.0;
+                let image = Rect::from_center_size(pos2(left + size * 0.5, cy), vec2(size, size));
+                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                painter.add(
+                    egui::epaint::RectShape::filled(image, 6.0, Color32::WHITE)
+                        .with_texture(texture, uv),
+                );
+            } else {
+                draw_clock(painter, &clock.time, clock_style, left, cy, theme.pill_text);
+            }
         }
     }
 
@@ -882,7 +903,7 @@ fn draw_pill(
                 right = ink.min.x - 6.0;
                 any_right = true;
             }
-            Badge::Audio { icon } => {
+            Badge::Media { icon, .. } => {
                 let ink = ink_text(
                     painter,
                     icon,
@@ -1283,6 +1304,27 @@ impl eframe::App for NookApp {
             .filter(|module| self.cfg.media_in_closed_notch || module.id() != "media")
             .filter_map(|m| m.collapsed_badge())
             .collect();
+        if let Some(art) = badges.iter().find_map(|badge| match badge {
+            Badge::Media { artwork, .. } => artwork.as_ref(),
+            _ => None,
+        }) {
+            let key = Arc::as_ptr(&art.rgba) as *const u8 as usize;
+            if self
+                .media_badge_texture
+                .as_ref()
+                .is_none_or(|(cached, _)| *cached != key)
+            {
+                let image =
+                    ColorImage::from_rgba_unmultiplied([art.width, art.height], art.rgba.as_ref());
+                let texture =
+                    ctx.load_texture("nook-collapsed-media", image, TextureOptions::LINEAR);
+                self.media_badge_texture = Some((key, texture));
+            }
+        }
+        let media_texture = self
+            .media_badge_texture
+            .as_ref()
+            .map(|(_, texture)| texture.id());
         let battery = self.sys.battery;
         let clock_style = self.cfg.clock_style;
         let composited = self.backdrop.is_some();
@@ -1307,7 +1349,17 @@ impl eframe::App for NookApp {
             &theme,
             hidden,
             composited,
-            |ui, rect, _alpha| draw_pill(badges, battery, clock_style, ui, rect, &theme),
+            |ui, rect, _alpha| {
+                draw_pill(
+                    badges,
+                    media_texture,
+                    battery,
+                    clock_style,
+                    ui,
+                    rect,
+                    &theme,
+                )
+            },
             |ui, cctx| match page {
                 Page::Bento => {
                     let mut tiles = registry.grid_mut(editing);
