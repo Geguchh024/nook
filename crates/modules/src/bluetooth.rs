@@ -309,6 +309,10 @@ impl Module for Bluetooth {
         self.enabled == Some(true)
     }
 
+    fn uses_active_tile_fill(&self) -> bool {
+        false
+    }
+
     fn collapsed_badge(&self) -> Option<Badge> {
         (self.notice_until > self.last_now)
             .then(|| {
@@ -385,52 +389,20 @@ impl Module for Bluetooth {
         let rect = ui.max_rect();
         let response = ui.interact(rect, ui.id().with("bluetooth-page"), egui::Sense::click());
         let active = self.enabled == Some(true);
-        let color = if active {
-            ctx.theme.accent
-        } else {
-            ctx.theme.text_faint
-        };
-        let painter = ui.painter();
         let glyph = if active {
             icons::BLUETOOTH
         } else {
             icons::BLUETOOTH_SLASH
         };
-        if rect.width() < 150.0 {
-            paint::icon(painter, rect.center(), glyph, 28.0, color, active);
-        } else {
-            paint::icon(
-                painter,
-                rect.center() - egui::vec2(0.0, 15.0),
-                glyph,
-                25.0,
-                color,
-                active,
-            );
-            painter.text(
-                egui::pos2(rect.center().x, rect.center().y + 7.0),
-                egui::Align2::CENTER_CENTER,
-                "Bluetooth",
-                Theme::font(SIZE_BODY),
-                ctx.theme.text,
-            );
-            painter.text(
-                egui::pos2(rect.center().x, rect.center().y + 25.0),
-                egui::Align2::CENTER_CENTER,
-                self.tile_summary(),
-                Theme::font(SIZE_LABEL - 1.0),
-                ctx.theme.text_dim,
-            );
-            if rect.height() >= 150.0 {
-                painter.text(
-                    egui::pos2(rect.center().x, rect.center().y + 43.0),
-                    egui::Align2::CENTER_CENTER,
-                    format!("{} nearby or paired", self.devices.len()),
-                    Theme::font(SIZE_LABEL - 1.0),
-                    ctx.theme.text_faint,
-                );
-            }
-        }
+        widgets::wireless_tile(
+            ui,
+            glyph,
+            "Bluetooth",
+            self.tile_summary(),
+            active,
+            Some(&format!("{} nearby or paired", self.devices.len())),
+            ctx.theme,
+        );
         if response.clicked() {
             self.page_request = true;
             self.refresh_on_page = true;

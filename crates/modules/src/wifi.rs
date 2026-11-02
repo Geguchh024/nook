@@ -285,6 +285,10 @@ impl Module for Wifi {
         self.state.enabled == Some(true)
     }
 
+    fn uses_active_tile_fill(&self) -> bool {
+        false
+    }
+
     fn collapsed_badge(&self) -> Option<Badge> {
         (self.notice_until > self.last_now)
             .then(|| {
@@ -358,54 +362,15 @@ impl Module for Wifi {
     fn ui_tile(&mut self, ui: &mut egui::Ui, ctx: &mut TileCtx<'_>) {
         let rect = ui.max_rect();
         let response = ui.interact(rect, ui.id().with("wifi-page"), egui::Sense::click());
-        let color = if self.state.enabled == Some(true) {
-            ctx.theme.accent
-        } else {
-            ctx.theme.text_faint
-        };
-        let painter = ui.painter();
-        if rect.width() < 150.0 {
-            paint::icon(
-                painter,
-                rect.center(),
-                self.icon(),
-                28.0,
-                color,
-                self.state.enabled == Some(true),
-            );
-        } else {
-            paint::icon(
-                painter,
-                rect.center() - egui::vec2(0.0, 15.0),
-                self.icon(),
-                25.0,
-                color,
-                self.state.enabled == Some(true),
-            );
-            painter.text(
-                egui::pos2(rect.center().x, rect.center().y + 7.0),
-                egui::Align2::CENTER_CENTER,
-                "Wi-Fi",
-                Theme::font(SIZE_BODY),
-                ctx.theme.text,
-            );
-            painter.text(
-                egui::pos2(rect.center().x, rect.center().y + 25.0),
-                egui::Align2::CENTER_CENTER,
-                self.tile_summary(),
-                Theme::font(SIZE_LABEL - 1.0),
-                ctx.theme.text_dim,
-            );
-            if rect.height() >= 150.0 {
-                painter.text(
-                    egui::pos2(rect.center().x, rect.center().y + 43.0),
-                    egui::Align2::CENTER_CENTER,
-                    format!("{} networks nearby", self.state.networks.len()),
-                    Theme::font(SIZE_LABEL - 1.0),
-                    ctx.theme.text_faint,
-                );
-            }
-        }
+        widgets::wireless_tile(
+            ui,
+            self.icon(),
+            "Wi-Fi",
+            self.tile_summary(),
+            self.state.enabled == Some(true),
+            Some(&format!("{} networks nearby", self.state.networks.len())),
+            ctx.theme,
+        );
         if response.clicked() {
             self.page_request = true;
             self.refresh_on_page = true;

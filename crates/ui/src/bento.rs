@@ -518,7 +518,10 @@ pub fn show(
                             Color32::from_black_alpha(70),
                         );
                     }
-                    let active = ready && !editing && tile.module.is_active();
+                    let active = ready
+                        && !editing
+                        && tile.module.is_active()
+                        && tile.module.uses_active_tile_fill();
                     tile_glass(&painter, rect, theme, active, lift, radius);
                     if is_open {
                         painter.rect_stroke(

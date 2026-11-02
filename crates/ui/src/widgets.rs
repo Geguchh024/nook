@@ -5,7 +5,7 @@ use crate::anim;
 use crate::geometry::Squircle;
 use crate::paint;
 use crate::spring::SpringParams;
-use crate::theme::{SIZE_LABEL, Theme, mix, with_alpha};
+use crate::theme::{SIZE_BODY, SIZE_LABEL, Theme, mix, with_alpha};
 use egui::{Align2, Color32, Response, Sense, Stroke, Ui, pos2, vec2};
 
 /// Size of [`toggle`].
@@ -300,6 +300,103 @@ pub fn icon_button(
         active,
     );
     resp
+}
+
+/// Responsive Wi-Fi/Bluetooth tile face. The shell owns interaction and
+/// background painting; this adds a compact state badge and size-aware labels.
+pub fn wireless_tile(
+    ui: &mut Ui,
+    glyph: &'static str,
+    title: &str,
+    summary: &str,
+    active: bool,
+    detail: Option<&str>,
+    theme: &Theme,
+) {
+    let rect = ui.max_rect();
+    let painter = ui.painter();
+    let accent = if active {
+        theme.accent
+    } else {
+        theme.text_faint
+    };
+    let badge_fill = if active {
+        with_alpha(theme.accent, if theme.dark { 0.30 } else { 0.18 })
+    } else {
+        theme.control_fill
+    };
+
+    if rect.width() >= 100.0 && rect.width() > rect.height() * 1.45 {
+        let center = pos2(rect.left() + 23.0, rect.center().y);
+        painter.circle_filled(center, 15.0, badge_fill);
+        painter.circle_stroke(center, 15.0, Stroke::new(1.0, theme.tile_rim));
+        paint::icon(painter, center, glyph, 17.0, accent, active);
+        let text_x = rect.left() + 44.0;
+        painter.text(
+            pos2(text_x, rect.center().y - 6.0),
+            egui::Align2::LEFT_CENTER,
+            title,
+            Theme::font(SIZE_BODY),
+            theme.text,
+        );
+        painter.text(
+            pos2(text_x, rect.center().y + 9.0),
+            egui::Align2::LEFT_CENTER,
+            summary,
+            Theme::font(SIZE_LABEL - 1.0),
+            theme.text_dim,
+        );
+        return;
+    }
+
+    let compact = rect.width() < 80.0 && rect.height() < 80.0;
+    let center = if compact {
+        rect.center()
+    } else {
+        pos2(rect.center().x, rect.center().y - 21.0)
+    };
+    let badge_radius = if compact {
+        rect.width().min(rect.height()) * 0.36
+    } else {
+        18.0
+    };
+    painter.circle_filled(center, badge_radius, badge_fill);
+    painter.circle_stroke(center, badge_radius, Stroke::new(1.0, theme.tile_rim));
+    paint::icon(
+        painter,
+        center,
+        glyph,
+        (badge_radius * 1.1).min(22.0),
+        accent,
+        active,
+    );
+    if !compact {
+        painter.text(
+            pos2(rect.center().x, rect.center().y + 2.0),
+            egui::Align2::CENTER_CENTER,
+            title,
+            Theme::font(SIZE_BODY),
+            theme.text,
+        );
+        painter.text(
+            pos2(rect.center().x, rect.center().y + 20.0),
+            egui::Align2::CENTER_CENTER,
+            summary,
+            Theme::font(SIZE_LABEL - 1.0),
+            theme.text_dim,
+        );
+        if rect.height() >= 130.0
+            && let Some(detail) = detail
+        {
+            painter.text(
+                pos2(rect.center().x, rect.center().y + 40.0),
+                egui::Align2::CENTER_CENTER,
+                detail,
+                Theme::font(SIZE_LABEL - 1.0),
+                theme.text_faint,
+            );
+        }
+    }
 }
 
 /// Clickable header of a collapsible card: icon, title, a dim summary and a

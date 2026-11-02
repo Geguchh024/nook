@@ -71,6 +71,11 @@ pub trait Module: Send {
     fn is_active(&self) -> bool {
         false
     }
+    /// Whether an active module should tint its whole tile with the accent.
+    /// Modules with an inline state treatment can keep their glass surface.
+    fn uses_active_tile_fill(&self) -> bool {
+        true
+    }
     fn collapsed_badge(&self) -> Option<Badge> {
         None
     }

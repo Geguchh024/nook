@@ -296,3 +296,9 @@
 - Kept fullscreen, coverage, and monitor checks on the existing one-second watcher cadence, while moving theme, animation, transparency, battery, and wallpaper reads to a ten-second cadence.
 - The watcher still wakes the UI only when sampled state changes; there is no UI-thread polling or additional worker loop.
 - Verification: `cargo test --workspace --offline --quiet` passed (169 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 29 — Restyle Wi-Fi and Bluetooth tiles
+
+- Redesigned only the tile faces: compact tiles use an icon badge, wide tiles show the radio name and connection summary side by side, and larger tiles add a brief device/network count.
+- Active radios now use a subtle accent badge and rim while keeping the existing glass tile surface. The existing tile click, refresh, device discovery, and detail pages are unchanged.
+- Verification: `cargo test --workspace --offline --quiet` passed (169 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
