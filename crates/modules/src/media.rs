@@ -536,17 +536,67 @@ impl Module for Media {
 
     fn ui_page(&mut self, ui: &mut Ui, _header: &mut Ui, body: Rect, theme: &Theme) -> bool {
         let Some(now) = self.now.clone() else {
-            ui.painter().text(
-                body.center(),
-                Align2::CENTER_CENTER,
-                if self.unavailable.is_some() {
-                    "Windows denied access to system media. This build needs the global media control package capability."
-                } else {
-                    "Nothing is playing"
-                },
-                Theme::font(SIZE_BODY),
-                theme.text_dim,
+            let content_rect = body.shrink2(vec2(24.0, 16.0));
+            let mut content = ui.new_child(
+                UiBuilder::new()
+                    .max_rect(content_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Center)),
             );
+            content.set_width(content_rect.width());
+            content.vertical_centered(|ui| {
+                paint::icon(
+                    ui.painter(),
+                    pos2(ui.max_rect().center().x, ui.cursor().min.y + 14.0),
+                    if self.unavailable.is_some() {
+                        icons::INFO
+                    } else {
+                        icons::MUSIC_NOTES
+                    },
+                    28.0,
+                    if self.unavailable.is_some() {
+                        theme.text_faint
+                    } else {
+                        theme.accent
+                    },
+                    false,
+                );
+                ui.add_space(42.0);
+                if self.unavailable.is_some() {
+                    ui.label(egui::RichText::new("Media controls unavailable")
+                        .font(Theme::font_semibold(SIZE_BODY))
+                        .color(theme.text));
+                    ui.add_space(6.0);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(
+                                "Windows denied access to system media for this build. The media controls require a Windows package capability.",
+                            )
+                            .font(Theme::font(SIZE_LABEL))
+                            .color(theme.text_dim),
+                        )
+                        .wrap(),
+                    );
+                    if let Some(error) = &self.unavailable {
+                        ui.add_space(8.0);
+                        ui.collapsing("Technical details", |ui| {
+                            ui.add(egui::Label::new(error).wrap());
+                        });
+                    }
+                } else {
+                    ui.label(egui::RichText::new("Nothing is playing")
+                        .font(Theme::font_semibold(SIZE_BODY))
+                        .color(theme.text));
+                    ui.add_space(6.0);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new("Start playback in an app to see its controls here.")
+                                .font(Theme::font(SIZE_LABEL))
+                                .color(theme.text_dim),
+                        )
+                        .wrap(),
+                    );
+                }
+            });
             return false;
         };
 

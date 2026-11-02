@@ -239,3 +239,9 @@
 - Verified on this machine that the unpackaged Inno/dev build receives `E_ACCESSDENIED` from SMTC. Microsoft's API documentation requires the `globalMediaControl` package capability; the current installer cannot declare it without moving to Windows package identity.
 - README documents this Windows packaging requirement and the current build limitation.
 - Verification: `cargo test --workspace --offline --quiet` passed (164 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 20 — Responsive media empty and error page
+
+- Replaced the single painted status line with a centered, width-constrained media page that wraps to the available panel width.
+- Windows access failures now have a clear heading, concise explanation, and expandable technical details; the empty state explains how to make media appear.
+- Verification: `cargo test --workspace --offline --quiet` passed (164 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
