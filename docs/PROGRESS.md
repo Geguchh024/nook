@@ -290,3 +290,9 @@
 - Connecting to a selected SSID now uses the adapter that reported it instead of always choosing the first adapter.
 - Added coverage for combining per-adapter network results.
 - Verification: `cargo test --workspace --offline --quiet` passed (169 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 28 — Reduce background watcher sampling
+
+- Kept fullscreen, coverage, and monitor checks on the existing one-second watcher cadence, while moving theme, animation, transparency, battery, and wallpaper reads to a ten-second cadence.
+- The watcher still wakes the UI only when sampled state changes; there is no UI-thread polling or additional worker loop.
+- Verification: `cargo test --workspace --offline --quiet` passed (169 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

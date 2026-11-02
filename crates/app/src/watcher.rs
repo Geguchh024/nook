@@ -12,7 +12,7 @@ use nook_platform::monitor::{self, Monitor};
 use nook_platform::{Hwnd, fullscreen, system};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SystemState {
@@ -52,6 +52,21 @@ impl WatcherControl {
 }
 
 pub fn sample(own: Hwnd, mode: MonitorMode, display: u8) -> SystemState {
+    let (fullscreen, covered, monitor) = sample_fast(own, mode, display);
+    let slow = sample_slow();
+    SystemState {
+        fullscreen,
+        covered,
+        monitor,
+        light_theme: slow.light_theme,
+        animations: slow.animations,
+        transparency: slow.transparency,
+        battery: slow.battery,
+        wallpaper: slow.wallpaper,
+    }
+}
+
+fn sample_fast(own: Hwnd, mode: MonitorMode, display: u8) -> (bool, bool, Option<Monitor>) {
     let monitor = match mode {
         MonitorMode::Primary => monitor::primary(),
         MonitorMode::Cursor => monitor::under_cursor(),
@@ -62,20 +77,32 @@ pub fn sample(own: Hwnd, mode: MonitorMode, display: u8) -> SystemState {
                 nook_platform::PlatformError::Other("selected display is not connected".into())
             }),
     };
-    SystemState {
-        fullscreen: fullscreen::foreground_is_fullscreen(own),
-        covered: nook_platform::window::is_covered(own),
-        monitor: monitor.ok(),
+    (
+        fullscreen::foreground_is_fullscreen(own),
+        nook_platform::window::is_covered(own),
+        monitor.ok(),
+    )
+}
+
+#[derive(Clone, Copy)]
+struct SlowState {
+    light_theme: bool,
+    animations: bool,
+    transparency: bool,
+    battery: Option<system::Battery>,
+    wallpaper: u64,
+}
+
+fn sample_slow() -> SlowState {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    system::wallpaper_path().hash(&mut h);
+    SlowState {
         light_theme: system::apps_use_light_theme(),
         animations: system::animations_enabled(),
         transparency: system::transparency_enabled(),
         battery: system::battery(),
-        wallpaper: {
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            system::wallpaper_path().hash(&mut h);
-            h.finish()
-        },
+        wallpaper: h.finish(),
     }
 }
 
@@ -89,6 +116,8 @@ pub fn spawn(
         .name("nook-watcher".into())
         .spawn(move || {
             let mut last: Option<SystemState> = None;
+            let mut slow = sample_slow();
+            let mut slow_sampled = Instant::now();
             while !control.stop.load(Ordering::Relaxed) {
                 let mode = match control.monitor_mode.load(Ordering::Relaxed) {
                     1 => MonitorMode::Cursor,
@@ -96,7 +125,21 @@ pub fn spawn(
                     _ => MonitorMode::Primary,
                 };
                 let display = control.monitor_display.load(Ordering::Relaxed) as u8;
-                let now = sample(own, mode, display);
+                let (fullscreen, covered, monitor) = sample_fast(own, mode, display);
+                if slow_sampled.elapsed() >= Duration::from_secs(10) {
+                    slow = sample_slow();
+                    slow_sampled = Instant::now();
+                }
+                let now = SystemState {
+                    fullscreen,
+                    covered,
+                    monitor,
+                    light_theme: slow.light_theme,
+                    animations: slow.animations,
+                    transparency: slow.transparency,
+                    battery: slow.battery,
+                    wallpaper: slow.wallpaper,
+                };
                 if last != Some(now) {
                     last = Some(now);
                     if tx.send(now).is_err() {
