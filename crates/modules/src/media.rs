@@ -44,6 +44,7 @@ pub struct Media {
     /// Texture for `now.art`, keyed by the art's allocation.
     art: Option<(usize, TextureHandle)>,
     badge_art: Option<(usize, BadgeArtwork)>,
+    badge_metadata: Option<(Arc<str>, Arc<str>)>,
     unavailable: Option<String>,
     page_request: bool,
     seek_preview: Option<f64>,
@@ -137,6 +138,19 @@ impl Module for Media {
             .then_some(Badge::Media {
                 icon: icons::MUSIC_NOTES,
                 artwork: self.badge_art.as_ref().map(|(_, art)| art.clone()),
+                title: self
+                    .badge_metadata
+                    .as_ref()
+                    .map_or_else(|| Arc::from(""), |(title, _)| title.clone()),
+                artist: self
+                    .badge_metadata
+                    .as_ref()
+                    .map_or_else(|| Arc::from(""), |(_, artist)| artist.clone()),
+                progress: self
+                    .now
+                    .as_ref()
+                    .and_then(NowPlaying::position)
+                    .map(|(pos, dur)| (pos / dur.max(1.0)).clamp(0.0, 1.0) as f32),
             })
     }
 
@@ -155,6 +169,12 @@ impl Module for Media {
                     self.unavailable = None;
                     self.now = snapshot;
                     self.seek_preview = None;
+                    self.badge_metadata = self.now.as_ref().map(|now| {
+                        (
+                            Arc::from(now.title.as_str()),
+                            Arc::from(now.artist.as_str()),
+                        )
+                    });
                     let art = self.now.as_ref().and_then(|now| now.art.as_ref());
                     let key = art.map(|art| Arc::as_ptr(art) as usize);
                     if self.badge_art.as_ref().map(|(key, _)| *key) != key {

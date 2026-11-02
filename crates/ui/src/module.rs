@@ -24,6 +24,9 @@ pub enum Badge {
     Media {
         icon: &'static str,
         artwork: Option<BadgeArtwork>,
+        title: Arc<str>,
+        artist: Arc<str>,
+        progress: Option<f32>,
     },
     /// A pulsing dot: something arrived.
     Pulse,

@@ -309,3 +309,10 @@
 - The bento renderer now constrains tile content to those bounds, including an inscribed content region for circle-shaped square tiles. Added geometry/classification tests.
 - Existing module interaction and radio behavior remain unchanged; individual modules can use the new context for their responsive variants.
 - Verification: `cargo test --workspace --offline --quiet` passed (172 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 31 — Adapt collapsed media to notch size
+
+- Media badges now carry cached title/artist text and live timeline progress without allocating fresh strings every frame.
+- Compact notch shows art, active playback bars, and a thin progress line; Standard adds the title; Large also reserves a clock region and shows artist text.
+- Playback animation/repaint is capped at 4 Hz while media is active; the existing SMTC worker remains event-driven.
+- Verification: `cargo test --workspace --offline --quiet` passed (172 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

@@ -793,15 +793,23 @@ fn icon_font(size: f32, fill: bool) -> FontId {
 /// Collapsed pill: live badges from modules (ring + label on the left,
 /// glyphs and pulse dots on the right), inset by the same ink margin on
 /// both sides.
+#[derive(Clone, Copy)]
+struct PillClock {
+    style: crate::config::ClockStyle,
+    size: crate::config::NotchSize,
+}
+
 fn draw_pill(
     badges: Vec<Badge>,
     media_texture: Option<egui::TextureId>,
     battery: Option<Battery>,
-    clock_style: crate::config::ClockStyle,
+    clock_config: PillClock,
     ui: &mut Ui,
     rect: Rect,
     theme: &Theme,
 ) {
+    let clock_style = clock_config.style;
+    let notch_size = clock_config.size;
     const PAD: f32 = 15.0;
     let painter = ui.painter();
     let cy = rect.center().y;
@@ -864,20 +872,112 @@ fn draw_pill(
             );
         }
         None => {
-            if let (Some(_art), Some(texture)) = (
-                badges.iter().find_map(|badge| match badge {
-                    Badge::Media { artwork, .. } => artwork.as_ref(),
-                    _ => None,
-                }),
-                media_texture,
-            ) {
-                let size = 25.0;
-                let image = Rect::from_center_size(pos2(left + size * 0.5, cy), vec2(size, size));
-                let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-                painter.add(
-                    egui::epaint::RectShape::filled(image, 6.0, Color32::WHITE)
-                        .with_texture(texture, uv),
+            let media = badges.iter().find_map(|badge| match badge {
+                Badge::Media {
+                    icon,
+                    artwork,
+                    title,
+                    artist,
+                    progress,
+                } => Some((
+                    *icon,
+                    artwork.as_ref(),
+                    title.as_ref(),
+                    artist.as_ref(),
+                    *progress,
+                )),
+                _ => None,
+            });
+            if let Some((icon, _artwork, title, artist, progress)) = media {
+                let compact = notch_size == crate::config::NotchSize::Compact;
+                let large = notch_size == crate::config::NotchSize::Large;
+                let art_size = if compact { 18.0 } else { 24.0 };
+                let mut art_left = left;
+                if large {
+                    draw_clock(painter, &clock.time, clock_style, left, cy, theme.pill_text);
+                    art_left += 48.0;
+                }
+                let image = Rect::from_center_size(
+                    pos2(art_left + art_size * 0.5, cy),
+                    vec2(art_size, art_size),
                 );
+                if _artwork.is_some() {
+                    if let Some(texture) = media_texture {
+                        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+                        painter.add(
+                            egui::epaint::RectShape::filled(image, 6.0, Color32::WHITE)
+                                .with_texture(texture, uv),
+                        );
+                    }
+                } else {
+                    ink_text(
+                        painter,
+                        icon,
+                        icon_font(art_size * 0.75, true),
+                        theme.accent_fg(),
+                        image.min.x,
+                        cy,
+                        false,
+                    );
+                }
+
+                if !compact {
+                    let text_left = image.max.x + 7.0;
+                    let text_right = right - 26.0;
+                    let available = (text_right - text_left).max(0.0);
+                    let title = if title.is_empty() {
+                        "Now playing"
+                    } else {
+                        title
+                    };
+                    let mut shown = title.to_owned();
+                    while !shown.is_empty()
+                        && painter
+                            .layout_no_wrap(
+                                shown.clone(),
+                                Theme::font_semibold(SIZE_LABEL),
+                                theme.pill_text,
+                            )
+                            .size()
+                            .x
+                            > available
+                    {
+                        shown.pop();
+                        if !shown.is_empty() {
+                            shown.pop();
+                            shown.push('…');
+                        }
+                    }
+                    ink_text(
+                        painter,
+                        &shown,
+                        Theme::font_semibold(SIZE_LABEL),
+                        theme.pill_text,
+                        text_left,
+                        cy - 5.0,
+                        false,
+                    );
+                    if large && !artist.is_empty() {
+                        ink_text(
+                            painter,
+                            artist,
+                            Theme::font(SIZE_LABEL - 1.0),
+                            theme.pill_text_dim,
+                            text_left,
+                            cy + 7.0,
+                            false,
+                        );
+                    }
+                }
+                if compact && let Some(progress) = progress {
+                    let inset = 8.0;
+                    let x0 = rect.left() + inset;
+                    let x1 = x0 + (rect.width() - inset * 2.0) * progress.clamp(0.0, 1.0);
+                    painter.line_segment(
+                        [pos2(x0, rect.bottom() - 2.0), pos2(x1, rect.bottom() - 2.0)],
+                        egui::Stroke::new(2.0, theme.accent),
+                    );
+                }
             } else {
                 draw_clock(painter, &clock.time, clock_style, left, cy, theme.pill_text);
             }
@@ -926,7 +1026,7 @@ fn draw_pill(
                     right -= 5.0;
                 }
                 any_right = true;
-                ui.ctx().request_repaint_after(Duration::from_millis(33));
+                ui.ctx().request_repaint_after(Duration::from_millis(250));
             }
             Badge::Pulse => {
                 let phase = ((now * 1.6).sin() * 0.5 + 0.5) as f32;
@@ -1327,6 +1427,7 @@ impl eframe::App for NookApp {
             .map(|(_, texture)| texture.id());
         let battery = self.sys.battery;
         let clock_style = self.cfg.clock_style;
+        let notch_size = self.cfg.notch_size;
         let composited = self.backdrop.is_some();
         // Stay open while typing in the panel or playing a plugin game (and
         // the window has focus) or while files are dragged over it.
@@ -1354,7 +1455,10 @@ impl eframe::App for NookApp {
                     badges,
                     media_texture,
                     battery,
-                    clock_style,
+                    PillClock {
+                        style: clock_style,
+                        size: notch_size,
+                    },
                     ui,
                     rect,
                     &theme,
