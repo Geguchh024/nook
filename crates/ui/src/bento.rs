@@ -132,7 +132,12 @@ fn tile_glass(
     lift: f32,
     radius: f32,
 ) {
-    let shape = Squircle::new(rect, radius);
+    let radius = radius.min(rect.width().min(rect.height()) * 0.5);
+    let shape = if radius >= rect.width().min(rect.height()) * 0.5 - f32::EPSILON {
+        Squircle::new(rect, radius).with_exponent(2.0)
+    } else {
+        Squircle::new(rect, radius)
+    };
     let outline = shape.outline();
     if lift > 0.01 {
         paint::glow(painter, &shape, theme.accent, lift * 0.6);
@@ -165,7 +170,14 @@ const EDITOR_SELECTION_ID: &str = "nook-editor-selected-tile";
 /// Extra shell height for the selected tile's continuous radius inspector.
 pub fn editor_extra_height(ctx: &egui::Context) -> f32 {
     ctx.data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
-        .map_or(0.0, |_| 76.0)
+        .map_or(0.0, |_| 82.0)
+}
+
+fn radius_limit(size: TileSize) -> u8 {
+    let (w, h) = size.cells();
+    let width = w as f32 * GRID.cell + (w - 1) as f32 * GRID.gap;
+    let height = h as f32 * GRID.cell + (h - 1) as f32 * GRID.gap;
+    (width.min(height) * 0.5).floor() as u8
 }
 
 pub fn show(
@@ -625,14 +637,15 @@ pub fn show(
             ctx.data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
         && let Some(tile) = tiles.iter().find(|tile| tile.module.id() == selected)
     {
+        let max_radius = radius_limit(tile.size);
         let current = radii
             .get(&selected)
             .copied()
             .unwrap_or(TILE_RADIUS as u8)
-            .min(32);
+            .min(max_radius);
         let inspector = Rect::from_min_size(
             pos2(cctx.panel.min.x + PANEL_PADDING, grid.max.y + 8.0),
-            vec2(cctx.panel.width() - 2.0 * PANEL_PADDING, 64.0),
+            vec2(cctx.panel.width() - 2.0 * PANEL_PADDING, 70.0),
         );
         widgets::card(ui.painter(), inspector, theme);
         let title = format!("{} · corner radius", tile.module.name());
@@ -647,7 +660,11 @@ pub fn show(
         ui.painter().text(
             value,
             Align2::RIGHT_CENTER,
-            format!("{current} px"),
+            if current == max_radius {
+                "Circle".to_owned()
+            } else {
+                format!("{current} px")
+            },
             Theme::font(SIZE_LABEL),
             theme.text_dim,
         );
@@ -660,19 +677,19 @@ pub fn show(
                 .max_rect(slider_rect)
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
-        let mut normalized = current as f32 / 32.0;
+        let mut normalized = current as f32 / max_radius.max(1) as f32;
         if widgets::slider(
             &mut slider_ui,
             &mut normalized,
             slider_rect.width(),
-            32,
+            max_radius as u32,
             theme,
         )
         .changed()
         {
             out.edits.push(Edit::SetRadius(
                 tile.module.id(),
-                (normalized * 32.0).round() as u8,
+                (normalized * max_radius as f32).round() as u8,
             ));
         }
     }
@@ -698,15 +715,18 @@ pub fn show(
     ctx.data_mut(|d| d.insert_temp(expand_id, expanded));
 
     // Caption line in the bottom gutter: hovered tile name, or the edit hint.
+    let radius_editor_open = ctx
+        .data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
+        .is_some();
     let caption = caption.or_else(|| {
-        editing.then(|| {
+        (editing && !radius_editor_open).then(|| {
             (
                 "Drag to move  ·  tick to show  ·  pick a size".to_owned(),
                 true,
             )
         })
     });
-    if let Some((name, ready)) = caption {
+    if let Some((name, ready)) = caption.filter(|_| !radius_editor_open) {
         let text = if ready {
             name
         } else {
@@ -1014,4 +1034,18 @@ pub fn tile_header(ui: &mut Ui, icon: &'static str, name: &str, active: bool, th
         Theme::font_semibold(SIZE_LABEL),
         theme.text_dim,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::radius_limit;
+    use crate::geometry::TileSize;
+
+    #[test]
+    fn radius_limit_reaches_the_circle_for_square_tiles() {
+        assert_eq!(radius_limit(TileSize::Small), 30);
+        assert_eq!(radius_limit(TileSize::Wide), 30);
+        assert_eq!(radius_limit(TileSize::Tall), 30);
+        assert_eq!(radius_limit(TileSize::Large), 64);
+    }
 }

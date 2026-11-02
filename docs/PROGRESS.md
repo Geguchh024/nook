@@ -245,3 +245,10 @@
 - Replaced the single painted status line with a centered, width-constrained media page that wraps to the available panel width.
 - Windows access failures now have a clear heading, concise explanation, and expandable technical details; the empty state explains how to make media appear.
 - Verification: `cargo test --workspace --offline --quiet` passed (164 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 21 — Tile radius reaches circles
+
+- The radius slider now scales to half the selected tile's smaller dimension, so square Small and Large tiles can become circles and rectangular tiles can become capsules.
+- The renderer switches to circular corners at the maximum radius, and the inspector hides the overlapping edit hint while open.
+- Added radius limit coverage for all four tile footprints.
+- Verification: `cargo test --workspace --offline --quiet` and `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
