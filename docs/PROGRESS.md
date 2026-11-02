@@ -226,3 +226,9 @@
 - The collapsed notch now uses the current SMTC cover art in place of the clock when Windows supplies it; the media glyph and animated level bars remain visible alongside it.
 - Artwork is cached by track and uploaded as an egui texture only when its identity changes; modules reuse shared image bytes between frames.
 - Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 18 — Media footprint classification
+
+- Tightened media tile size detection so a 2×2 Large tile uses the full player; only 2×1 Wide and 1×2 Tall use the compact transport layout.
+- Added a focused regression test for Small, Wide, Tall and Large logical footprints.
+- Verification: `cargo test --workspace --offline --quiet` passed (164 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

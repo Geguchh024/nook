@@ -20,6 +20,23 @@ use std::time::Duration;
 
 const ART: f32 = 44.0;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MediaTileMode {
+    Small,
+    Medium,
+    Large,
+}
+
+fn tile_mode(width: f32, height: f32) -> MediaTileMode {
+    if width < 90.0 && height < 90.0 {
+        MediaTileMode::Small
+    } else if width < 90.0 || height < 90.0 {
+        MediaTileMode::Medium
+    } else {
+        MediaTileMode::Large
+    }
+}
+
 #[derive(Default)]
 pub struct Media {
     watcher: Option<MediaWatcher>,
@@ -163,8 +180,9 @@ impl Module for Media {
     fn ui_tile(&mut self, ui: &mut Ui, ctx: &mut TileCtx<'_>) {
         let theme = ctx.theme;
         let rect = ui.max_rect();
-        let compact = rect.width() < 110.0 && rect.height() < 110.0;
-        let medium = !compact && (rect.width() < 210.0 || rect.height() < 110.0);
+        let mode = tile_mode(rect.width(), rect.height());
+        let compact = mode == MediaTileMode::Small;
+        let medium = mode == MediaTileMode::Medium;
 
         let Some(now) = self.now.clone() else {
             let response = ui.interact(rect, ui.id().with("media-page"), egui::Sense::click());
@@ -643,5 +661,18 @@ impl Module for Media {
             self.send(MediaCommand::Next);
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MediaTileMode, tile_mode};
+
+    #[test]
+    fn media_tile_mode_follows_each_layout_footprint() {
+        assert_eq!(tile_mode(52.0, 52.0), MediaTileMode::Small);
+        assert_eq!(tile_mode(116.0, 52.0), MediaTileMode::Medium);
+        assert_eq!(tile_mode(52.0, 116.0), MediaTileMode::Medium);
+        assert_eq!(tile_mode(116.0, 116.0), MediaTileMode::Large);
     }
 }
