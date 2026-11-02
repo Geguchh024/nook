@@ -14,7 +14,8 @@ use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
     AudioSessionStateActive, DEVICE_STATE_ACTIVE, IAudioSessionControl2, IAudioSessionManager2,
-    IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, eMultimedia, eRender,
+    IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, eCapture, eCommunications, eMultimedia,
+    eRender,
 };
 use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc};
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoTaskMemFree, STGM_READ};
@@ -45,6 +46,7 @@ pub struct Snapshot {
     pub notifications_muted: bool,
     pub volume: Option<f32>,
     pub muted: Option<bool>,
+    pub microphone_muted: Option<bool>,
     pub brightness: Option<f32>,
     pub outputs: Vec<AudioOutput>,
     pub audio_apps: Vec<AudioApp>,
@@ -259,13 +261,24 @@ pub fn radio_enabled(kind: RadioKind) -> Option<bool> {
     radio_state(kind)
 }
 
-fn endpoint() -> Result<IAudioEndpointVolume> {
+fn endpoint_for(
+    flow: windows::Win32::Media::Audio::EDataFlow,
+    role: windows::Win32::Media::Audio::ERole,
+) -> Result<IAudioEndpointVolume> {
     let enumerator: IMMDeviceEnumerator =
         unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }
             .api("CoCreateInstance(MMDeviceEnumerator)")?;
-    let device = unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) }
-        .api("GetDefaultAudioEndpoint")?;
+    let device =
+        unsafe { enumerator.GetDefaultAudioEndpoint(flow, role) }.api("GetDefaultAudioEndpoint")?;
     unsafe { device.Activate(CLSCTX_ALL, None) }.api("IMMDevice::Activate(IAudioEndpointVolume)")
+}
+
+fn endpoint() -> Result<IAudioEndpointVolume> {
+    endpoint_for(eRender, eMultimedia)
+}
+
+fn microphone_endpoint() -> Result<IAudioEndpointVolume> {
+    endpoint_for(eCapture, eCommunications)
 }
 
 fn allocated_wide(value: windows::core::PWSTR) -> Option<String> {
@@ -435,6 +448,7 @@ fn audio_apps() -> Vec<AudioApp> {
 
 pub fn snapshot() -> Snapshot {
     let audio = endpoint().ok();
+    let microphone = microphone_endpoint().ok();
     Snapshot {
         wifi: radio_state(RadioKind::Wifi),
         bluetooth: radio_state(RadioKind::Bluetooth),
@@ -452,6 +466,10 @@ pub fn snapshot() -> Snapshot {
             .as_ref()
             .and_then(|a| unsafe { a.GetMute().ok() })
             .map(|b| b.as_bool()),
+        microphone_muted: microphone
+            .as_ref()
+            .and_then(|endpoint| unsafe { endpoint.GetMute().ok() })
+            .map(|muted| muted.as_bool()),
         brightness: read_brightness(),
         outputs: output_devices(),
         audio_apps: audio_apps(),
@@ -502,6 +520,11 @@ pub fn set_volume(value: f32) -> Result<()> {
 pub fn set_muted(muted: bool) -> Result<()> {
     unsafe { endpoint()?.SetMute(muted, &windows::core::GUID::zeroed()) }
         .api("IAudioEndpointVolume::SetMute")
+}
+
+pub fn set_microphone_muted(muted: bool) -> Result<()> {
+    unsafe { microphone_endpoint()?.SetMute(muted, &windows::core::GUID::zeroed()) }
+        .api("IAudioEndpointVolume::SetMute(capture)")
 }
 
 pub fn set_notifications_muted(muted: bool) -> Result<()> {

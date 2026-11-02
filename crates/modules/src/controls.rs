@@ -17,6 +17,7 @@ enum Command {
     Brightness(f32),
     BrightnessPreview(f32),
     Mute(bool),
+    MicrophoneMute(bool),
     Notifications(bool),
     Stop,
 }
@@ -87,6 +88,9 @@ impl Worker {
                             let action = match command {
                                 Command::Refresh => Ok(()),
                                 Command::Mute(muted) => controls::set_muted(muted),
+                                Command::MicrophoneMute(muted) => {
+                                    controls::set_microphone_muted(muted)
+                                }
                                 Command::Notifications(muted) => {
                                     controls::set_notifications_muted(muted)
                                 }
@@ -536,6 +540,21 @@ impl Module for Controls {
                     {
                         let _ = tx.send(Command::Notifications(muted));
                         self.state.notifications_muted = muted;
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    Self::row_label(ui, "Microphone mute", theme);
+                    if let Some(mut muted) = self.state.microphone_muted {
+                        if widgets::toggle(ui, &mut muted, theme).changed() {
+                            let _ = tx.send(Command::MicrophoneMute(muted));
+                        }
+                    } else {
+                        ui.label(
+                            egui::RichText::new("Unavailable")
+                                .font(Theme::font(SIZE_LABEL))
+                                .color(theme.text_faint),
+                        );
                     }
                 });
             });

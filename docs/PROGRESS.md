@@ -343,3 +343,9 @@
 - The saved restore state is persisted in the Nook config. If no prior state exists, turning Airplane off restores both available radios.
 - The detail page clearly states that this is a radio off/restore helper; Windows' system airplane indicator may not change. Existing Wi-Fi and Bluetooth modules were not modified in this phase.
 - Verification: `cargo test --workspace --offline --quiet` passed (178 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 36 — Add microphone mute control
+
+- Quick Controls now reads and toggles the default communications capture endpoint's mute state through `IAudioEndpointVolume` on the existing controls worker.
+- The control is hidden as unavailable when Windows has no usable microphone endpoint; no microphone state is fabricated.
+- Verification: `cargo test --workspace --offline --quiet` passed (178 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
