@@ -104,7 +104,7 @@ impl Module for Media {
     }
 
     fn size_hint(&self) -> TileSize {
-        TileSize::Large
+        TileSize::Small
     }
 
     fn is_active(&self) -> bool {
@@ -147,6 +147,8 @@ impl Module for Media {
     fn ui_tile(&mut self, ui: &mut Ui, ctx: &mut TileCtx<'_>) {
         let theme = ctx.theme;
         let rect = ui.max_rect();
+        let compact = rect.width() < 110.0 && rect.height() < 110.0;
+        let medium = !compact && (rect.width() < 210.0 || rect.height() < 110.0);
 
         let Some(now) = self.now.clone() else {
             let response = ui.interact(rect, ui.id().with("media-page"), egui::Sense::click());
@@ -156,21 +158,196 @@ impl Module for Media {
             let c = rect.center();
             paint::icon(
                 ui.painter(),
-                c - vec2(0.0, 8.0),
+                if compact { c } else { c - vec2(0.0, 8.0) },
                 icons::MUSIC_NOTES,
-                24.0,
+                if compact { 25.0 } else { 24.0 },
                 theme.text_faint,
                 false,
             );
-            ui.painter().text(
-                c + vec2(0.0, 18.0),
-                Align2::CENTER_CENTER,
-                "Nothing playing",
-                Theme::font(SIZE_LABEL),
-                theme.text_dim,
-            );
+            if !compact {
+                ui.painter().text(
+                    c + vec2(0.0, 18.0),
+                    Align2::CENTER_CENTER,
+                    if medium { "Media" } else { "Nothing playing" },
+                    Theme::font(SIZE_LABEL),
+                    theme.text_dim,
+                );
+            }
             return;
         };
+
+        if compact {
+            let response = ui.interact(rect, ui.id().with("media-page"), egui::Sense::click());
+            if response.clicked() {
+                self.page_request = true;
+            }
+            match self.art_texture(ui.ctx()) {
+                Some(tex) => rounded_image(ui, rect.shrink(2.0), tex, 11.0),
+                None => {
+                    paint::icon(
+                        ui.painter(),
+                        rect.center(),
+                        icons::MUSIC_NOTES,
+                        27.0,
+                        theme.accent,
+                        now.playing,
+                    );
+                }
+            }
+            return;
+        }
+
+        if medium {
+            let vertical = rect.width() < 110.0;
+            let art_size = if vertical {
+                rect.width().min(44.0).min(rect.height() * 0.38).max(28.0)
+            } else {
+                rect.height().min(48.0).min(rect.width() * 0.33).max(32.0)
+            };
+            let art_origin = if vertical {
+                pos2(rect.center().x - art_size * 0.5, rect.min.y)
+            } else {
+                rect.min
+            };
+            let art_rect = Rect::from_min_size(art_origin, vec2(art_size, art_size));
+            match self.art_texture(ui.ctx()) {
+                Some(tex) => rounded_image(ui, art_rect, tex, 9.0),
+                None => {
+                    widgets::card(ui.painter(), art_rect, theme);
+                    paint::icon(
+                        ui.painter(),
+                        art_rect.center(),
+                        icons::MUSIC_NOTES,
+                        18.0,
+                        theme.text_faint,
+                        false,
+                    );
+                }
+            }
+
+            let controls_y = rect.max.y - 14.0;
+            let control_center = if vertical {
+                rect.center().x
+            } else {
+                rect.max.x - 45.0
+            };
+            let control_gap = if vertical { 19.0 } else { 23.0 };
+            let control_size = if vertical { 16.0 } else { 19.0 };
+            let play_icon = if now.playing {
+                icons::PAUSE
+            } else {
+                icons::PLAY
+            };
+            let hit_top = if vertical {
+                Rect::from_min_max(
+                    pos2(rect.min.x, art_rect.max.y + 2.0),
+                    pos2(rect.max.x, controls_y - 15.0),
+                )
+            } else {
+                Rect::from_min_max(
+                    pos2(art_rect.max.x + 5.0, rect.min.y),
+                    pos2(rect.max.x, controls_y - 13.0),
+                )
+            };
+            if ui
+                .interact(
+                    hit_top,
+                    ui.id().with("media-page-info"),
+                    egui::Sense::click(),
+                )
+                .clicked()
+                || ui
+                    .interact(
+                        if vertical {
+                            art_rect
+                        } else {
+                            Rect::from_min_max(rect.min, pos2(art_rect.max.x, rect.max.y))
+                        },
+                        ui.id().with("media-page-art"),
+                        egui::Sense::click(),
+                    )
+                    .clicked()
+            {
+                self.page_request = true;
+            }
+            if vertical {
+                text_line(
+                    ui,
+                    pos2(rect.min.x + 3.0, art_rect.max.y + 7.0),
+                    if now.title.is_empty() {
+                        &now.source
+                    } else {
+                        &now.title
+                    },
+                    rect.width() - 6.0,
+                    Theme::font(SIZE_LABEL - 1.0),
+                    theme.text,
+                );
+            } else {
+                text_line(
+                    ui,
+                    pos2(art_rect.max.x + 6.0, rect.min.y + 7.0),
+                    if now.title.is_empty() {
+                        &now.source
+                    } else {
+                        &now.title
+                    },
+                    (rect.max.x - art_rect.max.x - 8.0).max(8.0),
+                    Theme::font(SIZE_LABEL),
+                    theme.text,
+                );
+            }
+            if now.can_previous
+                && button_at(
+                    ui,
+                    pos2(control_center - control_gap, controls_y),
+                    control_size,
+                    icons::SKIP_BACK,
+                    false,
+                    theme,
+                )
+                .on_hover_text("Previous")
+                .clicked()
+            {
+                self.send(MediaCommand::Previous);
+            }
+            if now.can_toggle
+                && button_at(
+                    ui,
+                    pos2(control_center, controls_y),
+                    control_size + 2.0,
+                    play_icon,
+                    true,
+                    theme,
+                )
+                .on_hover_text(if now.playing { "Pause" } else { "Play" })
+                .clicked()
+            {
+                self.send(MediaCommand::PlayPause);
+                if let Some(n) = &mut self.now {
+                    if let Some((pos, dur)) = n.position() {
+                        n.timeline = Some((pos, dur));
+                        n.captured = std::time::Instant::now();
+                    }
+                    n.playing = !n.playing;
+                }
+            }
+            if now.can_next
+                && button_at(
+                    ui,
+                    pos2(control_center + control_gap, controls_y),
+                    control_size,
+                    icons::SKIP_FORWARD,
+                    false,
+                    theme,
+                )
+                .on_hover_text("Next")
+                .clicked()
+            {
+                self.send(MediaCommand::Next);
+            }
+            return;
+        }
 
         let page_hit = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.max.y - 36.0));
         if ui

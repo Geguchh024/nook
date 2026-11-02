@@ -201,4 +201,10 @@
 
 - The SMTC worker now searches Windows' complete media-session list and prefers a session with active playback, falling back to the current/first session so paused media remains controllable.
 - This covers players that publish a session but are not selected as Windows' single current session; all discovery remains on the existing event-driven media worker.
-- Verification: workspace tests and clippy are being run for this change.
+- Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 14 — Media tile sizing
+
+- Media now defaults to the Small footprint. Small shows album art (or the media glyph); Medium shows artwork, title and previous/play/next controls; Large retains the detailed player card.
+- Wide and Tall Medium footprints reflow controls and artwork to stay inside their bounds, and clicking the artwork or information opens the full media page.
+- Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
