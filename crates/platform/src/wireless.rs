@@ -9,6 +9,10 @@ use std::time::Duration;
 use windows::Devices::Bluetooth::{BluetoothConnectionStatus, BluetoothDevice, BluetoothLEDevice};
 use windows::Devices::Enumeration::{DeviceInformation, DeviceInformationUpdate, DeviceWatcher};
 use windows::Foundation::TypedEventHandler;
+use windows::Win32::Devices::Bluetooth::{
+    BLUETOOTH_DEVICE_INFO, BLUETOOTH_DEVICE_SEARCH_PARAMS, BluetoothFindDeviceClose,
+    BluetoothFindFirstDevice, BluetoothFindNextDevice, HBLUETOOTH_DEVICE_FIND,
+};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::NetworkManagement::WiFi::{
     DOT11_AUTH_ALGO_RSNA_PSK, DOT11_AUTH_ALGO_WPA_PSK, WLAN_AVAILABLE_NETWORK,
@@ -519,11 +523,96 @@ pub fn scan_bluetooth() -> Result<BluetoothSnapshot> {
     {
         merge_bluetooth_devices(&mut all, devices);
     }
+    merge_connected_classic_devices(&mut all, connected_classic_devices());
     all.sort_by_key(|device| device.name.to_lowercase());
     Ok(BluetoothSnapshot {
         enabled,
         devices: all,
     })
+}
+
+struct BluetoothFind(HBLUETOOTH_DEVICE_FIND);
+
+impl Drop for BluetoothFind {
+    fn drop(&mut self) {
+        // SAFETY: this handle was returned by BluetoothFindFirstDevice.
+        let _ = unsafe { BluetoothFindDeviceClose(self.0) };
+    }
+}
+
+/// Enumerates Windows' connected classic Bluetooth devices. This API works in
+/// unpackaged desktop builds where the WinRT Bluetooth selectors can be
+/// capability-gated. BLE discovery remains handled by WinRT above.
+fn connected_classic_devices() -> Vec<BluetoothDeviceInfo> {
+    let params = BLUETOOTH_DEVICE_SEARCH_PARAMS {
+        dwSize: std::mem::size_of::<BLUETOOTH_DEVICE_SEARCH_PARAMS>() as u32,
+        fReturnAuthenticated: true.into(),
+        fReturnRemembered: true.into(),
+        fReturnUnknown: false.into(),
+        fReturnConnected: true.into(),
+        fIssueInquiry: false.into(),
+        cTimeoutMultiplier: 0,
+        hRadio: HANDLE::default(),
+    };
+    let mut info = BLUETOOTH_DEVICE_INFO {
+        dwSize: std::mem::size_of::<BLUETOOTH_DEVICE_INFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: both structures have their required dwSize fields and live for
+    // the duration of the call. A missing radio/device list is a valid empty
+    // result for this optional fallback.
+    let Ok(find) = (unsafe { BluetoothFindFirstDevice(&params, &mut info) }) else {
+        return Vec::new();
+    };
+    let _find = BluetoothFind(find);
+    let mut found = Vec::new();
+    loop {
+        if info.fConnected.as_bool() {
+            let name = String::from_utf16_lossy(&info.szName)
+                .trim_end_matches('\0')
+                .trim()
+                .to_owned();
+            // SAFETY: ullLong is the active member of the Bluetooth address
+            // union returned by the Win32 Bluetooth API.
+            let address = unsafe { info.Address.Anonymous.ullLong };
+            if !name.is_empty() {
+                found.push(BluetoothDeviceInfo {
+                    id: format!("win32:{address:012X}"),
+                    name,
+                    paired: false,
+                    connected: true,
+                    battery: None,
+                    can_pair: false,
+                });
+            }
+        }
+        info = BLUETOOTH_DEVICE_INFO {
+            dwSize: std::mem::size_of::<BLUETOOTH_DEVICE_INFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: the enumeration handle and output structure are valid. An
+        // error signals that enumeration has reached its end.
+        if unsafe { BluetoothFindNextDevice(find, &mut info) }.is_err() {
+            break;
+        }
+    }
+    found
+}
+
+fn merge_connected_classic_devices(
+    target: &mut Vec<BluetoothDeviceInfo>,
+    incoming: Vec<BluetoothDeviceInfo>,
+) {
+    for device in incoming {
+        if let Some(existing) = target
+            .iter_mut()
+            .find(|item| item.name.eq_ignore_ascii_case(&device.name))
+        {
+            existing.connected = true;
+        } else {
+            target.push(device);
+        }
+    }
 }
 
 fn should_enumerate(enabled: Option<bool>) -> bool {
@@ -696,7 +785,10 @@ impl Drop for BluetoothWatcher {
 
 #[cfg(test)]
 mod tests {
-    use super::{BluetoothDeviceInfo, merge_bluetooth_devices, should_enumerate, xml_escape};
+    use super::{
+        BluetoothDeviceInfo, merge_bluetooth_devices, merge_connected_classic_devices,
+        should_enumerate, xml_escape,
+    };
 
     #[test]
     fn unknown_radio_state_does_not_block_device_enumeration() {
@@ -734,5 +826,44 @@ mod tests {
         assert_eq!(devices.len(), 1);
         assert!(devices[0].connected);
         assert_eq!(devices[0].battery, Some(72));
+    }
+
+    #[test]
+    fn classic_connected_fallback_updates_existing_or_adds_display_only_device() {
+        let mut devices = vec![BluetoothDeviceInfo {
+            id: "winrt-id".into(),
+            name: "Headphones".into(),
+            paired: true,
+            connected: false,
+            battery: Some(72),
+            can_pair: false,
+        }];
+        merge_connected_classic_devices(
+            &mut devices,
+            vec![
+                BluetoothDeviceInfo {
+                    id: "win32:123".into(),
+                    name: "headphones".into(),
+                    paired: false,
+                    connected: true,
+                    battery: None,
+                    can_pair: false,
+                },
+                BluetoothDeviceInfo {
+                    id: "win32:456".into(),
+                    name: "Speaker".into(),
+                    paired: false,
+                    connected: true,
+                    battery: None,
+                    can_pair: false,
+                },
+            ],
+        );
+        assert_eq!(devices.len(), 2);
+        assert!(devices[0].connected);
+        assert_eq!(devices[0].battery, Some(72));
+        assert_eq!(devices[1].name, "Speaker");
+        assert!(devices[1].connected);
+        assert!(!devices[1].paired);
     }
 }

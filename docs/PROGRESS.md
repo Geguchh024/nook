@@ -277,3 +277,9 @@
 - Replaced the dense per-tile tick and miniature size marks with a compact visibility badge, tile name where the footprint has room, and the curved resize grip.
 - The selected tile's inspector now groups the four footprint choices and the corner-radius slider; narrow panels use a size dropdown to prevent the segmented control from spilling out.
 - Verification: `cargo test --workspace --offline --quiet` passed (167 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 26 — Show connected classic Bluetooth devices
+
+- Added a Win32 connected-device enumeration fallback for unpackaged desktop builds where WinRT Bluetooth selectors may be capability-gated; WinRT continues to provide paired and BLE discovery when available.
+- The fallback displays connected names and merges them into matching WinRT records, but does not claim battery data or pairing actions when Windows cannot provide those properties.
+- Verification: `cargo test --workspace --offline --quiet` passed (168 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
