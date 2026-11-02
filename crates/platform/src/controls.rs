@@ -242,9 +242,9 @@ impl RadioKind {
 }
 
 fn radio_state(kind: RadioKind) -> Option<bool> {
-    if Radio::RequestAccessAsync().ok()?.join().ok()? != RadioAccessStatus::Allowed {
-        return None;
-    }
+    // Reading the current state does not require permission to change it.
+    // RequestAccessAsync can return a denied status for an unpackaged desktop
+    // app, which previously made an already-enabled radio look switched off.
     let radios = Radio::GetRadiosAsync().ok()?.join().ok()?;
     for index in 0..radios.Size().ok()? {
         let radio = radios.GetAt(index).ok()?;

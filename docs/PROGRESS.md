@@ -190,3 +190,9 @@
 - The Bluetooth page always labels its Connected devices section and clearly says when none are currently connected.
 - Added a regression test ensuring connected-selector data upgrades a paired row instead of being dropped as a duplicate.
 - Verification: `cargo test --workspace --offline --quiet` passed (160 passed, 7 ignored) with workspace-local `APPDATA`; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 12 — Wireless state reads
+
+- Radio state checks no longer require `Radio::RequestAccessAsync` to return permission to change a radio. That permission gate could report Wi-Fi or Bluetooth as off even when the radio was on in Windows.
+- Radio changes still request and check access before applying the change; only the read path changed.
+- Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
