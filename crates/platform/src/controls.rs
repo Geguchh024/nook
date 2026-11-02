@@ -47,6 +47,7 @@ pub struct Snapshot {
     pub volume: Option<f32>,
     pub muted: Option<bool>,
     pub microphone_muted: Option<bool>,
+    pub windows_dark_mode: Option<bool>,
     pub brightness: Option<f32>,
     pub outputs: Vec<AudioOutput>,
     pub audio_apps: Vec<AudioApp>,
@@ -470,6 +471,12 @@ pub fn snapshot() -> Snapshot {
             .as_ref()
             .and_then(|endpoint| unsafe { endpoint.GetMute().ok() })
             .map(|muted| muted.as_bool()),
+        windows_dark_mode: registry::read_dword(
+            Hive::CurrentUser,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            "AppsUseLightTheme",
+        )
+        .map(|light| light == 0),
         brightness: read_brightness(),
         outputs: output_devices(),
         audio_apps: audio_apps(),
@@ -525,6 +532,47 @@ pub fn set_muted(muted: bool) -> Result<()> {
 pub fn set_microphone_muted(muted: bool) -> Result<()> {
     unsafe { microphone_endpoint()?.SetMute(muted, &windows::core::GUID::zeroed()) }
         .api("IAudioEndpointVolume::SetMute(capture)")
+}
+
+/// Sets the Windows app and system theme preferences and notifies listeners.
+pub fn set_windows_dark_mode(dark: bool) -> Result<()> {
+    const PERSONALIZE: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+    let light = u32::from(!dark);
+    registry::write_dword(Hive::CurrentUser, PERSONALIZE, "AppsUseLightTheme", light)?;
+    registry::write_dword(
+        Hive::CurrentUser,
+        PERSONALIZE,
+        "SystemUsesLightTheme",
+        light,
+    )?;
+
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HWND_BROADCAST, SMTO_ABORTIFHUNG, SendMessageTimeoutW, WM_SETTINGCHANGE,
+    };
+    let section = crate::wide("ImmersiveColorSet");
+    let mut result = 0usize;
+    // SAFETY: the UTF-16 section name remains live during the broadcast; a
+    // one-second timeout prevents an unresponsive app from blocking Nook.
+    let broadcast = unsafe {
+        SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            WPARAM(0),
+            LPARAM(section.as_ptr() as isize),
+            SMTO_ABORTIFHUNG,
+            1_000,
+            Some(&mut result),
+        )
+    };
+    if broadcast.0 == 0 {
+        let error = unsafe { windows::Win32::Foundation::GetLastError() }.0;
+        tracing::warn!(
+            error,
+            "WM_SETTINGCHANGE broadcast for Windows theme did not reach all listeners"
+        );
+    }
+    Ok(())
 }
 
 pub fn set_notifications_muted(muted: bool) -> Result<()> {

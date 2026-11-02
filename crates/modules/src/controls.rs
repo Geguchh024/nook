@@ -18,6 +18,7 @@ enum Command {
     BrightnessPreview(f32),
     Mute(bool),
     MicrophoneMute(bool),
+    WindowsTheme(bool),
     Notifications(bool),
     Stop,
 }
@@ -90,6 +91,9 @@ impl Worker {
                                 Command::Mute(muted) => controls::set_muted(muted),
                                 Command::MicrophoneMute(muted) => {
                                     controls::set_microphone_muted(muted)
+                                }
+                                Command::WindowsTheme(dark) => {
+                                    controls::set_windows_dark_mode(dark)
                                 }
                                 Command::Notifications(muted) => {
                                     controls::set_notifications_muted(muted)
@@ -548,6 +552,21 @@ impl Module for Controls {
                     if let Some(mut muted) = self.state.microphone_muted {
                         if widgets::toggle(ui, &mut muted, theme).changed() {
                             let _ = tx.send(Command::MicrophoneMute(muted));
+                        }
+                    } else {
+                        ui.label(
+                            egui::RichText::new("Unavailable")
+                                .font(Theme::font(SIZE_LABEL))
+                                .color(theme.text_faint),
+                        );
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    Self::row_label(ui, "Windows dark mode", theme);
+                    if let Some(mut dark) = self.state.windows_dark_mode {
+                        if widgets::toggle(ui, &mut dark, theme).changed() {
+                            let _ = tx.send(Command::WindowsTheme(dark));
                         }
                     } else {
                         ui.label(

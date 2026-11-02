@@ -349,3 +349,10 @@
 - Quick Controls now reads and toggles the default communications capture endpoint's mute state through `IAudioEndpointVolume` on the existing controls worker.
 - The control is hidden as unavailable when Windows has no usable microphone endpoint; no microphone state is fabricated.
 - Verification: `cargo test --workspace --offline --quiet` passed (178 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 37 — Add Windows theme Quick Control
+
+- Added a Windows dark-mode toggle that reads and updates both `AppsUseLightTheme` and `SystemUsesLightTheme` for the current user.
+- Nook broadcasts `WM_SETTINGCHANGE` with a bounded timeout after writing the preferences; broadcast failures are logged and do not stall the controls worker.
+- The toggle is unavailable when Windows has no readable preference value.
+- Verification: `cargo test --workspace --offline --quiet` passed (178 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
