@@ -83,6 +83,34 @@ fn text_line(ui: &Ui, pos: Pos2, text: &str, width: f32, font: egui::FontId, col
     ui.painter().galley(pos, galley, color);
 }
 
+fn source_line(ui: &mut Ui, now: &NowPlaying, rect: Rect, theme: &Theme) {
+    let response = ui
+        .interact(
+            rect,
+            ui.id().with("media-source-launch"),
+            egui::Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(format!("Open {}", now.source));
+    if response.clicked()
+        && let Err(error) = nook_platform::media::open_source(&now.source_id)
+    {
+        tracing::warn!("open media source {}: {error}", now.source);
+    }
+    text_line(
+        ui,
+        rect.min,
+        &now.source,
+        rect.width(),
+        Theme::font(SIZE_LABEL - 1.0),
+        if response.hovered() {
+            theme.accent
+        } else {
+            theme.text_faint
+        },
+    );
+}
+
 fn button_at(
     ui: &mut Ui,
     center: Pos2,
@@ -341,31 +369,39 @@ impl Module for Media {
                 self.page_request = true;
             }
             if vertical {
-                text_line(
-                    ui,
+                let text_rect = Rect::from_min_size(
                     pos2(rect.min.x + 3.0, art_rect.max.y + 7.0),
-                    if now.title.is_empty() {
-                        &now.source
-                    } else {
-                        &now.title
-                    },
-                    rect.width() - 6.0,
-                    Theme::font(SIZE_LABEL - 1.0),
-                    theme.text,
+                    vec2(rect.width() - 6.0, SIZE_LABEL + 2.0),
                 );
+                if now.title.is_empty() {
+                    source_line(ui, &now, text_rect, theme);
+                } else {
+                    text_line(
+                        ui,
+                        text_rect.min,
+                        &now.title,
+                        text_rect.width(),
+                        Theme::font(SIZE_LABEL - 1.0),
+                        theme.text,
+                    );
+                }
             } else {
-                text_line(
-                    ui,
+                let text_rect = Rect::from_min_size(
                     pos2(art_rect.max.x + 6.0, rect.min.y + 7.0),
-                    if now.title.is_empty() {
-                        &now.source
-                    } else {
-                        &now.title
-                    },
-                    (rect.max.x - art_rect.max.x - 8.0).max(8.0),
-                    Theme::font(SIZE_LABEL),
-                    theme.text,
+                    vec2((rect.max.x - art_rect.max.x - 8.0).max(8.0), SIZE_BODY),
                 );
+                if now.title.is_empty() {
+                    source_line(ui, &now, text_rect, theme);
+                } else {
+                    text_line(
+                        ui,
+                        text_rect.min,
+                        &now.title,
+                        text_rect.width(),
+                        Theme::font(SIZE_LABEL),
+                        theme.text,
+                    );
+                }
             }
             if now.can_previous
                 && button_at(
@@ -447,13 +483,11 @@ impl Module for Media {
         // Right of the art: source app, time, progress bar.
         let col = rect.min.x + ART + 8.0;
         let col_w = rect.max.x - col;
-        text_line(
+        source_line(
             ui,
-            pos2(col, rect.min.y + 2.0),
-            &now.source,
-            col_w,
-            Theme::font(SIZE_LABEL - 1.0),
-            theme.text_faint,
+            &now,
+            Rect::from_min_size(pos2(col, rect.min.y + 2.0), vec2(col_w, SIZE_LABEL + 2.0)),
+            theme,
         );
         if let Some((pos, dur)) = now.position() {
             ui.painter().text(
@@ -639,13 +673,14 @@ impl Module for Media {
 
         let info_x = art_rect.max.x + 12.0;
         let info_width = (body.max.x - info_x).max(1.0);
-        text_line(
+        source_line(
             ui,
-            pos2(info_x, body.min.y + 2.0),
-            &now.source,
-            info_width,
-            Theme::font(SIZE_LABEL - 1.0),
-            theme.text_faint,
+            &now,
+            Rect::from_min_size(
+                pos2(info_x, body.min.y + 2.0),
+                vec2(info_width, SIZE_LABEL + 2.0),
+            ),
+            theme,
         );
         text_line(
             ui,

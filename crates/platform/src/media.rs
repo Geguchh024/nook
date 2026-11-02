@@ -36,6 +36,8 @@ pub const ART_SIZE: u32 = 96;
 pub struct NowPlaying {
     /// Cleaned-up app id, e.g. "Spotify" or "chrome".
     pub source: String,
+    /// Original SMTC app id used to reopen the active app.
+    pub source_id: String,
     pub title: String,
     pub artist: String,
     pub playing: bool,
@@ -332,6 +334,7 @@ fn snapshot(
 
     Ok(NowPlaying {
         source: clean_source(id),
+        source_id: id.to_owned(),
         title,
         artist,
         playing,
@@ -342,6 +345,37 @@ fn snapshot(
         captured: Instant::now(),
         art,
     })
+}
+
+/// Reopens the application that owns a Windows media session.
+/// Packaged app ids are resolved through the AppsFolder namespace; classic
+/// sessions commonly report an executable name such as `chrome.exe`.
+pub fn open_source(source_id: &str) -> Result<()> {
+    let Some(target) = source_target(source_id) else {
+        return Err(crate::PlatformError::Other(
+            "media source does not expose a launchable app id".into(),
+        ));
+    };
+    crate::shell::open(&target)
+}
+
+fn source_target(source_id: &str) -> Option<String> {
+    if source_id.is_empty() || source_id.chars().any(char::is_control) {
+        return None;
+    }
+    if source_id.contains('!')
+        && source_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '!'))
+    {
+        return Some(format!("shell:AppsFolder\\{source_id}"));
+    }
+    let file_name = std::path::Path::new(source_id).file_name()?.to_str()?;
+    (file_name.to_ascii_lowercase().ends_with(".exe")
+        && file_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')))
+    .then(|| source_id.to_owned())
 }
 
 /// 100 ns ticks per second (WinRT `TimeSpan` / `DateTime` units).
@@ -437,9 +471,21 @@ mod tests {
     }
 
     #[test]
+    fn media_source_launch_targets_are_safely_normalized() {
+        assert_eq!(
+            source_target("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify").as_deref(),
+            Some("shell:AppsFolder\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify")
+        );
+        assert_eq!(source_target("chrome.exe").as_deref(), Some("chrome.exe"));
+        assert_eq!(source_target(""), None);
+        assert_eq!(source_target("unsafe app.exe"), None);
+    }
+
+    #[test]
     fn paused_position_does_not_advance() {
         let np = NowPlaying {
             source: String::new(),
+            source_id: String::new(),
             title: String::new(),
             artist: String::new(),
             playing: false,

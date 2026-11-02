@@ -316,3 +316,10 @@
 - Compact notch shows art, active playback bars, and a thin progress line; Standard adds the title; Large also reserves a clock region and shows artist text.
 - Playback animation/repaint is capped at 4 Hz while media is active; the existing SMTC worker remains event-driven.
 - Verification: `cargo test --workspace --offline --quiet` passed (172 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 32 — Open the active media source
+
+- The app/source label in the media tile and full media page is now clickable and opens the owning app through its SMTC app id.
+- Packaged app ids use the Windows AppsFolder namespace; classic `.exe` source ids are validated before launch. Failures are logged without interrupting playback controls.
+- Added tests for accepted and rejected launch targets. The SMTC worker and its event-driven discovery remain unchanged.
+- Verification: `cargo test --workspace --offline --quiet` passed (173 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
