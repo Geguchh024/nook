@@ -167,6 +167,67 @@ pub enum TileSize {
     Large,
 }
 
+/// Semantic footprint passed to tile modules for responsive layouts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SizeClass {
+    Small,
+    Wide,
+    Tall,
+    Large,
+}
+
+impl From<TileSize> for SizeClass {
+    fn from(size: TileSize) -> Self {
+        match size {
+            TileSize::Small => Self::Small,
+            TileSize::Wide => Self::Wide,
+            TileSize::Tall => Self::Tall,
+            TileSize::Large => Self::Large,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Orient {
+    Horizontal,
+    Vertical,
+    Square,
+}
+
+pub fn orient_of(rect: Rect) -> Orient {
+    let aspect = rect.width() / rect.height().max(f32::EPSILON);
+    if aspect > 1.25 {
+        Orient::Horizontal
+    } else if aspect < 0.8 {
+        Orient::Vertical
+    } else {
+        Orient::Square
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TileShape {
+    Rounded,
+    Circle,
+}
+
+/// Conservative content bounds for a tile shape, preventing labels and
+/// controls from landing in heavily rounded corners or outside a circle.
+pub fn safe_rect(shape: TileShape, rect: Rect, radius: f32) -> Rect {
+    match shape {
+        TileShape::Circle => {
+            let side = rect.width().min(rect.height()) * 0.70;
+            Rect::from_center_size(rect.center(), Vec2::splat(side))
+        }
+        TileShape::Rounded => {
+            let inset = (radius.max(0.0) * 0.29)
+                .max(8.0)
+                .min(rect.width().min(rect.height()) * 0.25);
+            rect.shrink(inset)
+        }
+    }
+}
+
 impl TileSize {
     pub const ALL: [TileSize; 4] = [
         TileSize::Small,
@@ -289,6 +350,49 @@ pub fn pack_pages(spec: &GridSpec, sizes: &[TileSize]) -> Vec<Vec<Placement>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tile_footprints_map_to_responsive_size_classes() {
+        assert_eq!(SizeClass::from(TileSize::Small), SizeClass::Small);
+        assert_eq!(SizeClass::from(TileSize::Wide), SizeClass::Wide);
+        assert_eq!(SizeClass::from(TileSize::Tall), SizeClass::Tall);
+        assert_eq!(SizeClass::from(TileSize::Large), SizeClass::Large);
+    }
+
+    #[test]
+    fn orientation_uses_tile_aspect_ratio() {
+        assert_eq!(
+            orient_of(Rect::from_min_size(Pos2::ZERO, vec2(120.0, 60.0))),
+            Orient::Horizontal
+        );
+        assert_eq!(
+            orient_of(Rect::from_min_size(Pos2::ZERO, vec2(60.0, 120.0))),
+            Orient::Vertical
+        );
+        assert_eq!(
+            orient_of(Rect::from_min_size(Pos2::ZERO, vec2(80.0, 80.0))),
+            Orient::Square
+        );
+    }
+
+    #[test]
+    fn safe_rect_stays_inside_rounded_and_circular_tiles() {
+        let rect = Rect::from_min_size(Pos2::ZERO, vec2(120.0, 60.0));
+        let rounded = safe_rect(TileShape::Rounded, rect, 28.0);
+        assert!(rect.contains(rounded.min) && rect.contains(rounded.max));
+        let square = Rect::from_min_size(Pos2::ZERO, vec2(100.0, 100.0));
+        let circle_safe = safe_rect(TileShape::Circle, square, 50.0);
+        assert!(square.contains(circle_safe.min) && square.contains(circle_safe.max));
+        let radius = 50.0;
+        for p in [
+            circle_safe.left_top(),
+            circle_safe.right_top(),
+            circle_safe.left_bottom(),
+            circle_safe.right_bottom(),
+        ] {
+            assert!((p - square.center()).length() <= radius);
+        }
+    }
 
     fn pill() -> Squircle {
         Squircle::new(Rect::from_min_size(pos2(0.0, 0.0), vec2(140.0, 34.0)), 17.0)

@@ -302,3 +302,10 @@
 - Redesigned only the tile faces: compact tiles use an icon badge, wide tiles show the radio name and connection summary side by side, and larger tiles add a brief device/network count.
 - Active radios now use a subtle accent badge and rim while keeping the existing glass tile surface. The existing tile click, refresh, device discovery, and detail pages are unchanged.
 - Verification: `cargo test --workspace --offline --quiet` passed (169 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 30 — Add shape-aware tile layout context
+
+- Added shared size class, orientation, and rounded/circle shape metadata to `TileCtx`, plus conservative safe content bounds.
+- The bento renderer now constrains tile content to those bounds, including an inscribed content region for circle-shaped square tiles. Added geometry/classification tests.
+- Existing module interaction and radio behavior remain unchanged; individual modules can use the new context for their responsive variants.
+- Verification: `cargo test --workspace --offline --quiet` passed (172 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

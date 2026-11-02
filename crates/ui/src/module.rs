@@ -7,7 +7,7 @@
 //! stable string id, so the plugin host (`nook_modules::plugins`) registers
 //! out-of-process plugins as `Box<dyn Module>`s without changes to the shell.
 
-pub use crate::geometry::TileSize;
+pub use crate::geometry::{Orient, SizeClass, TileShape, TileSize};
 use crate::theme::Theme;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,6 +48,12 @@ pub enum ModuleStatus {
 /// Per-frame context handed to `ui_tile`.
 pub struct TileCtx<'a> {
     pub theme: &'a Theme,
+    /// Full tile bounds and the conservative region available for content.
+    pub rect: egui::Rect,
+    pub safe: egui::Rect,
+    pub size: SizeClass,
+    pub orient: Orient,
+    pub shape: TileShape,
     /// egui time in seconds.
     pub now: f64,
     /// Pointer is over this tile.

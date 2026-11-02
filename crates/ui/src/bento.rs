@@ -12,7 +12,9 @@
 //! (or Esc) folds it back.
 
 use crate::anim;
-use crate::geometry::{GridSpec, Squircle, TileSize, pack_pages};
+use crate::geometry::{
+    GridSpec, SizeClass, Squircle, TileShape, TileSize, orient_of, pack_pages, safe_rect,
+};
 use crate::icons;
 use crate::module::{Badge, GridTile, Module, ModuleStatus, TileCtx};
 use crate::paint;
@@ -540,10 +542,18 @@ pub fn show(
                         );
                     }
 
-                    let inner = tile_inner(rect, size);
+                    let is_circle = (rect.width() - rect.height()).abs() < 1.0
+                        && radius >= rect.width().min(rect.height()) * 0.5 - 1.0;
+                    let shape = if is_circle {
+                        TileShape::Circle
+                    } else {
+                        TileShape::Rounded
+                    };
+                    let safe = safe_rect(shape, rect, radius);
+                    let inner = tile_inner(rect, size).intersect(safe);
                     let mut child = ui.new_child(UiBuilder::new().max_rect(inner).id_salt(id));
                     if !held {
-                        child.set_clip_rect(rect.intersect(clip));
+                        child.set_clip_rect(safe.intersect(rect).intersect(clip));
                     }
                     if !interactive {
                         child.disable();
@@ -559,6 +569,11 @@ pub fn show(
                     } else if ready {
                         let mut tctx = TileCtx {
                             theme,
+                            rect,
+                            safe,
+                            size: SizeClass::from(size),
+                            orient: orient_of(rect),
+                            shape,
                             now,
                             hovered,
                             files_hovering,
