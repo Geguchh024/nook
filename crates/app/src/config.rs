@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use nook_ui::geometry::Corners;
-use nook_ui::module::TileSize;
+use nook_ui::module::{RadioRestore, TileSize};
 use nook_ui::shell::Placement;
 use nook_ui::shell_state::MotionEasing;
 use nook_ui::theme::{Look, ThemeMode, parse_hex};
@@ -182,6 +182,8 @@ pub struct ModulesConfig {
     pub radii: std::collections::BTreeMap<String, u8>,
     /// Per-tile top-left, top-right, bottom-right, bottom-left radii.
     pub corners: std::collections::BTreeMap<String, Corners>,
+    /// Radios that were on before the experimental Airplane tile disabled them.
+    pub airplane_restore: Option<RadioRestore>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -302,6 +304,7 @@ impl Default for Config {
                 sizes: Default::default(),
                 radii: Default::default(),
                 corners: Default::default(),
+                airplane_restore: None,
             },
         }
     }

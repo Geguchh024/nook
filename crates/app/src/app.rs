@@ -216,6 +216,7 @@ impl NookApp {
             match m.id() {
                 "clipboard" => m.set_retention_days(cfg.clipboard_retention.days()),
                 "notes" => m.set_retention_days(cfg.notes_retention.days()),
+                "airplane" => m.set_radio_restore_state(cfg.modules.airplane_restore),
                 _ => {}
             }
             m.attach(&ctx);
@@ -1532,6 +1533,13 @@ impl eframe::App for NookApp {
                 }
             },
         );
+        let radio_restore_update = registry
+            .all_mut()
+            .find_map(|module| module.take_radio_restore_update());
+        let airplane_restore_changed = radio_restore_update.is_some();
+        if let Some(restore) = radio_restore_update {
+            cfg.modules.airplane_restore = restore;
+        }
         let is_open = self.shell.state.is_open();
         if was_open != is_open {
             nook_ui::sound::play(
@@ -1609,6 +1617,9 @@ impl eframe::App for NookApp {
             // Re-sample now so a monitor switch does not wait for the watcher.
             self.sys.monitor =
                 watcher::sample(self.hwnd, self.cfg.monitor, self.cfg.monitor_display).monitor;
+            self.save_config();
+        }
+        if airplane_restore_changed && !settings_out.changed {
             self.save_config();
         }
         // Back to the grid once the panel has fully collapsed.

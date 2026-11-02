@@ -2,6 +2,7 @@
 //! [`nook_ui::module::Module`]; [`register_all`] wires them into a registry in
 //! the default layout order, followed by any [`plugins`] found on disk.
 
+pub mod airplane;
 pub mod bluetooth;
 pub mod calculator;
 pub mod calendar;
@@ -61,6 +62,7 @@ pub const DEFAULT_ORDER: &[&str] = &[
     "controls",
     "wifi",
     "bluetooth",
+    "airplane",
 ];
 
 pub fn register_all(reg: &mut Registry) {
@@ -91,4 +93,5 @@ pub fn register_all(reg: &mut Registry) {
     reg.register(Box::<controls::Controls>::default());
     reg.register(Box::<wifi::Wifi>::default());
     reg.register(Box::<bluetooth::Bluetooth>::default());
+    reg.register(Box::<airplane::Airplane>::default());
 }

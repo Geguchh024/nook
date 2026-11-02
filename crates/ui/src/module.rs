@@ -41,6 +41,14 @@ pub struct BadgeArtwork {
     pub rgba: Arc<[u8]>,
 }
 
+/// Previous radio state used to restore Wi-Fi and Bluetooth after the
+/// experimental Airplane tile turns them off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RadioRestore {
+    pub wifi: bool,
+    pub bluetooth: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModuleStatus {
     Ready,
@@ -84,6 +92,11 @@ pub trait Module: Send {
     /// Modules with an inline state treatment can keep their glass surface.
     fn uses_active_tile_fill(&self) -> bool {
         true
+    }
+    fn set_radio_restore_state(&mut self, _state: Option<RadioRestore>) {}
+    /// `Some(None)` means clear the saved state; `None` means no update.
+    fn take_radio_restore_update(&mut self) -> Option<Option<RadioRestore>> {
+        None
     }
     fn collapsed_badge(&self) -> Option<Badge> {
         None

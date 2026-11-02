@@ -336,3 +336,10 @@
 - Settings rows now reserve a fixed, measured label column and give controls their own right-aligned area, preventing the Monitor label from overlapping its choices.
 - Narrow Monitor layouts switch to a compact dropdown, and the display picker is sized to its available column so its popup and selection remain usable on constrained panels.
 - Verification: `cargo test --workspace --offline --quiet` passed (177 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 35 — Add experimental Airplane tile
+
+- Added a separate Airplane tile that turns off available Wi-Fi/Bluetooth radios and restores the recorded prior state when disabled. Radio work runs on its own initialized worker; state is sampled only when its detail page opens or after an action.
+- The saved restore state is persisted in the Nook config. If no prior state exists, turning Airplane off restores both available radios.
+- The detail page clearly states that this is a radio off/restore helper; Windows' system airplane indicator may not change. Existing Wi-Fi and Bluetooth modules were not modified in this phase.
+- Verification: `cargo test --workspace --offline --quiet` passed (178 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
