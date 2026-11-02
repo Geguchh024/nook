@@ -10,11 +10,64 @@ pub const CORNER_EXPONENT: f32 = 4.0;
 /// Points sampled per corner when building the outline polygon.
 pub const CORNER_SEGMENTS: usize = 14;
 
+/// Independent continuous-corner radii, ordered by their screen positions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Corners {
+    pub tl: f32,
+    pub tr: f32,
+    pub br: f32,
+    pub bl: f32,
+}
+
+impl Corners {
+    pub const fn uniform(radius: f32) -> Self {
+        Self {
+            tl: radius,
+            tr: radius,
+            br: radius,
+            bl: radius,
+        }
+    }
+
+    pub fn max(self) -> f32 {
+        self.tl.max(self.tr).max(self.br).max(self.bl)
+    }
+
+    /// CSS-style normalization so adjacent radii never exceed an edge.
+    pub fn clamp_to(self, width: f32, height: f32) -> Self {
+        let positive = Self {
+            tl: self.tl.max(0.0),
+            tr: self.tr.max(0.0),
+            br: self.br.max(0.0),
+            bl: self.bl.max(0.0),
+        };
+        let scale = |a: f32, b: f32, edge: f32| {
+            let sum = a + b;
+            if sum > edge && sum > 0.0 {
+                edge / sum
+            } else {
+                1.0
+            }
+        };
+        let factor = scale(positive.tl, positive.tr, width)
+            .min(scale(positive.bl, positive.br, width))
+            .min(scale(positive.tl, positive.bl, height))
+            .min(scale(positive.tr, positive.br, height));
+        Self {
+            tl: positive.tl * factor,
+            tr: positive.tr * factor,
+            br: positive.br * factor,
+            bl: positive.bl * factor,
+        }
+    }
+}
+
 /// A rounded rectangle whose corners are superellipse quadrants.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Squircle {
     pub rect: Rect,
     pub radius: f32,
+    pub corners: Corners,
     /// Corner superellipse exponent (2 = circular arc).
     pub exponent: f32,
 }
@@ -25,6 +78,7 @@ impl Squircle {
         Self {
             rect,
             radius: radius.clamp(0.0, max_r.max(0.0)),
+            corners: Corners::uniform(radius.clamp(0.0, max_r.max(0.0))),
             exponent: CORNER_EXPONENT,
         }
     }
@@ -36,21 +90,37 @@ impl Squircle {
         self
     }
 
+    pub fn with_corners(mut self, corners: Corners) -> Self {
+        self.corners = corners.clamp_to(self.rect.width(), self.rect.height());
+        self.radius = self.corners.max();
+        self
+    }
+
     /// Is `p` inside (or on) the outline?
     pub fn contains(&self, p: Pos2) -> bool {
-        let r = self.radius;
-        let half = self.rect.size() * 0.5;
-        let d = (p - self.rect.center()).abs();
-        if d.x > half.x || d.y > half.y {
+        if !self.rect.contains(p) {
             return false;
         }
-        if r <= 0.0 {
-            return true;
+        let (l, r, t, b) = (
+            p.x - self.rect.left(),
+            self.rect.right() - p.x,
+            p.y - self.rect.top(),
+            self.rect.bottom() - p.y,
+        );
+        let tests = [
+            (l, t, self.corners.tl),
+            (r, t, self.corners.tr),
+            (r, b, self.corners.br),
+            (l, b, self.corners.bl),
+        ];
+        for (dx, dy, radius) in tests {
+            if radius > 0.0 && dx < radius && dy < radius {
+                let qx = (1.0 - dx / radius).max(0.0);
+                let qy = (1.0 - dy / radius).max(0.0);
+                return qx.powf(self.exponent) + qy.powf(self.exponent) <= 1.0 + 1e-4;
+            }
         }
-        // Distance into the corner zone, normalized by the radius.
-        let qx = ((d.x - (half.x - r)) / r).max(0.0);
-        let qy = ((d.y - (half.y - r)) / r).max(0.0);
-        qx.powf(self.exponent) + qy.powf(self.exponent) <= 1.0 + 1e-4
+        true
     }
 
     /// The outline as a convex polygon, clockwise in screen space starting at
@@ -63,24 +133,39 @@ impl Squircle {
 
     pub fn outline_into(&self, pts: &mut Vec<Pos2>) {
         pts.clear();
-        let r = self.radius;
         let Rect { min, max } = self.rect;
         // Corner centers and the quadrant each corner sweeps.
         // Corner centers in clockwise order (screen space, y down), each with
         // the start angle of its quarter sweep.
         let corners = [
-            (pos2(max.x - r, min.y + r), -90.0_f32), // top-right
-            (pos2(max.x - r, max.y - r), 0.0),       // bottom-right
-            (pos2(min.x + r, max.y - r), 90.0),      // bottom-left
-            (pos2(min.x + r, min.y + r), 180.0),     // top-left
+            (
+                pos2(max.x - self.corners.tr, min.y + self.corners.tr),
+                -90.0_f32,
+                self.corners.tr,
+            ),
+            (
+                pos2(max.x - self.corners.br, max.y - self.corners.br),
+                0.0,
+                self.corners.br,
+            ),
+            (
+                pos2(min.x + self.corners.bl, max.y - self.corners.bl),
+                90.0,
+                self.corners.bl,
+            ),
+            (
+                pos2(min.x + self.corners.tl, min.y + self.corners.tl),
+                180.0,
+                self.corners.tl,
+            ),
         ];
         let e = 2.0 / self.exponent;
         let shape = |v: f32| v.signum() * v.abs().powf(e);
-        for (c, start) in corners {
+        for (c, start, radius) in corners {
             for s in 0..=CORNER_SEGMENTS {
                 let deg = start + 90.0 * s as f32 / CORNER_SEGMENTS as f32;
                 let (sin, cos) = deg.to_radians().sin_cos();
-                pts.push(c + vec2(shape(cos), shape(sin)) * r);
+                pts.push(c + vec2(shape(cos), shape(sin)) * radius);
             }
         }
     }
@@ -402,6 +487,35 @@ mod tests {
     fn radius_is_clamped_to_half_the_short_side() {
         let s = Squircle::new(Rect::from_min_size(Pos2::ZERO, vec2(100.0, 20.0)), 50.0);
         assert_eq!(s.radius, 10.0);
+    }
+
+    #[test]
+    fn corner_radii_clamp_as_a_group_to_each_edge() {
+        let corners = Corners {
+            tl: 40.0,
+            tr: 40.0,
+            br: 30.0,
+            bl: 30.0,
+        }
+        .clamp_to(60.0, 50.0);
+        assert!(corners.tl + corners.tr <= 60.001);
+        assert!((corners.bl + corners.tl - 50.0).abs() < 0.001);
+        assert!((corners.br + corners.tr - 50.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn asymmetric_corner_outline_matches_contains() {
+        let rect = Rect::from_min_size(Pos2::ZERO, vec2(100.0, 80.0));
+        let shape = Squircle::new(rect, 30.0).with_corners(Corners {
+            tl: 28.0,
+            tr: 6.0,
+            br: 18.0,
+            bl: 0.0,
+        });
+        assert!(!shape.contains(pos2(0.5, 0.5)));
+        assert!(shape.contains(pos2(99.0, 1.0)));
+        assert!(shape.contains(pos2(0.5, 79.0)));
+        assert_eq!(shape.outline().len(), 4 * (CORNER_SEGMENTS + 1));
     }
 
     #[test]

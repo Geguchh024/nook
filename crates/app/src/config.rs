@@ -1,6 +1,7 @@
 //! User configuration in `%APPDATA%\Nook\config.toml`.
 
 use anyhow::{Context, Result};
+use nook_ui::geometry::Corners;
 use nook_ui::module::TileSize;
 use nook_ui::shell::Placement;
 use nook_ui::shell_state::MotionEasing;
@@ -179,6 +180,8 @@ pub struct ModulesConfig {
     pub sizes: std::collections::BTreeMap<String, TileSize>,
     /// Per-tile continuous-corner radius overrides in logical points.
     pub radii: std::collections::BTreeMap<String, u8>,
+    /// Per-tile top-left, top-right, bottom-right, bottom-left radii.
+    pub corners: std::collections::BTreeMap<String, Corners>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -298,6 +301,7 @@ impl Default for Config {
                 disabled: Vec::new(),
                 sizes: Default::default(),
                 radii: Default::default(),
+                corners: Default::default(),
             },
         }
     }
@@ -356,7 +360,10 @@ impl Config {
         let path = path()?;
         match std::fs::read_to_string(&path) {
             Ok(text) => match toml::from_str::<Config>(&text) {
-                Ok(cfg) => Ok(cfg),
+                Ok(mut cfg) => {
+                    cfg.migrate_legacy_corners();
+                    Ok(cfg)
+                }
                 Err(e) => {
                     tracing::error!("config parse error, using defaults: {e}");
                     let _ = std::fs::rename(&path, path.with_extension("toml.bad"));
@@ -384,6 +391,15 @@ impl Config {
         std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
         std::fs::rename(&tmp, &path).with_context(|| format!("replacing {}", path.display()))?;
         Ok(())
+    }
+
+    fn migrate_legacy_corners(&mut self) {
+        for (id, radius) in &self.modules.radii {
+            self.modules
+                .corners
+                .entry(id.clone())
+                .or_insert_with(|| Corners::uniform(*radius as f32));
+        }
     }
 }
 
@@ -418,6 +434,33 @@ mod tests {
         let back: Config =
             toml::from_str(&toml::to_string_pretty(&cfg).expect("ser")).expect("parse");
         assert_eq!(cfg, back);
+    }
+
+    #[test]
+    fn old_uniform_radius_is_migrated_to_four_equal_corners() {
+        let mut cfg: Config = toml::from_str("[modules.radii]\ntimer = 24\n").expect("parse");
+        cfg.migrate_legacy_corners();
+        assert_eq!(
+            cfg.modules.corners.get("timer"),
+            Some(&Corners::uniform(24.0))
+        );
+    }
+
+    #[test]
+    fn per_corner_values_round_trip() {
+        let mut cfg = Config::default();
+        cfg.modules.corners.insert(
+            "timer".into(),
+            Corners {
+                tl: 2.0,
+                tr: 8.0,
+                br: 14.0,
+                bl: 20.0,
+            },
+        );
+        let text = toml::to_string_pretty(&cfg).expect("serialize");
+        let back: Config = toml::from_str(&text).expect("parse");
+        assert_eq!(back.modules.corners, cfg.modules.corners);
     }
 
     #[test]

@@ -13,7 +13,7 @@
 
 use crate::anim;
 use crate::geometry::{
-    GridSpec, SizeClass, Squircle, TileShape, TileSize, orient_of, pack_pages, safe_rect,
+    Corners, GridSpec, SizeClass, Squircle, TileShape, TileSize, orient_of, pack_pages, safe_rect,
 };
 use crate::icons;
 use crate::module::{Badge, GridTile, Module, ModuleStatus, TileCtx};
@@ -45,6 +45,7 @@ pub enum Edit {
     ToggleShown(&'static str),
     Resize(&'static str, TileSize),
     SetRadius(&'static str, u8),
+    SetCorners(&'static str, Corners),
 }
 
 #[derive(Default)]
@@ -126,6 +127,19 @@ fn is_compact(tile: &GridTile<'_>) -> bool {
 }
 
 /// Glass tile background: gradient, rim and highlight, with hover glow.
+fn outline_shape(rect: Rect, radius: f32, corners: Corners) -> Squircle {
+    let radius = radius.min(rect.width().min(rect.height()) * 0.5);
+    let corners = corners.clamp_to(rect.width(), rect.height());
+    let uniform = corners.tl == corners.tr && corners.tr == corners.br && corners.br == corners.bl;
+    let circular = uniform && radius >= rect.width().min(rect.height()) * 0.5 - f32::EPSILON;
+    let shape = Squircle::new(rect, radius).with_corners(corners);
+    if circular {
+        shape.with_exponent(2.0)
+    } else {
+        shape
+    }
+}
+
 fn tile_glass(
     painter: &egui::Painter,
     rect: Rect,
@@ -133,13 +147,9 @@ fn tile_glass(
     active: bool,
     lift: f32,
     radius: f32,
+    corners: Corners,
 ) {
-    let radius = radius.min(rect.width().min(rect.height()) * 0.5);
-    let shape = if radius >= rect.width().min(rect.height()) * 0.5 - f32::EPSILON {
-        Squircle::new(rect, radius).with_exponent(2.0)
-    } else {
-        Squircle::new(rect, radius)
-    };
+    let shape = outline_shape(rect, radius, corners);
     let outline = shape.outline();
     if lift > 0.01 {
         paint::glow(painter, &shape, theme.accent, lift * 0.6);
@@ -168,11 +178,22 @@ fn tile_inner(rect: Rect, size: TileSize) -> Rect {
 }
 
 const EDITOR_SELECTION_ID: &str = "nook-editor-selected-tile";
+const EDITOR_CORNERS_OPEN_ID: &str = "nook-editor-corners-open";
+const EDITOR_CORNERS_LINKED_ID: &str = "nook-editor-corners-linked";
 
 /// Extra shell height for the selected tile's continuous radius inspector.
 pub fn editor_extra_height(ctx: &egui::Context) -> f32 {
     ctx.data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
-        .map_or(0.0, |_| 116.0)
+        .map_or(0.0, |_| {
+            if ctx.data(|data| {
+                data.get_temp::<bool>(Id::new(EDITOR_CORNERS_OPEN_ID))
+                    .unwrap_or(false)
+            }) {
+                226.0
+            } else {
+                116.0
+            }
+        })
 }
 
 fn radius_limit(size: TileSize) -> u8 {
@@ -189,6 +210,7 @@ pub fn show(
     tiles: &mut [GridTile<'_>],
     editing: bool,
     radii: &std::collections::BTreeMap<String, u8>,
+    corners_by_id: &std::collections::BTreeMap<String, Corners>,
 ) -> BentoOutput {
     let ctx = ui.ctx().clone();
     let mut out = BentoOutput::default();
@@ -415,7 +437,7 @@ pub fn show(
             let ti = order[p.index];
             let size = size_of(&tiles[ti]);
             let tile = &mut tiles[ti];
-            let radius = radii
+            let base_radius = radii
                 .get(tile.module.id())
                 .copied()
                 .map_or(TILE_RADIUS, f32::from);
@@ -443,6 +465,12 @@ pub fn show(
                     )
                 }
             };
+            let corners = corners_by_id
+                .get(tile.module.id())
+                .copied()
+                .unwrap_or_else(|| Corners::uniform(base_radius))
+                .clamp_to(rect.width(), rect.height());
+            let radius = corners.max();
             if is_open {
                 open_rect = Some(rect);
             }
@@ -461,6 +489,7 @@ pub fn show(
                 continue;
             }
             let interactive = page_idx == st.page || held;
+            let hit_shape = outline_shape(rect, radius, corners);
 
             let area = Area::new(id)
                 .order(if held {
@@ -486,7 +515,7 @@ pub fn show(
                     // layer under the pointer and nothing in it hovers.
                     ui.expand_to_include_rect(rect);
                     let resp = ui.interact(rect, id.with("tile"), sense);
-                    let hovered = interactive && ui.rect_contains_pointer(rect);
+                    let hovered = interactive && pointer.is_some_and(|p| hit_shape.contains(p));
                     let pressed = hovered && ctx.input(|i| i.pointer.primary_down());
                     if hovered && drag.is_none() {
                         caption = Some((tile.module.name().to_owned(), ready || editing));
@@ -524,22 +553,24 @@ pub fn show(
                         && !editing
                         && tile.module.is_active()
                         && tile.module.uses_active_tile_fill();
-                    tile_glass(&painter, rect, theme, active, lift, radius);
+                    tile_glass(&painter, rect, theme, active, lift, radius, corners);
                     if is_open {
-                        painter.rect_stroke(
-                            rect.shrink(0.5),
-                            radius,
-                            egui::Stroke::new(1.0, with_alpha(theme.accent, 0.6)),
-                            egui::StrokeKind::Inside,
-                        );
+                        let outline = Squircle::new(rect.shrink(0.5), radius)
+                            .with_corners(corners)
+                            .outline();
+                        painter.add(egui::epaint::PathShape::closed_line(
+                            outline,
+                            egui::epaint::PathStroke::new(1.0, with_alpha(theme.accent, 0.6)),
+                        ));
                     }
                     if editing {
-                        painter.rect_stroke(
-                            rect.shrink(0.5),
-                            radius,
-                            egui::Stroke::new(1.0, with_alpha(theme.accent, 0.45)),
-                            egui::StrokeKind::Inside,
-                        );
+                        let outline = Squircle::new(rect.shrink(0.5), radius)
+                            .with_corners(corners)
+                            .outline();
+                        painter.add(egui::epaint::PathShape::closed_line(
+                            outline,
+                            egui::epaint::PathStroke::new(1.0, with_alpha(theme.accent, 0.45)),
+                        ));
                     }
 
                     let is_circle = (rect.width() - rect.height()).abs() < 1.0
@@ -585,6 +616,7 @@ pub fn show(
 
                     if editing {
                         if resp.drag_started()
+                            && hovered
                             && !resizing_handle
                             && let Some(ptr) = pointer
                         {
@@ -594,7 +626,7 @@ pub fn show(
                                 order: order.iter().map(|&i| ids[i]).collect(),
                                 last_move: now,
                             });
-                        } else if resp.clicked() {
+                        } else if resp.clicked() && hovered {
                             ctx.data_mut(|data| {
                                 data.insert_temp(
                                     Id::new(EDITOR_SELECTION_ID),
@@ -602,7 +634,7 @@ pub fn show(
                                 )
                             });
                         }
-                    } else if resp.clicked() && ready {
+                    } else if resp.clicked() && hovered && ready {
                         if compact && !is_open {
                             crate::sound::play(&ctx, crate::sound::Cue::TileExpand);
                             expanded = Expanded {
@@ -656,14 +688,32 @@ pub fn show(
         && let Some(tile) = tiles.iter().find(|tile| tile.module.id() == selected)
     {
         let max_radius = radius_limit(tile.size);
-        let current = radii
+        let base_radius = radii
             .get(&selected)
             .copied()
             .unwrap_or(TILE_RADIUS as u8)
             .min(max_radius);
+        let mut corner_values = corners_by_id
+            .get(&selected)
+            .copied()
+            .unwrap_or_else(|| Corners::uniform(base_radius as f32))
+            .clamp_to(
+                tile.size.cells().0 as f32 * GRID.cell
+                    + (tile.size.cells().0 - 1) as f32 * GRID.gap,
+                tile.size.cells().1 as f32 * GRID.cell
+                    + (tile.size.cells().1 - 1) as f32 * GRID.gap,
+            );
+        let current = corner_values.max().round() as u8;
+        let corners_open = ctx.data(|data| {
+            data.get_temp::<bool>(Id::new(EDITOR_CORNERS_OPEN_ID))
+                .unwrap_or(false)
+        });
         let inspector = Rect::from_min_size(
             pos2(cctx.panel.min.x + PANEL_PADDING, grid.max.y + 8.0),
-            vec2(cctx.panel.width() - 2.0 * PANEL_PADDING, 104.0),
+            vec2(
+                cctx.panel.width() - 2.0 * PANEL_PADDING,
+                if corners_open { 214.0 } else { 104.0 },
+            ),
         );
         widgets::card(ui.painter(), inspector, theme);
         let title = "Tile shape";
@@ -678,8 +728,10 @@ pub fn show(
         ui.painter().text(
             value,
             Align2::RIGHT_CENTER,
-            if current == max_radius {
+            if current == max_radius && matches!(tile.size, TileSize::Small | TileSize::Large) {
                 "Circle".to_owned()
+            } else if current == max_radius {
+                "Pill".to_owned()
             } else {
                 format!("{current} px")
             },
@@ -732,7 +784,7 @@ pub fn show(
         );
         let slider_rect = Rect::from_min_size(
             pos2(inspector.min.x + 65.0, inspector.min.y + 58.0),
-            vec2(inspector.width() - 79.0, 22.0),
+            vec2(inspector.width() - 112.0, 22.0),
         );
         let mut slider_ui = ui.new_child(
             UiBuilder::new()
@@ -753,6 +805,138 @@ pub fn show(
                 tile.module.id(),
                 (normalized * max_radius as f32).round() as u8,
             ));
+        }
+
+        let corners_button_rect = Rect::from_center_size(
+            pos2(inspector.max.x - 26.0, inspector.min.y + 69.0),
+            vec2(28.0, 26.0),
+        );
+        let mut corners_button = ui.new_child(
+            UiBuilder::new()
+                .max_rect(corners_button_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        if widgets::icon_button(
+            &mut corners_button,
+            icons::CORNERS_OUT,
+            24.0,
+            corners_open,
+            theme,
+        )
+        .on_hover_text("Advanced corners")
+        .clicked()
+        {
+            ctx.data_mut(|data| data.insert_temp(Id::new(EDITOR_CORNERS_OPEN_ID), !corners_open));
+        }
+
+        if corners_open {
+            let linked_id = Id::new(EDITOR_CORNERS_LINKED_ID);
+            let mut linked = ctx.data(|data| data.get_temp::<bool>(linked_id).unwrap_or(true));
+            let linked_rect = Rect::from_center_size(
+                pos2(inspector.max.x - 48.0, inspector.min.y + 101.0),
+                vec2(74.0, 24.0),
+            );
+            let linked_response = ui.interact(linked_rect, linked_id, Sense::click());
+            if linked_response.clicked() {
+                linked = !linked;
+                ctx.data_mut(|data| data.insert_temp(linked_id, linked));
+            }
+            ui.painter().text(
+                linked_rect.center(),
+                Align2::CENTER_CENTER,
+                if linked { "Linked" } else { "Unlinked" },
+                Theme::font(SIZE_LABEL),
+                if linked_response.hovered() {
+                    theme.accent
+                } else {
+                    theme.text_dim
+                },
+            );
+
+            let preview = Rect::from_min_size(
+                pos2(inspector.min.x + 16.0, inspector.min.y + 122.0),
+                vec2(48.0, 48.0),
+            );
+            let preview_corners = corner_values.clamp_to(preview.width(), preview.height());
+            let preview_shape =
+                Squircle::new(preview, preview_corners.max()).with_corners(preview_corners);
+            ui.painter().add(egui::Shape::convex_polygon(
+                preview_shape.outline(),
+                theme.control_fill,
+                egui::Stroke::NONE,
+            ));
+            ui.painter().add(egui::epaint::PathShape::closed_line(
+                preview_shape.outline(),
+                egui::epaint::PathStroke::new(1.0, theme.tile_rim),
+            ));
+
+            let labels = ["TL", "TR", "BR", "BL"];
+            let mut values = [
+                corner_values.tl,
+                corner_values.tr,
+                corner_values.br,
+                corner_values.bl,
+            ];
+            let columns_left = inspector.min.x + 78.0;
+            let columns_width = inspector.max.x - columns_left - 12.0;
+            let col_width = (columns_width - 10.0) * 0.5;
+            let mut changed = None;
+            for i in 0..4 {
+                let row = i / 2;
+                let col = i % 2;
+                let x = columns_left + col as f32 * (col_width + 10.0);
+                let y = inspector.min.y + 120.0 + row as f32 * 42.0;
+                ui.painter().text(
+                    pos2(x, y + 5.0),
+                    Align2::LEFT_CENTER,
+                    labels[i],
+                    Theme::font(SIZE_LABEL - 1.0),
+                    theme.text_dim,
+                );
+                let mut value = (values[i] / max_radius.max(1) as f32).clamp(0.0, 1.0);
+                let slider_rect = Rect::from_min_size(
+                    pos2(x + 24.0, y + 1.0),
+                    vec2((col_width - 52.0).max(30.0), 18.0),
+                );
+                let mut corner_slider = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(slider_rect)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                );
+                if widgets::slider(
+                    &mut corner_slider,
+                    &mut value,
+                    slider_rect.width(),
+                    max_radius as u32,
+                    theme,
+                )
+                .changed()
+                {
+                    values[i] = value * max_radius as f32;
+                    changed = Some(i);
+                }
+                ui.painter().text(
+                    pos2(x + col_width - 1.0, y + 5.0),
+                    Align2::RIGHT_CENTER,
+                    format!("{}", values[i].round() as u8),
+                    Theme::font(SIZE_LABEL - 1.0),
+                    theme.text_faint,
+                );
+            }
+            if let Some(changed_index) = changed {
+                let picked = values[changed_index];
+                if linked {
+                    values.fill(picked);
+                }
+                corner_values = Corners {
+                    tl: values[0],
+                    tr: values[1],
+                    br: values[2],
+                    bl: values[3],
+                };
+                out.edits
+                    .push(Edit::SetCorners(tile.module.id(), corner_values));
+            }
         }
     }
 

@@ -323,3 +323,10 @@
 - Packaged app ids use the Windows AppsFolder namespace; classic `.exe` source ids are validated before launch. Failures are logged without interrupting playback controls.
 - Added tests for accepted and rejected launch targets. The SMTC worker and its event-driven discovery remain unchanged.
 - Verification: `cargo test --workspace --offline --quiet` passed (173 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 33 — Add per-corner tile radius editing
+
+- Added independent TL/TR/BR/BL radii with CSS-style edge clamping, per-tile config persistence, and automatic migration from legacy uniform radius values.
+- The edit inspector now has linked/unlinked corner sliders and a live outline preview. The same radii drive tile drawing and tile interaction checks; the radius slider remains available and uses accurate Circle/Pill labels by footprint.
+- Added geometry, serialization, and legacy migration tests.
+- Verification: `cargo test --workspace --offline --quiet` passed (177 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
