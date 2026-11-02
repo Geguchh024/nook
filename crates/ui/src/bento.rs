@@ -861,21 +861,33 @@ fn edit_face(
 
     // Drag the curved lower-right handle to resize continuously; the grid
     // snaps to its supported footprints (including the vertical medium tile).
-    let handle = Rect::from_center_size(pos2(rect.max.x - 7.0, rect.max.y - 7.0), vec2(18.0, 18.0));
+    let handle = Rect::from_min_max(
+        pos2(rect.max.x - 30.0, rect.max.y - 30.0),
+        pos2(rect.max.x + 2.0, rect.max.y + 2.0),
+    );
     let response = ui.interact(handle, id.with("resize-handle"), Sense::click_and_drag());
     *resizing |= response.dragged() || response.drag_started();
+    if response.hovered() || response.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+    }
     let handle_color = if response.hovered() || response.dragged() {
         theme.accent
     } else {
-        theme.text_dim
+        theme.text
     };
+    let arc_center = rect.max - vec2(22.0, 22.0);
+    let arc = (0..=12)
+        .map(|step| {
+            let angle = std::f32::consts::FRAC_PI_2 * step as f32 / 12.0;
+            pos2(
+                arc_center.x + 16.0 * angle.cos(),
+                arc_center.y + 16.0 * angle.sin(),
+            )
+        })
+        .collect();
     painter.add(egui::epaint::PathShape::line(
-        vec![
-            pos2(handle.max.x - 1.0, handle.min.y + 1.0),
-            pos2(handle.max.x - 1.0, handle.max.y - 1.0),
-            pos2(handle.min.x + 1.0, handle.max.y - 1.0),
-        ],
-        egui::epaint::PathStroke::new(2.0, handle_color),
+        arc,
+        egui::epaint::PathStroke::new(2.5, handle_color),
     ));
     let resize_id = id.with("resize-origin");
     if response.drag_started()

@@ -252,3 +252,9 @@
 - The renderer switches to circular corners at the maximum radius, and the inspector hides the overlapping edit hint while open.
 - Added radius limit coverage for all four tile footprints.
 - Verification: `cargo test --workspace --offline --quiet` and `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 22 — Curved tile resize grip
+
+- Replaced the right-angle resize mark with a high-contrast curved corner arc, widened its drag target, and show the diagonal resize cursor while active.
+- Dragging continues to choose the nearest supported Small, Wide, Tall, or Large footprint.
+- Verification: `cargo test --workspace --offline --quiet` passed (165 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
