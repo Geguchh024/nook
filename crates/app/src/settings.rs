@@ -259,8 +259,17 @@ pub fn page(
                 ThemeMode::Light => 2,
             };
             if row(&mut lui, "Theme", theme, |ui| {
+                if cfg.material == Material::Oled {
+                    ui.disable();
+                }
                 widgets::segmented(ui, &["Auto", "Dark", "Light"], &mut theme_idx, theme)
-            }) {
+                    .on_hover_text(if cfg.material == Material::Oled {
+                        "OLED material uses a fixed black theme"
+                    } else {
+                        "Choose the interface theme"
+                    })
+            }) && cfg.material != Material::Oled
+            {
                 cfg.theme = [ThemeMode::Auto, ThemeMode::Dark, ThemeMode::Light][theme_idx];
                 out.changed = true;
             }
@@ -326,24 +335,8 @@ pub fn page(
             }
             let mut sounds = cfg.sound_effects;
             if row(&mut rui, "Sound effects", theme, |ui| {
-                widgets::icon_button(
-                    ui,
-                    if sounds {
-                        icons::SPEAKER_HIGH
-                    } else {
-                        icons::SPEAKER_SLASH
-                    },
-                    28.0,
-                    sounds,
-                    theme,
-                )
-                .on_hover_text(if sounds {
-                    "Mute Nook sound effects"
-                } else {
-                    "Unmute Nook sound effects"
-                })
+                widgets::toggle(ui, &mut sounds, theme)
             }) {
-                sounds = !sounds;
                 cfg.sound_effects = sounds;
                 out.changed = true;
             }

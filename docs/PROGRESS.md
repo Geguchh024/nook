@@ -1,5 +1,11 @@
 # Progress
 
+## Step 24 — OLED theme lock and sound toggle
+
+- Disabled the Theme segmented control while OLED material is selected and added an explanation tooltip; the user's selected theme value remains saved.
+- Replaced the sound icon action with the standard on/off toggle in Behavior.
+- Verification: workspace tests passed (162 passed, 7 ignored); workspace clippy passed with `-D warnings`.
+
 ## Step 23 — Shared button corner style
 
 - Added a Button corner control under Customize. Shared module action buttons and chips now use the adjustable continuous-corner shape, with 13 points as the default.
