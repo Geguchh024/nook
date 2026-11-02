@@ -175,6 +175,8 @@ pub struct ModulesConfig {
     pub disabled: Vec<String>,
     /// Tile sizes picked in the editor; modules not listed use their own.
     pub sizes: std::collections::BTreeMap<String, TileSize>,
+    /// Per-tile continuous-corner radius overrides in logical points.
+    pub radii: std::collections::BTreeMap<String, u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -284,6 +286,7 @@ impl Default for Config {
                     .collect(),
                 disabled: Vec::new(),
                 sizes: Default::default(),
+                radii: Default::default(),
             },
         }
     }
@@ -395,9 +398,10 @@ mod tests {
 
     #[test]
     fn module_sizes_round_trip() {
-        let text = "[modules]\norder = [\"timer\"]\n[modules.sizes]\ntimer = \"wide\"\n";
+        let text = "[modules]\norder = [\"timer\"]\n[modules.sizes]\ntimer = \"wide\"\n[modules.radii]\ntimer = 24\n";
         let cfg: Config = toml::from_str(text).expect("parse");
         assert_eq!(cfg.modules.sizes.get("timer"), Some(&TileSize::Wide));
+        assert_eq!(cfg.modules.radii.get("timer"), Some(&24));
         let back: Config =
             toml::from_str(&toml::to_string_pretty(&cfg).expect("ser")).expect("parse");
         assert_eq!(cfg, back);

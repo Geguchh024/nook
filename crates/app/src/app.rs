@@ -376,6 +376,13 @@ impl NookApp {
                         modules.sizes.insert(id.to_owned(), size);
                     }
                 }
+                bento::Edit::SetRadius(id, radius) => {
+                    if radius as f32 == nook_ui::theme::TILE_RADIUS {
+                        modules.radii.remove(id);
+                    } else {
+                        modules.radii.insert(id.to_owned(), radius);
+                    }
+                }
             }
         }
         self.registry.arrange(&modules.order, &modules.disabled);
@@ -1271,7 +1278,8 @@ impl eframe::App for NookApp {
             |ui, cctx| match page {
                 Page::Bento => {
                     let mut tiles = registry.grid_mut(editing);
-                    grid_out = bento::show(ui, cctx, &theme, &mut tiles, editing);
+                    grid_out =
+                        bento::show(ui, cctx, &theme, &mut tiles, editing, &cfg.modules.radii);
                     clicked = grid_out.clicked;
                     // The Update chip sits in the middle of the bottom
                     // gutter, between the pencil and the page dots.

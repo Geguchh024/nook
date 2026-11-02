@@ -1,5 +1,11 @@
 # Progress
 
+## Step 19 — Per-tile corner radius editing
+
+- Added a small Size/Radius switch to each tile's layout editor. Radius offers four smooth continuous-corner values (0, 8, 16 and 24 points) without adding another row or overlapping the tile controls.
+- Saved radius overrides by module id, so tile/plugin radius survives restarts and follows the tile when the layout is rearranged. The default remains the existing 16-point squircle.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
 ## Step 18 — Motion controls
 
 - Added a collapsible Motion section beneath Customize with open and close delays, hover glow, animation duration, Smooth/Spring/Bouncy easing and Reset motion.

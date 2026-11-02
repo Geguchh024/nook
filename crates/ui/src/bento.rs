@@ -41,6 +41,7 @@ pub enum Edit {
     /// Show a hidden tile or hide a shown one.
     ToggleShown(&'static str),
     Resize(&'static str, TileSize),
+    SetRadius(&'static str, u8),
 }
 
 #[derive(Default)]
@@ -122,8 +123,15 @@ fn is_compact(tile: &GridTile<'_>) -> bool {
 }
 
 /// Glass tile background: gradient, rim and highlight, with hover glow.
-fn tile_glass(painter: &egui::Painter, rect: Rect, theme: &Theme, active: bool, lift: f32) {
-    let shape = Squircle::new(rect, TILE_RADIUS);
+fn tile_glass(
+    painter: &egui::Painter,
+    rect: Rect,
+    theme: &Theme,
+    active: bool,
+    lift: f32,
+    radius: f32,
+) {
+    let shape = Squircle::new(rect, radius);
     let outline = shape.outline();
     if lift > 0.01 {
         paint::glow(painter, &shape, theme.accent, lift * 0.6);
@@ -156,6 +164,7 @@ pub fn show(
     theme: &Theme,
     tiles: &mut [GridTile<'_>],
     editing: bool,
+    radii: &std::collections::BTreeMap<String, u8>,
 ) -> BentoOutput {
     let ctx = ui.ctx().clone();
     let mut out = BentoOutput::default();
@@ -378,6 +387,10 @@ pub fn show(
             let ti = order[p.index];
             let size = size_of(&tiles[ti]);
             let tile = &mut tiles[ti];
+            let radius = radii
+                .get(tile.module.id())
+                .copied()
+                .map_or(TILE_RADIUS, f32::from);
             let id = Id::new(("nook-tile", tile.module.id()));
             let held = drag.as_ref().is_some_and(|d| d.id == tile.module.id());
             let target = GRID.cell_rect(grid.min, p.col, p.row, size);
@@ -475,16 +488,16 @@ pub fn show(
                     if held {
                         painter.rect_filled(
                             rect.translate(vec2(0.0, 5.0)).expand(2.0),
-                            TILE_RADIUS + 2.0,
+                            radius + 2.0,
                             Color32::from_black_alpha(70),
                         );
                     }
                     let active = ready && !editing && tile.module.is_active();
-                    tile_glass(&painter, rect, theme, active, lift);
+                    tile_glass(&painter, rect, theme, active, lift, radius);
                     if is_open {
                         painter.rect_stroke(
                             rect.shrink(0.5),
-                            TILE_RADIUS,
+                            radius,
                             egui::Stroke::new(1.0, with_alpha(theme.accent, 0.6)),
                             egui::StrokeKind::Inside,
                         );
@@ -492,7 +505,7 @@ pub fn show(
                     if editing {
                         painter.rect_stroke(
                             rect.shrink(0.5),
-                            TILE_RADIUS,
+                            radius,
                             egui::Stroke::new(1.0, with_alpha(theme.accent, 0.45)),
                             egui::StrokeKind::Inside,
                         );
@@ -507,7 +520,7 @@ pub fn show(
                         child.disable();
                     }
                     if editing {
-                        if let Some(e) = edit_face(&mut child, rect, tile, theme) {
+                        if let Some(e) = edit_face(&mut child, rect, tile, theme, radius as u8) {
                             out.edits.push(e);
                         }
                     } else if compact {
@@ -631,7 +644,13 @@ pub fn show(
 
 /// The face of a tile in edit mode: its icon, the show tick under it, and
 /// the size picker under that. Returns the edit made, if any.
-fn edit_face(ui: &mut Ui, rect: Rect, tile: &GridTile<'_>, theme: &Theme) -> Option<Edit> {
+fn edit_face(
+    ui: &mut Ui,
+    rect: Rect,
+    tile: &GridTile<'_>,
+    theme: &Theme,
+    radius: u8,
+) -> Option<Edit> {
     let ctx = ui.ctx().clone();
     let id = Id::new(("nook-edit", tile.module.id()));
     let mut edit = None;
@@ -686,55 +705,123 @@ fn edit_face(ui: &mut Ui, rect: Rect, tile: &GridTile<'_>, theme: &Theme) -> Opt
         edit = Some(Edit::ToggleShown(tile.module.id()));
     }
 
-    // Size picker: 1x1, 2x1 and 2x2 drawn to scale.
-    let unit = 5.0;
-    let shape = |s: TileSize| {
-        let (w, h) = s.cells();
-        vec2(
-            w as f32 * unit + (w - 1) as f32,
-            h as f32 * unit + (h - 1) as f32,
-        )
-    };
-    let total: f32 = TileSize::ALL.iter().map(|&s| shape(s).x).sum::<f32>() + 2.0 * 6.0;
-    let mut x = c.x - total * 0.5;
-    let y = c.y + 20.0;
-    let native = tile.module.size_hint();
-    for s in TileSize::ALL {
-        let size = shape(s);
-        let glyph = Rect::from_min_size(pos2(x, y - size.y * 0.5), size);
-        x += size.x + 6.0;
-        let hit = Rect::from_center_size(glyph.center(), vec2(size.x + 5.0, 16.0));
-        let resp = ui.interact(hit, id.with(("size", s.area())), Sense::click());
-        let selected = s == tile.size;
-        let color = if selected {
-            theme.accent
-        } else if resp.hovered() {
-            theme.text
+    // Reuse the compact size-picker row for four per-tile corner radii.
+    let radius_mode_id = id.with("radius-mode");
+    let mut radius_mode = ctx
+        .data(|d| d.get_temp::<bool>(radius_mode_id))
+        .unwrap_or(false);
+    let switch = Rect::from_center_size(pos2(rect.max.x - 9.0, c.y + 21.0), vec2(12.0, 14.0));
+    if ui
+        .interact(switch, id.with("radius-mode-switch"), Sense::click())
+        .on_hover_text(if radius_mode {
+            "Tile size"
         } else {
-            theme.text_faint
-        };
-        if selected || resp.hovered() {
-            painter.rect_filled(glyph, 1.5, color);
-        } else {
-            painter.rect_stroke(
-                glyph,
-                1.5,
-                egui::Stroke::new(1.0, color),
-                egui::StrokeKind::Inside,
+            "Corner radius"
+        })
+        .clicked()
+    {
+        radius_mode = !radius_mode;
+        ctx.data_mut(|d| d.insert_temp(radius_mode_id, radius_mode));
+    }
+    painter.text(
+        switch.center(),
+        Align2::CENTER_CENTER,
+        if radius_mode { "S" } else { "R" },
+        Theme::font(SIZE_LABEL - 1.0),
+        theme.text_dim,
+    );
+
+    if radius_mode {
+        let values = [0_u8, 8, 16, 24];
+        let start = c.x - 25.0;
+        for (index, value) in values.into_iter().enumerate() {
+            let center = pos2(start + index as f32 * 12.0, c.y + 21.0);
+            let glyph = Rect::from_center_size(center, vec2(8.0, 8.0));
+            let selected = radius == value;
+            let response = ui.interact(
+                Rect::from_center_size(center, vec2(11.0, 15.0)),
+                id.with(("radius", value)),
+                Sense::click(),
             );
+            let color = if selected {
+                theme.accent
+            } else if response.hovered() {
+                theme.text
+            } else {
+                theme.text_faint
+            };
+            let shape = Squircle::new(glyph, (value as f32 / 24.0 * 4.0).min(4.0));
+            if selected || response.hovered() {
+                painter.add(egui::Shape::convex_polygon(
+                    shape.outline(),
+                    color,
+                    egui::Stroke::NONE,
+                ));
+            } else {
+                painter.add(egui::epaint::PathShape::closed_line(
+                    shape.outline(),
+                    egui::epaint::PathStroke::new(1.0, color),
+                ));
+            }
+            if response
+                .on_hover_text(format!("Corner radius: {value}"))
+                .clicked()
+                && !selected
+            {
+                edit = Some(Edit::SetRadius(tile.module.id(), value));
+            }
         }
-        let label = match s {
-            TileSize::Small => "Small",
-            TileSize::Wide => "Wide",
-            TileSize::Large => "Large",
+    } else {
+        // Size picker: 1x1, 2x1 and 2x2 drawn to scale.
+        let unit = 5.0;
+        let shape = |s: TileSize| {
+            let (w, h) = s.cells();
+            vec2(
+                w as f32 * unit + (w - 1) as f32,
+                h as f32 * unit + (h - 1) as f32,
+            )
         };
-        let tip = if s.area() < native.area() {
-            format!("{label}: compact, click it to open")
-        } else {
-            label.to_owned()
-        };
-        if resp.on_hover_text(tip).clicked() && !selected {
-            edit = Some(Edit::Resize(tile.module.id(), s));
+        let total: f32 = TileSize::ALL.iter().map(|&s| shape(s).x).sum::<f32>() + 2.0 * 6.0;
+        let mut x = c.x - total * 0.5 - 5.0;
+        let y = c.y + 20.0;
+        let native = tile.module.size_hint();
+        for s in TileSize::ALL {
+            let size = shape(s);
+            let glyph = Rect::from_min_size(pos2(x, y - size.y * 0.5), size);
+            x += size.x + 6.0;
+            let hit = Rect::from_center_size(glyph.center(), vec2(size.x + 5.0, 16.0));
+            let resp = ui.interact(hit, id.with(("size", s.area())), Sense::click());
+            let selected = s == tile.size;
+            let color = if selected {
+                theme.accent
+            } else if resp.hovered() {
+                theme.text
+            } else {
+                theme.text_faint
+            };
+            if selected || resp.hovered() {
+                painter.rect_filled(glyph, 1.5, color);
+            } else {
+                painter.rect_stroke(
+                    glyph,
+                    1.5,
+                    egui::Stroke::new(1.0, color),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            let label = match s {
+                TileSize::Small => "Small",
+                TileSize::Wide => "Wide",
+                TileSize::Large => "Large",
+            };
+            let tip = if s.area() < native.area() {
+                format!("{label}: compact, click it to open")
+            } else {
+                label.to_owned()
+            };
+            if resp.on_hover_text(tip).clicked() && !selected {
+                edit = Some(Edit::Resize(tile.module.id(), s));
+            }
         }
     }
     edit
