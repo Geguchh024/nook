@@ -213,6 +213,8 @@ pub struct Config {
     /// Shell open/close animation duration, milliseconds.
     pub motion_duration_ms: u16,
     pub motion_easing: MotionEasing,
+    /// Show a small media glyph in the collapsed notch when audio is playing.
+    pub media_in_closed_notch: bool,
     /// Film-grain strength in percent; 0 turns the grain off.
     pub grain: u8,
     pub grain_size: GrainSize,
@@ -265,6 +267,7 @@ impl Default for Config {
             hover_glow: 12,
             motion_duration_ms: 370,
             motion_easing: MotionEasing::Spring,
+            media_in_closed_notch: true,
             grain: DEFAULT_GRAIN,
             grain_size: GrainSize::Fine,
             placement: Placement::Center,

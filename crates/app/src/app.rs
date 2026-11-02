@@ -1255,6 +1255,7 @@ impl eframe::App for NookApp {
         let badges: Vec<Badge> = self
             .registry
             .visible()
+            .filter(|module| self.cfg.media_in_closed_notch || module.id() != "media")
             .filter_map(|m| m.collapsed_badge())
             .collect();
         let battery = self.sys.battery;

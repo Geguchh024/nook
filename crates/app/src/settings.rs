@@ -663,6 +663,13 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
         cfg.shell_shadow = (shadow * 100.0).round() as u8;
         out.changed = true;
     }
+    let mut media_closed = cfg.media_in_closed_notch;
+    if row(&mut rui, "Music in closed notch", theme, |ui| {
+        widgets::toggle(ui, &mut media_closed, theme)
+    }) {
+        cfg.media_in_closed_notch = media_closed;
+        out.changed = true;
+    }
     let w = rui.available_width();
     let (reset_row, _) = rui.allocate_exact_size(vec2(w, ROW), Sense::hover());
     let reset = Rect::from_min_size(

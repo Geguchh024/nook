@@ -1,5 +1,11 @@
 # Progress
 
+## Step 20 — Media badge in the closed shell
+
+- Added a saved Music in closed notch toggle under Customize.
+- When enabled, the existing Media module reports a small music glyph while playback is active; the normal clock, connection notices and other badges keep their existing behavior. State comes from the existing SMTC watcher, with no polling loop.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
 ## Step 19 — Per-tile corner radius editing
 
 - Added a small Size/Radius switch to each tile's layout editor. Radius offers four smooth continuous-corner values (0, 8, 16 and 24 points) without adding another row or overlapping the tile controls.
