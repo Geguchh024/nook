@@ -280,6 +280,32 @@ impl Module for Clipboard {
         TileSize::Large
     }
 
+    fn collapsed_badge(&self) -> Option<nook_ui::module::Badge> {
+        let (id, copied_at) = self.copied?;
+        let entry = self.history.entries.iter().find(|entry| entry.id == id)?;
+        let label = match &entry.content {
+            ClipContent::Image(_) => "Copied image".to_owned(),
+            ClipContent::Text(text) => {
+                let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                let preview: String = compact.chars().take(28).collect();
+                let suffix = if compact.chars().count() > 28 {
+                    "…"
+                } else {
+                    ""
+                };
+                if preview.is_empty() {
+                    "Copied text".to_owned()
+                } else {
+                    format!("Copied: {preview}{suffix}")
+                }
+            }
+        };
+        Some(nook_ui::module::Badge::Notice {
+            label,
+            until: copied_at + COPIED_FOR,
+        })
+    }
+
     fn page_size(&self) -> Option<egui::Vec2> {
         let picker = self.filter.picker_height();
         (picker > 0.0).then_some(vec2(760.0, 430.0 + picker + 14.0))

@@ -214,3 +214,9 @@
 - The collapsed notch now pairs the playing media glyph with three animated audio level bars when the existing “Music in closed pill” option is enabled.
 - The renderer schedules 33 ms repaints only while the media badge is visible in the collapsed shell; the idle path remains event-driven.
 - Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 16 — Clipboard copy notice
+
+- Copying a clipboard entry now displays a brief “Copied: …” notice inside the collapsed notch; long text is shortened and copied images show “Copied image”.
+- The notice uses the existing timed badge renderer and expires after the same 1.2-second confirmation shown in the Clipboard tile.
+- Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
