@@ -1,5 +1,12 @@
 # Progress
 
+## Step 16 — OLED material, color selectors and pill margin
+
+- Added an OLED material preset that paints the expanded shell pure black with restrained dark surfaces, while keeping Acrylic and Solid available.
+- Added custom section and button color pickers, plus a Pill top-margin slider. The margin updates the live shell metrics; Notch mode keeps the control disabled because its shape stays attached to the screen edge.
+- Routed custom section colors through the tile/card palette and custom button colors through secondary action buttons.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
 ## Step 15 — Wi-Fi and Bluetooth responsive page controls
 
 - Reflowed Wi-Fi and Bluetooth status and action controls into wrapping rows so narrow panels do not force the connected state and settings buttons into one line.

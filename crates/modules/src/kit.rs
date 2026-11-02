@@ -351,9 +351,10 @@ pub fn button(
         )
     } else {
         (
-            with_alpha(
+            mix(
+                theme.control_fill,
                 theme.text,
-                if theme.dark { 0.10 } else { 0.07 } + 0.06 * hover,
+                if theme.dark { 0.06 } else { 0.08 } * hover,
             ),
             theme.text,
         )

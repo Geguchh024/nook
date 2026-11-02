@@ -27,7 +27,7 @@ const TOP_CARD: f32 = 232.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
-const BODY: [f32; 2] = [4.0 * ROW + 14.0, 5.0 * ROW + 36.0];
+const BODY: [f32; 2] = [8.0 * ROW + 16.0, 5.0 * ROW + 36.0];
 /// Page height with every section collapsed, panel padding included.
 const BASE: f32 =
     2.0 * PANEL_PADDING + HEADER + GAP + TOP_CARD + GAP + DISCLOSURE + GAP + DISCLOSURE;
@@ -485,6 +485,7 @@ fn customize_summary(cfg: &Config) -> String {
     let material = match cfg.material {
         Material::Acrylic => format!("Glass {}%", cfg.glass_opacity),
         Material::Solid => "Solid".to_owned(),
+        Material::Oled => "OLED black".to_owned(),
     };
     let tint = if parse_hex(&cfg.background_hex).is_some() {
         "tinted"
@@ -531,11 +532,12 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
     let mut mat_idx = match cfg.material {
         Material::Acrylic => 0,
         Material::Solid => 1,
+        Material::Oled => 2,
     };
     if row(&mut lui, "Material", theme, |ui| {
-        widgets::segmented(ui, &["Glass", "Solid"], &mut mat_idx, theme)
+        widgets::segmented(ui, &["Glass", "Solid", "OLED"], &mut mat_idx, theme)
     }) {
-        cfg.material = [Material::Acrylic, Material::Solid][mat_idx];
+        cfg.material = [Material::Acrylic, Material::Solid, Material::Oled][mat_idx];
         out.changed = true;
     }
     let mut bg_idx = match parse_hex(&cfg.background_hex) {
@@ -548,6 +550,22 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
     {
         cfg.background_hex = BACKGROUNDS[i].map(to_hex).unwrap_or_default();
         out.changed = true;
+    }
+    for (label, value) in [
+        ("Sections", &mut cfg.surface_hex),
+        ("Buttons", &mut cfg.control_hex),
+    ] {
+        let mut color = parse_hex(value).unwrap_or(theme.tile_top);
+        if row(&mut lui, label, theme, |ui| {
+            egui::color_picker::color_edit_button_srgba(
+                ui,
+                &mut color,
+                egui::color_picker::Alpha::Opaque,
+            )
+        }) {
+            *value = to_hex(color);
+            out.changed = true;
+        }
     }
     let glass = cfg.material == Material::Acrylic;
     // With Windows "Transparency effects" off there is no blur to see
@@ -566,6 +584,18 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
         resp
     }) {
         cfg.glass_opacity = OPACITY_MIN + (t * span).round() as u8;
+        out.changed = true;
+    }
+    let mut margin = cfg.pill_margin as f32 / 24.0;
+    if row(&mut lui, "Pill top margin", theme, |ui| {
+        if cfg.shell_style == ShellStyle::Notch {
+            ui.disable();
+        }
+        let resp = widgets::slider(ui, &mut margin, 110.0, 12, theme);
+        value_label(ui, &format!("{}", cfg.pill_margin), theme);
+        resp
+    }) {
+        cfg.pill_margin = (margin * 24.0).round() as u8;
         out.changed = true;
     }
     let mut accent_idx = match cfg.accent {

@@ -231,6 +231,7 @@ impl NookApp {
 
         let timings = timings(&cfg);
         let mut shell = Shell::new(ShellMetrics::default(), timings);
+        shell.metrics.top_margin = cfg.pill_margin as f32;
         shell.metrics.notch_collapsed = cfg.notch_size.points();
         shell.placement = cfg.placement;
         shell.notch = cfg.shell_style == crate::config::ShellStyle::Notch;
@@ -1375,6 +1376,7 @@ impl eframe::App for NookApp {
             self.shell.placement = self.cfg.placement;
             self.shell.notch = self.cfg.shell_style == crate::config::ShellStyle::Notch;
             self.shell.metrics.notch_collapsed = self.cfg.notch_size.points();
+            self.shell.metrics.top_margin = self.cfg.pill_margin as f32;
             self.shape_dirty = true;
             self.watcher.set_monitor_mode(self.cfg.monitor);
             nook_modules::plugins::set_dev_mode(self.cfg.plugin_dev);

@@ -36,6 +36,11 @@ pub struct Look {
     pub glass_opacity: f32,
     /// Color the glass is tinted toward; `None` keeps the neutral glass.
     pub tint: Option<Color32>,
+    /// Optional user colors for elevated cards and controls.
+    pub surface_tint: Option<Color32>,
+    pub control_tint: Option<Color32>,
+    /// Force a pure black shell and OLED-friendly dark surfaces.
+    pub oled: bool,
     /// Film-grain strength, 0..1.
     pub grain: f32,
     /// Size of one grain speck in physical pixels.
@@ -47,6 +52,9 @@ impl Default for Look {
         Self {
             glass_opacity: 0.70,
             tint: None,
+            surface_tint: None,
+            control_tint: None,
+            oled: false,
             grain: 0.35,
             grain_px: 1.0,
         }
@@ -76,6 +84,8 @@ pub struct Theme {
     pub tile_top: Color32,
     pub tile_bottom: Color32,
     pub tile_rim: Color32,
+    /// Fill tint for secondary action buttons.
+    pub control_fill: Color32,
     pub text: Color32,
     pub text_dim: Color32,
     pub text_faint: Color32,
@@ -120,19 +130,57 @@ impl Theme {
             pill_text: Color32::from_rgb(244, 244, 246),
             pill_text_dim: Color32::from_rgb(150, 150, 160),
         };
-        if dark {
+        if dark || look.oled {
+            let surface_top = look.surface_tint.map_or(
+                if look.oled {
+                    Color32::from_rgb(20, 20, 22)
+                } else {
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 18)
+                },
+                |c| with_alpha(c, 0.30),
+            );
+            let surface_bottom = look.surface_tint.map_or(
+                if look.oled {
+                    Color32::from_rgb(10, 10, 12)
+                } else {
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 8)
+                },
+                |c| with_alpha(c, 0.18),
+            );
             Self {
-                dark,
+                dark: dark || look.oled,
                 accent,
-                glass_top: with_alpha(tinted(Color32::from_rgb(34, 34, 40), 0.30), glass_alpha),
-                glass_bottom: with_alpha(tinted(Color32::from_rgb(18, 18, 22), 0.20), glass_alpha),
+                glass_top: with_alpha(
+                    if look.oled {
+                        Color32::BLACK
+                    } else {
+                        tinted(Color32::from_rgb(34, 34, 40), 0.30)
+                    },
+                    glass_alpha,
+                ),
+                glass_bottom: with_alpha(
+                    if look.oled {
+                        Color32::BLACK
+                    } else {
+                        tinted(Color32::from_rgb(18, 18, 22), 0.20)
+                    },
+                    glass_alpha,
+                ),
                 rim: Color32::from_rgba_unmultiplied(0, 0, 0, 110),
                 highlight: Color32::from_rgba_unmultiplied(255, 255, 255, 46),
                 noise_alpha: (grain * GRAIN_MAX_DARK).round() as u8,
                 grain_px,
-                tile_top: Color32::from_rgba_unmultiplied(255, 255, 255, 18),
-                tile_bottom: Color32::from_rgba_unmultiplied(255, 255, 255, 8),
+                tile_top: surface_top,
+                tile_bottom: surface_bottom,
                 tile_rim: Color32::from_rgba_unmultiplied(255, 255, 255, 14),
+                control_fill: with_alpha(
+                    look.control_tint.unwrap_or(Color32::WHITE),
+                    if look.control_tint.is_some() {
+                        52.0 / 255.0
+                    } else {
+                        0.10
+                    },
+                ),
                 text: Color32::from_rgb(242, 242, 245),
                 text_dim: Color32::from_rgb(168, 168, 178),
                 text_faint: Color32::from_rgb(110, 110, 120),
@@ -154,6 +202,14 @@ impl Theme {
                 tile_top: Color32::from_rgba_unmultiplied(255, 255, 255, 150),
                 tile_bottom: Color32::from_rgba_unmultiplied(255, 255, 255, 90),
                 tile_rim: Color32::from_rgba_unmultiplied(0, 0, 0, 14),
+                control_fill: with_alpha(
+                    look.control_tint.unwrap_or(Color32::BLACK),
+                    if look.control_tint.is_some() {
+                        48.0 / 255.0
+                    } else {
+                        0.07
+                    },
+                ),
                 text: Color32::from_rgb(24, 24, 28),
                 text_dim: Color32::from_rgb(92, 92, 104),
                 text_faint: Color32::from_rgb(150, 150, 160),
@@ -238,6 +294,7 @@ impl Ink {
             tile_top: z,
             tile_bottom: z,
             tile_rim: z,
+            control_fill: z,
             text: z,
             text_dim: z,
             text_faint: z,

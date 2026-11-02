@@ -36,6 +36,8 @@ pub enum Material {
     Acrylic,
     /// Opaque glass, no backdrop blur.
     Solid,
+    /// Pure black OLED surface with subtle elevated controls.
+    Oled,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +195,12 @@ pub struct Config {
     pub glass_opacity: u8,
     /// `#RRGGBB` the panel background is tinted toward; empty for neutral.
     pub background_hex: String,
+    /// `#RRGGBB` tint for cards, sections and tile surfaces.
+    pub surface_hex: String,
+    /// `#RRGGBB` tint for buttons and compact controls.
+    pub control_hex: String,
+    /// Top offset of the closed pill, in logical points. Notch mode stays attached to the edge.
+    pub pill_margin: u8,
     /// Film-grain strength in percent; 0 turns the grain off.
     pub grain: u8,
     pub grain_size: GrainSize,
@@ -237,6 +245,9 @@ impl Default for Config {
             material: Material::Acrylic,
             glass_opacity: DEFAULT_GLASS_OPACITY,
             background_hex: String::new(),
+            surface_hex: String::new(),
+            control_hex: String::new(),
+            pill_margin: 6,
             grain: DEFAULT_GRAIN,
             grain_size: GrainSize::Fine,
             placement: Placement::Center,
@@ -272,6 +283,9 @@ impl Config {
         Look {
             glass_opacity: self.glass_opacity.clamp(20, 100) as f32 / 100.0,
             tint: parse_hex(&self.background_hex),
+            surface_tint: parse_hex(&self.surface_hex),
+            control_tint: parse_hex(&self.control_hex),
+            oled: self.material == Material::Oled,
             grain: self.grain.min(100) as f32 / 100.0,
             grain_px: self.grain_size.pixels(),
         }
@@ -283,6 +297,8 @@ impl Config {
         let d = Config::default();
         self.glass_opacity = d.glass_opacity;
         self.background_hex = d.background_hex;
+        self.surface_hex = d.surface_hex;
+        self.control_hex = d.control_hex;
         self.grain = d.grain;
         self.grain_size = d.grain_size;
     }
