@@ -265,3 +265,9 @@
 - Detail pages distinguish an unavailable status from a confirmed Off state and still render device/network results when enumeration succeeds.
 - Added a regression test for unknown-radio enumeration; Bluetooth APIs requiring package capabilities can still return no devices in the current unpackaged build.
 - Verification: `cargo test --workspace --offline --quiet` passed (166 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 24 — Refine acrylic glass lighting
+
+- Increased the frosted fill and reflective rim on non-OLED acrylic tiles for a clearer layered-glass look inspired by the supplied UI references.
+- OLED stays pure black with its original surface, rim, and highlight values; a regression test locks those tokens.
+- Verification: `cargo test --workspace --offline --quiet` passed (167 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

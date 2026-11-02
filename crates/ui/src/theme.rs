@@ -150,7 +150,7 @@ impl Theme {
                 if look.oled {
                     Color32::from_rgb(20, 20, 22)
                 } else {
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 18)
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 26)
                 },
                 |c| with_alpha(c, 0.30),
             );
@@ -158,7 +158,7 @@ impl Theme {
                 if look.oled {
                     Color32::from_rgb(10, 10, 12)
                 } else {
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 8)
+                    Color32::from_rgba_unmultiplied(255, 255, 255, 12)
                 },
                 |c| with_alpha(c, 0.18),
             );
@@ -185,12 +185,22 @@ impl Theme {
                     Color32::from_rgba_unmultiplied(0, 0, 0, 110),
                     look.shell_border,
                 ),
-                highlight: Color32::from_rgba_unmultiplied(255, 255, 255, 46),
+                highlight: Color32::from_rgba_unmultiplied(
+                    255,
+                    255,
+                    255,
+                    if look.oled { 46 } else { 62 },
+                ),
                 noise_alpha: (grain * GRAIN_MAX_DARK).round() as u8,
                 grain_px,
                 tile_top: surface_top,
                 tile_bottom: surface_bottom,
-                tile_rim: Color32::from_rgba_unmultiplied(255, 255, 255, 14),
+                tile_rim: Color32::from_rgba_unmultiplied(
+                    255,
+                    255,
+                    255,
+                    if look.oled { 14 } else { 28 },
+                ),
                 control_fill: with_alpha(
                     look.control_tint.unwrap_or(Color32::WHITE),
                     if look.control_tint.is_some() {
@@ -457,5 +467,23 @@ mod tests {
         // The solid material ignores the opacity setting.
         let t = Theme::styled(true, FALLBACK_ACCENT, false, &clear);
         assert_eq!(t.glass_top.to_srgba_unmultiplied()[3], 245);
+    }
+
+    #[test]
+    fn acrylic_edges_are_clearer_without_changing_oled_black() {
+        let acrylic = Theme::styled(true, FALLBACK_ACCENT, true, &Look::default());
+        assert_eq!(acrylic.tile_rim.a(), 28);
+        assert_eq!(acrylic.highlight.a(), 62);
+
+        let oled_look = Look {
+            oled: true,
+            ..Look::default()
+        };
+        let oled = Theme::styled(true, FALLBACK_ACCENT, true, &oled_look);
+        assert_eq!(oled.glass_top, Color32::BLACK);
+        assert_eq!(oled.glass_bottom, Color32::BLACK);
+        assert_eq!(oled.tile_top, Color32::from_rgb(20, 20, 22));
+        assert_eq!(oled.tile_rim.a(), 14);
+        assert_eq!(oled.highlight.a(), 46);
     }
 }
