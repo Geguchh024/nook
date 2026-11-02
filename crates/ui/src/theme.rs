@@ -118,7 +118,9 @@ impl Theme {
 
     /// [`Theme::new`] with the user's [`Look`] applied.
     pub fn styled(dark: bool, accent: Color32, translucent: bool, look: &Look) -> Self {
-        let glass_alpha = if translucent {
+        let glass_alpha = if look.oled {
+            1.0
+        } else if translucent {
             look.glass_opacity.clamp(0.2, 1.0)
         } else {
             0.96
@@ -217,8 +219,16 @@ impl Theme {
                 highlight: Color32::from_rgba_unmultiplied(255, 255, 255, 200),
                 noise_alpha: (grain * GRAIN_MAX_LIGHT).round() as u8,
                 grain_px,
-                tile_top: Color32::from_rgba_unmultiplied(255, 255, 255, 150),
-                tile_bottom: Color32::from_rgba_unmultiplied(255, 255, 255, 90),
+                tile_top: look
+                    .surface_tint
+                    .map_or(Color32::from_rgba_unmultiplied(255, 255, 255, 150), |c| {
+                        with_alpha(c, 0.50)
+                    }),
+                tile_bottom: look
+                    .surface_tint
+                    .map_or(Color32::from_rgba_unmultiplied(255, 255, 255, 90), |c| {
+                        with_alpha(c, 0.32)
+                    }),
                 tile_rim: Color32::from_rgba_unmultiplied(0, 0, 0, 14),
                 control_fill: with_alpha(
                     look.control_tint.unwrap_or(Color32::BLACK),

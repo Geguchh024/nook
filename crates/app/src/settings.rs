@@ -27,7 +27,7 @@ const TOP_CARD: f32 = 232.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
-const BODY: [f32; 3] = [8.0 * ROW + 16.0, 6.0 * ROW + 12.0, 5.0 * ROW + 36.0];
+const BODY: [f32; 3] = [9.0 * ROW + 16.0, 6.0 * ROW + 12.0, 5.0 * ROW + 36.0];
 /// Page height with every section collapsed, panel padding included.
 const BASE: f32 =
     2.0 * PANEL_PADDING + HEADER + GAP + TOP_CARD + GAP + 3.0 * DISCLOSURE + 2.0 * GAP;
@@ -548,6 +548,17 @@ fn customize_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out:
     }) && let Some(i) = bg_idx
     {
         cfg.background_hex = BACKGROUNDS[i].map(to_hex).unwrap_or_default();
+        out.changed = true;
+    }
+    let mut background = parse_hex(&cfg.background_hex).unwrap_or(theme.glass_top);
+    if row(&mut lui, "Custom background", theme, |ui| {
+        egui::color_picker::color_edit_button_srgba(
+            ui,
+            &mut background,
+            egui::color_picker::Alpha::Opaque,
+        )
+    }) {
+        cfg.background_hex = to_hex(background);
         out.changed = true;
     }
     for (label, value) in [

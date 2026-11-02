@@ -1,5 +1,11 @@
 # Progress
 
+## Step 22 — Custom background color picker
+
+- Added an arbitrary-color picker for the main glass background alongside the preset swatches.
+- Custom section colors now tint elevated surfaces in both dark and light themes; OLED forces an opaque black shell for a true OLED-style panel.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
 ## Step 21 — Wireless page responsive action and device cards
 
 - Fixed the Wi-Fi and Bluetooth action rows to allocate separate button areas; More settings and Refresh no longer share the same hit rectangle.
