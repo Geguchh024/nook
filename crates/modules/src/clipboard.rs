@@ -462,7 +462,7 @@ impl Module for Clipboard {
         }
 
         let filter_area =
-            Rect::from_min_size(body.min, vec2(body.width(), body.height().min(220.0)));
+            Rect::from_min_size(body.min, vec2(body.width(), body.height().min(260.0)));
         let mut filter_ui = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(filter_area)

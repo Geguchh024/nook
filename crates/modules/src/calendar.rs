@@ -909,10 +909,24 @@ impl Module for Calendar {
     }
 
     fn ui_page(&mut self, ui: &mut Ui, _header: &mut Ui, body: Rect, theme: &Theme) -> bool {
-        let card = Rect::from_min_size(body.min, vec2(372.0, body.height()));
-        self.month_card(ui, card, theme);
-        let col = Rect::from_min_max(pos2(card.max.x + 18.0, body.min.y + 4.0), body.max);
-        self.day_column(ui, col, theme);
+        if body.width() >= 680.0 {
+            let gap = 18.0;
+            let month_width = (body.width() * 0.54).clamp(340.0, 372.0);
+            let card = Rect::from_min_size(body.min, vec2(month_width, body.height()));
+            self.month_card(ui, card, theme);
+            let col = Rect::from_min_max(pos2(card.max.x + gap, body.min.y + 4.0), body.max);
+            self.day_column(ui, col, theme);
+        } else {
+            let gap = 10.0;
+            let month_height = (body.height() * 0.58)
+                .min(300.0)
+                .min((body.height() - 120.0).max(150.0))
+                .max(150.0);
+            let card = Rect::from_min_size(body.min, vec2(body.width(), month_height));
+            self.month_card(ui, card, theme);
+            let col = Rect::from_min_max(pos2(body.min.x, card.max.y + gap), body.max);
+            self.day_column(ui, col, theme);
+        }
         false
     }
 }

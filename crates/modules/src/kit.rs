@@ -10,7 +10,7 @@ use egui::{
 };
 use nook_ui::module::TileCtx;
 use nook_ui::theme::{SIZE_ICON, SIZE_LABEL, Theme, mix, with_alpha};
-use nook_ui::{anim, paint, widgets};
+use nook_ui::{anim, icons, paint, widgets};
 
 /// Search and local-calendar date filter shared by history-style pages.
 #[derive(Clone, Debug)]
@@ -71,13 +71,46 @@ pub fn local_day(timestamp: std::time::SystemTime) -> i64 {
 pub fn history_filter(ui: &mut Ui, filter: &mut HistoryFilter, theme: &Theme) -> f32 {
     let search_id = ui.id().with("nook-history-search");
     ui.horizontal(|ui| {
-        let search_width = (ui.available_width() - 116.0).max(120.0);
-        ui.add_sized(
-            [search_width, 32.0],
+        let search_width = (ui.available_width() - 108.0).max(120.0);
+        let (field, _) = ui.allocate_exact_size(vec2(search_width, 34.0), Sense::hover());
+        let focused = ui.ctx().memory(|memory| memory.has_focus(search_id));
+        let focus_t = anim::tween(ui.ctx(), search_id.with("focus"), focused, 0.16);
+        ui.painter().rect_filled(
+            field,
+            field.height() * 0.5,
+            if theme.dark {
+                Color32::from_black_alpha(74)
+            } else {
+                Color32::from_white_alpha(210)
+            },
+        );
+        ui.painter().rect_stroke(
+            field,
+            field.height() * 0.5,
+            egui::Stroke::new(
+                1.0,
+                mix(theme.tile_rim, with_alpha(theme.accent, 0.9), focus_t),
+            ),
+            egui::StrokeKind::Inside,
+        );
+        paint::icon(
+            ui.painter(),
+            pos2(field.min.x + 16.0, field.center().y),
+            icons::MAGNIFYING_GLASS,
+            14.0,
+            theme.text_faint,
+            false,
+        );
+        ui.put(
+            Rect::from_min_max(
+                pos2(field.min.x + 30.0, field.min.y),
+                pos2(field.max.x - 12.0, field.max.y),
+            ),
             TextEdit::singleline(&mut filter.query)
                 .id(search_id)
-                .hint_text("Search content")
-                .desired_width(search_width),
+                .frame(egui::Frame::NONE)
+                .hint_text(egui::RichText::new("Search content").color(theme.text_faint))
+                .desired_width(search_width - 44.0),
         );
         let label = filter.day.map_or_else(
             || "All dates".to_owned(),
@@ -97,76 +130,146 @@ pub fn history_filter(ui: &mut Ui, filter: &mut HistoryFilter, theme: &Theme) ->
     if !filter.calendar_open {
         return 38.0;
     }
+    let (calendar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 202.0), Sense::hover());
+    widgets::card(ui.painter(), calendar, theme);
+    let inner = calendar.shrink2(vec2(12.0, 8.0));
     let (year, month, _) = crate::calendar::civil_from_days(filter.month);
-    ui.horizontal(|ui| {
-        if ui.small_button("‹").clicked() {
-            let (y, m) = if month == 1 {
-                (year - 1, 12)
-            } else {
-                (year, month - 1)
-            };
-            filter.month = crate::calendar::days_from_civil(y, m, 1);
+    let mut picker = ui.new_child(UiBuilder::new().max_rect(inner).id_salt("history-calendar"));
+    let header = Rect::from_min_size(inner.min, vec2(inner.width(), 30.0));
+    if icon_at(
+        &mut picker,
+        pos2(header.min.x + 14.0, header.center().y),
+        25.0,
+        icons::CARET_LEFT,
+        false,
+        theme,
+    )
+    .clicked()
+    {
+        let (y, m) = if month == 1 {
+            (year - 1, 12)
+        } else {
+            (year, month - 1)
+        };
+        filter.month = crate::calendar::days_from_civil(y, m, 1);
+    }
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    picker.painter().text(
+        pos2(header.center().x, header.center().y),
+        Align2::CENTER_CENTER,
+        format!("{} {year}", MONTHS[(month - 1) as usize]),
+        Theme::font_semibold(SIZE_LABEL + 1.0),
+        theme.text,
+    );
+    if icon_at(
+        &mut picker,
+        pos2(header.max.x - 78.0, header.center().y),
+        25.0,
+        icons::CARET_RIGHT,
+        false,
+        theme,
+    )
+    .clicked()
+    {
+        let (y, m) = if month == 12 {
+            (year + 1, 1)
+        } else {
+            (year, month + 1)
+        };
+        filter.month = crate::calendar::days_from_civil(y, m, 1);
+    }
+    if button(
+        &mut picker,
+        Rect::from_center_size(
+            pos2(header.max.x - 34.0, header.center().y),
+            vec2(58.0, 24.0),
+        ),
+        "Today",
+        None,
+        false,
+        theme,
+    )
+    .clicked()
+    {
+        let now = nook_platform::system::local_time();
+        filter.day = Some(crate::calendar::days_from_civil(
+            now.year, now.month, now.day,
+        ));
+        filter.calendar_open = false;
+    }
+    let weekdays = ["M", "T", "W", "T", "F", "S", "S"];
+    let cell_w = inner.width() / 7.0;
+    let weekday_y = inner.min.y + 42.0;
+    for (i, label) in weekdays.iter().enumerate() {
+        picker.painter().text(
+            pos2(inner.min.x + (i as f32 + 0.5) * cell_w, weekday_y),
+            Align2::CENTER_CENTER,
+            *label,
+            Theme::font_semibold(SIZE_LABEL - 1.0),
+            theme.text_faint,
+        );
+    }
+    let offset = crate::calendar::weekday(filter.month);
+    let count = crate::calendar::days_in_month(year, month);
+    let cell_h = 21.0;
+    for cell in 0..42 {
+        let day = cell as i64 - i64::from(offset) + 1;
+        if !(1..=i64::from(count)).contains(&day) {
+            continue;
         }
-        const MONTHS: [&str; 12] = [
-            "January",
-            "February",
-            "March",
-            "April",
-            "May",
-            "June",
-            "July",
-            "August",
-            "September",
-            "October",
-            "November",
-            "December",
-        ];
-        ui.label(format!("{} {year}", MONTHS[(month - 1) as usize]));
-        if ui.small_button("›").clicked() {
-            let (y, m) = if month == 12 {
-                (year + 1, 1)
-            } else {
-                (year, month + 1)
-            };
-            filter.month = crate::calendar::days_from_civil(y, m, 1);
+        let stamp = filter.month + day - 1;
+        let row = cell / 7;
+        let col = cell % 7;
+        let center = pos2(
+            inner.min.x + (col as f32 + 0.5) * cell_w,
+            weekday_y + 20.0 + row as f32 * cell_h,
+        );
+        let rect = Rect::from_center_size(center, vec2((cell_w - 3.0).min(34.0), 20.0));
+        let response =
+            picker.interact(rect, Id::new(("history-filter-day", stamp)), Sense::click());
+        if filter.day == Some(stamp) {
+            picker
+                .painter()
+                .rect_filled(rect, 10.0, with_alpha(theme.accent, 0.85));
+        } else if response.hovered() {
+            picker
+                .painter()
+                .rect_filled(rect, 10.0, with_alpha(theme.text, 0.10));
         }
-        if ui.button("Today").clicked() {
-            let now = nook_platform::system::local_time();
-            filter.day = Some(crate::calendar::days_from_civil(
-                now.year, now.month, now.day,
-            ));
+        picker.painter().text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            day.to_string(),
+            Theme::font(if filter.day == Some(stamp) {
+                SIZE_LABEL + 1.0
+            } else {
+                SIZE_LABEL
+            }),
+            if filter.day == Some(stamp) {
+                theme.accent_fg()
+            } else {
+                theme.text
+            },
+        );
+        if response.clicked() {
+            filter.day = Some(stamp);
             filter.calendar_open = false;
         }
-    });
-    egui::Grid::new(ui.id().with("history-calendar-grid"))
-        .spacing(vec2(4.0, 3.0))
-        .show(ui, |ui| {
-            for label in ["M", "T", "W", "T", "F", "S", "S"] {
-                ui.label(egui::RichText::new(label).color(theme.text_faint));
-            }
-            ui.end_row();
-            let offset = crate::calendar::weekday(filter.month);
-            let count = crate::calendar::days_in_month(year, month);
-            for cell in 0..42 {
-                if cell > 0 && cell % 7 == 0 {
-                    ui.end_row();
-                }
-                let day = cell as i64 - i64::from(offset) + 1;
-                if (1..=i64::from(count)).contains(&day) {
-                    let stamp = filter.month + day - 1;
-                    if ui
-                        .selectable_label(filter.day == Some(stamp), day.to_string())
-                        .clicked()
-                    {
-                        filter.day = Some(stamp);
-                        filter.calendar_open = false;
-                    }
-                } else {
-                    ui.add_space(18.0);
-                }
-            }
-        });
-    208.0
+    }
+    248.0
 }
 
 /// A faint fill for wells and inactive controls.

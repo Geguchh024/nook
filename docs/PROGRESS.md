@@ -1,5 +1,12 @@
 # Progress
 
+## Step 13 — Responsive calendar and search styling
+
+- Restyled the Notes and Clipboard search field as a rounded, themed pill with a search icon and focus highlight.
+- Rebuilt the history date picker as a responsive calendar card with compact day cells, month navigation, and a Today action.
+- The full Calendar page now lays out side-by-side when there is enough width and stacks the month and selected-day details on narrower panels.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. `git diff --check` passed.
+
 ## Step 12 — Notes and Clipboard search/date filters
 
 - Added a shared content search field and expandable month calendar to both Notes and Clipboard pages. Searching is case-insensitive and matches full note or copied-text content; image entries remain filterable by date.

@@ -471,7 +471,7 @@ impl Module for Notes {
             self.new_note();
         }
         let filter_area =
-            Rect::from_min_size(body.min, vec2(body.width(), body.height().min(220.0)));
+            Rect::from_min_size(body.min, vec2(body.width(), body.height().min(260.0)));
         let mut filter_ui = ui.new_child(
             UiBuilder::new()
                 .max_rect(filter_area)
