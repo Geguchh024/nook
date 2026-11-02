@@ -167,7 +167,9 @@ impl Bluetooth {
 
     fn device_row(&mut self, ui: &mut egui::Ui, device: &BluetoothDeviceInfo, theme: &Theme) {
         let width = ui.available_width();
-        let (row, _) = ui.allocate_exact_size(egui::vec2(width, 54.0), egui::Sense::hover());
+        let stacked_actions = width < 430.0;
+        let row_height = if stacked_actions { 78.0 } else { 54.0 };
+        let (row, _) = ui.allocate_exact_size(egui::vec2(width, row_height), egui::Sense::hover());
         widgets::card(ui.painter(), row, theme);
         let response = ui.interact(
             row,
@@ -193,9 +195,15 @@ impl Bluetooth {
         );
 
         let action_width = if device.paired {
-            if device.connected { 84.0 } else { 170.0 }
+            if stacked_actions {
+                0.0
+            } else if device.connected {
+                84.0
+            } else {
+                170.0
+            }
         } else if device.can_pair {
-            88.0
+            if stacked_actions { 0.0 } else { 88.0 }
         } else {
             0.0
         };
@@ -203,7 +211,11 @@ impl Bluetooth {
             egui::pos2(row.min.x + 38.0, row.min.y + 5.0),
             egui::pos2(
                 (row.max.x - action_width - 12.0).max(row.min.x + 40.0),
-                row.max.y - 5.0,
+                if stacked_actions {
+                    row.min.y + 42.0
+                } else {
+                    row.max.y - 5.0
+                },
             ),
         );
         let state = if device.connected {
@@ -239,9 +251,14 @@ impl Bluetooth {
         }
 
         let right = row.max.x - 8.0;
+        let action_y = if stacked_actions {
+            row.min.y + 45.0
+        } else {
+            row.center().y - 15.0
+        };
         if device.paired {
             let remove_rect = egui::Rect::from_min_size(
-                egui::pos2(right - 72.0, row.center().y - 15.0),
+                egui::pos2(right - 72.0, action_y),
                 egui::vec2(72.0, 30.0),
             );
             if kit::button(ui, remove_rect, "Remove", None, false, theme).clicked() {
@@ -250,7 +267,7 @@ impl Bluetooth {
             }
             if !device.connected {
                 let connect_rect = egui::Rect::from_min_size(
-                    egui::pos2(right - 158.0, row.center().y - 15.0),
+                    egui::pos2(right - 158.0, action_y),
                     egui::vec2(80.0, 30.0),
                 );
                 if kit::button(ui, connect_rect, "Connect", None, true, theme).clicked()
@@ -261,7 +278,7 @@ impl Bluetooth {
             }
         } else if device.can_pair {
             let pair_rect = egui::Rect::from_min_size(
-                egui::pos2(right - 80.0, row.center().y - 15.0),
+                egui::pos2(right - 80.0, action_y),
                 egui::vec2(72.0, 30.0),
             );
             if kit::button(ui, pair_rect, "Pair", None, true, theme).clicked() {
@@ -459,12 +476,20 @@ impl Module for Bluetooth {
                 ui.label(egui::RichText::new(if enabled { "Bluetooth on" } else { "Bluetooth off" }).font(Theme::font(SIZE_BODY)));
             });
             ui.horizontal_wrapped(|ui| {
-                if kit::button(ui, egui::Rect::from_min_size(ui.cursor().min, egui::vec2(124.0, 30.0)), "More settings", Some(icons::GEAR_SIX), false, theme).clicked()
+                let (more_rect, _) = ui.allocate_exact_size(
+                    egui::vec2(124.0, 30.0),
+                    egui::Sense::hover(),
+                );
+                if kit::button(ui, more_rect, "More settings", Some(icons::GEAR_SIX), false, theme).clicked()
                     && let Err(error) = wireless::open_bluetooth_settings()
                 {
                     self.error = Some(error.to_string());
                 }
-                if kit::button(ui, egui::Rect::from_min_size(ui.cursor().min, egui::vec2(98.0, 30.0)), "Refresh", Some(icons::ARROW_CLOCKWISE), false, theme).clicked() {
+                let (refresh_rect, _) = ui.allocate_exact_size(
+                    egui::vec2(98.0, 30.0),
+                    egui::Sense::hover(),
+                );
+                if kit::button(ui, refresh_rect, "Refresh", Some(icons::ARROW_CLOCKWISE), false, theme).clicked() {
                     self.loading = true;
                     tx.send(Command::Refresh).ok();
                 }

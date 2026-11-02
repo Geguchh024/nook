@@ -1,5 +1,11 @@
 # Progress
 
+## Step 21 — Wireless page responsive action and device cards
+
+- Fixed the Wi-Fi and Bluetooth action rows to allocate separate button areas; More settings and Refresh no longer share the same hit rectangle.
+- Bluetooth device cards switch to a taller stacked layout on narrow panels, giving device names and status a full line before Pair/Connect/Remove actions.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
 ## Step 20 — Media badge in the closed shell
 
 - Added a saved Music in closed notch toggle under Customize.

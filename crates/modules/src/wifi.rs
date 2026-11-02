@@ -465,9 +465,11 @@ impl Module for Wifi {
                     }
                 });
                 ui.horizontal_wrapped(|ui| {
+                    let (more_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(124.0, 30.0), egui::Sense::hover());
                     let more = kit::button(
                         ui,
-                        egui::Rect::from_min_size(ui.cursor().min, egui::vec2(124.0, 30.0)),
+                        more_rect,
                         "More settings",
                         Some(icons::GEAR_SIX),
                         false,
@@ -478,9 +480,11 @@ impl Module for Wifi {
                     {
                         self.error = Some(error.to_string());
                     }
+                    let (refresh_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(98.0, 30.0), egui::Sense::hover());
                     if kit::button(
                         ui,
-                        egui::Rect::from_min_size(ui.cursor().min, egui::vec2(98.0, 30.0)),
+                        refresh_rect,
                         "Refresh",
                         Some(icons::ARROW_CLOCKWISE),
                         false,
