@@ -344,6 +344,11 @@ impl Module for Notes {
         TileSize::Wide
     }
 
+    fn page_size(&self) -> Option<egui::Vec2> {
+        let picker = self.filter.picker_height();
+        (picker > 0.0).then_some(vec2(760.0, 430.0 + picker + 14.0))
+    }
+
     fn attach(&mut self, _ctx: &egui::Context) {
         self.dir = notes_dir();
         if let Some(dir) = &self.dir {

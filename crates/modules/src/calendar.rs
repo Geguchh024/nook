@@ -804,7 +804,9 @@ impl Module for Calendar {
     }
 
     fn page_size(&self) -> Option<egui::Vec2> {
-        Some(PAGE)
+        let event_count = self.on_day(self.selected).count();
+        let event_rows = event_count.min(8) as f32;
+        Some(vec2(PAGE.x, PAGE.y + event_rows * 56.0))
     }
 
     fn ui_tile(&mut self, ui: &mut Ui, ctx: &mut TileCtx<'_>) {

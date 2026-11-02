@@ -280,6 +280,11 @@ impl Module for Clipboard {
         TileSize::Large
     }
 
+    fn page_size(&self) -> Option<egui::Vec2> {
+        let picker = self.filter.picker_height();
+        (picker > 0.0).then_some(vec2(760.0, 430.0 + picker + 14.0))
+    }
+
     fn attach(&mut self, ctx: &egui::Context) {
         let ctx = ctx.clone();
         match ClipboardWatcher::spawn(move || ctx.request_repaint()) {

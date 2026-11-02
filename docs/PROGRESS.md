@@ -1,5 +1,12 @@
 # Progress
 
+## Step 14 — Calendar visibility and search refinement
+
+- Restyled the search field and date selector as pill controls with a search icon, selected-date state, and a clear-filter action.
+- Sized the inline calendar card to the number of week rows in the selected month instead of forcing a fixed-height grid.
+- Notes and Clipboard request additional shell height while the calendar is open; the full Calendar page adds room for busy days. Both layouts still clamp to the active monitor through the shell sizing path.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. `git diff --check` passed.
+
 ## Step 13 — Responsive calendar and search styling
 
 - Restyled the Notes and Clipboard search field as a rounded, themed pill with a search icon and focus highlight.

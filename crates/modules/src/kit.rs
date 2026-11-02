@@ -43,6 +43,19 @@ impl HistoryFilter {
                 .contains(&self.query.trim().to_lowercase()))
             && self.day.is_none_or(|selected| selected == day)
     }
+
+    /// Extra content height requested while the inline date picker is open.
+    pub fn picker_height(&self) -> f32 {
+        if !self.calendar_open {
+            return 0.0;
+        }
+        let (_, month, _) = crate::calendar::civil_from_days(self.month);
+        let offset = crate::calendar::weekday(self.month);
+        let days =
+            crate::calendar::days_in_month(crate::calendar::civil_from_days(self.month).0, month);
+        let rows = (offset + days).div_ceil(7).clamp(4, 6) as f32;
+        90.0 + (rows - 1.0) * 21.0
+    }
 }
 
 /// Maps a file timestamp to its local calendar day without waking a worker.
@@ -71,8 +84,9 @@ pub fn local_day(timestamp: std::time::SystemTime) -> i64 {
 pub fn history_filter(ui: &mut Ui, filter: &mut HistoryFilter, theme: &Theme) -> f32 {
     let search_id = ui.id().with("nook-history-search");
     ui.horizontal(|ui| {
-        let search_width = (ui.available_width() - 108.0).max(120.0);
-        let (field, _) = ui.allocate_exact_size(vec2(search_width, 34.0), Sense::hover());
+        let clear_width = if filter.day.is_some() { 34.0 } else { 0.0 };
+        let search_width = (ui.available_width() - 126.0 - clear_width).max(120.0);
+        let (field, _) = ui.allocate_exact_size(vec2(search_width, 40.0), Sense::hover());
         let focused = ui.ctx().memory(|memory| memory.has_focus(search_id));
         let focus_t = anim::tween(ui.ctx(), search_id.with("focus"), focused, 0.16);
         ui.painter().rect_filled(
@@ -101,16 +115,23 @@ pub fn history_filter(ui: &mut Ui, filter: &mut HistoryFilter, theme: &Theme) ->
             theme.text_faint,
             false,
         );
-        ui.put(
-            Rect::from_min_max(
-                pos2(field.min.x + 30.0, field.min.y),
-                pos2(field.max.x - 12.0, field.max.y),
-            ),
+        let mut input = ui.new_child(
+            UiBuilder::new()
+                .max_rect(Rect::from_min_max(
+                    pos2(field.min.x + 34.0, field.min.y),
+                    pos2(field.max.x - 14.0, field.max.y),
+                ))
+                .id_salt("history-search-input"),
+        );
+        input.add(
             TextEdit::singleline(&mut filter.query)
                 .id(search_id)
                 .frame(egui::Frame::NONE)
                 .hint_text(egui::RichText::new("Search content").color(theme.text_faint))
-                .desired_width(search_width - 44.0),
+                .font(Theme::font(SIZE_LABEL))
+                .text_color(theme.text)
+                .vertical_align(Align::Center)
+                .desired_width(search_width - 48.0),
         );
         let label = filter.day.map_or_else(
             || "All dates".to_owned(),
@@ -119,18 +140,36 @@ pub fn history_filter(ui: &mut Ui, filter: &mut HistoryFilter, theme: &Theme) ->
                 format!("{y:04}-{m:02}-{d:02}")
             },
         );
-        if ui.button(label).clicked() {
+        let (date_rect, _) = ui.allocate_exact_size(vec2(112.0, 40.0), Sense::hover());
+        if button(
+            ui,
+            date_rect,
+            &label,
+            Some(icons::CALENDAR_BLANK),
+            filter.day.is_some(),
+            theme,
+        )
+        .clicked()
+        {
             filter.calendar_open = !filter.calendar_open;
         }
-        if filter.day.is_some() && ui.small_button("×").clicked() {
-            filter.day = None;
+        if filter.day.is_some() {
+            let (clear_rect, _) = ui.allocate_exact_size(vec2(30.0, 40.0), Sense::hover());
+            if icon_at(ui, clear_rect.center(), 28.0, icons::X, false, theme)
+                .on_hover_text("Clear date filter")
+                .clicked()
+            {
+                filter.day = None;
+            }
         }
     });
 
     if !filter.calendar_open {
-        return 38.0;
+        return 44.0;
     }
-    let (calendar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 202.0), Sense::hover());
+    let calendar_height = filter.picker_height();
+    let (calendar, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), calendar_height), Sense::hover());
     widgets::card(ui.painter(), calendar, theme);
     let inner = calendar.shrink2(vec2(12.0, 8.0));
     let (year, month, _) = crate::calendar::civil_from_days(filter.month);
@@ -269,7 +308,7 @@ pub fn history_filter(ui: &mut Ui, filter: &mut HistoryFilter, theme: &Theme) ->
             filter.calendar_open = false;
         }
     }
-    248.0
+    50.0 + calendar_height
 }
 
 /// A faint fill for wells and inactive controls.
