@@ -448,24 +448,26 @@ impl Module for Bluetooth {
         ui.scope_builder(egui::UiBuilder::new().max_rect(body).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
             ui.set_width(body.width());
             ui.set_height(body.height());
-            ui.horizontal(|ui| {
+            // Separate identity from actions and allow wrapping: the page can
+            // be constrained by a small display or Windows scaling.
+            ui.horizontal_wrapped(|ui| {
                 let mut enabled = self.enabled.unwrap_or(false);
                 if widgets::toggle(ui, &mut enabled, theme).changed() {
                     self.enabled = Some(enabled);
                     tx.send(Command::Radio(enabled)).ok();
                 }
                 ui.label(egui::RichText::new(if enabled { "Bluetooth on" } else { "Bluetooth off" }).font(Theme::font(SIZE_BODY)));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if kit::button(ui, egui::Rect::from_min_size(ui.cursor().min, egui::vec2(112.0, 30.0)), "More settings", Some(icons::GEAR_SIX), false, theme).clicked()
-                        && let Err(error) = wireless::open_bluetooth_settings()
-                    {
-                        self.error = Some(error.to_string());
-                    }
-                    if kit::button(ui, egui::Rect::from_min_size(ui.cursor().min, egui::vec2(98.0, 30.0)), "Refresh", Some(icons::ARROW_CLOCKWISE), false, theme).clicked() {
-                        self.loading = true;
-                        tx.send(Command::Refresh).ok();
-                    }
-                });
+            });
+            ui.horizontal_wrapped(|ui| {
+                if kit::button(ui, egui::Rect::from_min_size(ui.cursor().min, egui::vec2(124.0, 30.0)), "More settings", Some(icons::GEAR_SIX), false, theme).clicked()
+                    && let Err(error) = wireless::open_bluetooth_settings()
+                {
+                    self.error = Some(error.to_string());
+                }
+                if kit::button(ui, egui::Rect::from_min_size(ui.cursor().min, egui::vec2(98.0, 30.0)), "Refresh", Some(icons::ARROW_CLOCKWISE), false, theme).clicked() {
+                    self.loading = true;
+                    tx.send(Command::Refresh).ok();
+                }
             });
             if self.enabled != Some(true) {
                 ui.label(egui::RichText::new("Turn Bluetooth on to discover nearby devices.").color(theme.text_dim));

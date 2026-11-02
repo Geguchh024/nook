@@ -1,5 +1,12 @@
 # Progress
 
+## Step 15 — Wi-Fi and Bluetooth responsive page controls
+
+- Reflowed Wi-Fi and Bluetooth status and action controls into wrapping rows so narrow panels do not force the connected state and settings buttons into one line.
+- Added truncation to long connected SSIDs and the Wi-Fi connection selection label; reserved more vertical room for the Wi-Fi connect/password controls and allowed its list to shrink on short displays.
+- Existing connected Bluetooth devices remain grouped above nearby devices, with their connection and battery state retained in the device cards.
+- Verification: `cargo test --workspace --offline --quiet` passed (162 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed after applying Clippy's suggested `clamp` form. Workspace formatter was run; untouched files were then restored.
+
 ## Step 14 — Calendar visibility and search refinement
 
 - Restyled the search field and date selector as pill controls with a search icon, selected-date state, and a clear-filter action.

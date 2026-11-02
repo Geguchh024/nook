@@ -441,7 +441,9 @@ impl Module for Wifi {
             |ui| {
                 ui.set_width(body.width());
                 ui.set_height(body.height());
-                ui.horizontal(|ui| {
+                // Keep the connection state and actions in separate rows so
+                // the controls reflow instead of colliding on narrow panels.
+                ui.horizontal_wrapped(|ui| {
                     let mut enabled = self.state.enabled.unwrap_or(false);
                     if widgets::toggle(ui, &mut enabled, theme).changed() {
                         self.state.enabled = Some(enabled);
@@ -453,39 +455,42 @@ impl Module for Wifi {
                             .font(Theme::font(SIZE_BODY)),
                     );
                     if let Some(ssid) = &self.state.current_ssid {
-                        ui.label(
-                            egui::RichText::new(format!("Connected: {ssid}")).color(theme.text_dim),
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("Connected · {ssid}"))
+                                    .color(theme.text_dim),
+                            )
+                            .truncate(),
                         );
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if kit::button(
-                            ui,
-                            egui::Rect::from_min_size(ui.cursor().min, egui::vec2(112.0, 30.0)),
-                            "More settings",
-                            Some(icons::GEAR_SIX),
-                            false,
-                            theme,
-                        )
-                        .clicked()
-                            && let Err(error) =
-                                nook_platform::shell::open("ms-settings:network-wifi")
-                        {
-                            self.error = Some(error.to_string());
-                        }
-                        if kit::button(
-                            ui,
-                            egui::Rect::from_min_size(ui.cursor().min, egui::vec2(98.0, 30.0)),
-                            "Refresh",
-                            Some(icons::ARROW_CLOCKWISE),
-                            false,
-                            theme,
-                        )
-                        .clicked()
-                        {
-                            self.loading = true;
-                            tx.send(Command::Refresh).ok();
-                        }
-                    });
+                });
+                ui.horizontal_wrapped(|ui| {
+                    let more = kit::button(
+                        ui,
+                        egui::Rect::from_min_size(ui.cursor().min, egui::vec2(124.0, 30.0)),
+                        "More settings",
+                        Some(icons::GEAR_SIX),
+                        false,
+                        theme,
+                    );
+                    if more.clicked()
+                        && let Err(error) = nook_platform::shell::open("ms-settings:network-wifi")
+                    {
+                        self.error = Some(error.to_string());
+                    }
+                    if kit::button(
+                        ui,
+                        egui::Rect::from_min_size(ui.cursor().min, egui::vec2(98.0, 30.0)),
+                        "Refresh",
+                        Some(icons::ARROW_CLOCKWISE),
+                        false,
+                        theme,
+                    )
+                    .clicked()
+                    {
+                        self.loading = true;
+                        tx.send(Command::Refresh).ok();
+                    }
                 });
                 if self.state.enabled != Some(true) {
                     ui.label(
@@ -502,8 +507,8 @@ impl Module for Wifi {
                         .font(Theme::font(SIZE_LABEL))
                         .color(theme.text_dim),
                     );
-                    let reserved = if self.selected.is_some() { 92.0 } else { 44.0 };
-                    let list_height = (ui.available_height() - reserved).max(90.0);
+                    let reserved = if self.selected.is_some() { 104.0 } else { 54.0 };
+                    let list_height = (ui.available_height() - reserved).max(64.0);
                     egui::ScrollArea::vertical()
                         .id_salt("wifi-networks")
                         .max_height(list_height)
@@ -519,9 +524,13 @@ impl Module for Wifi {
                             .networks
                             .iter()
                             .find(|network| network.ssid == selected);
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(selected.clone()).font(Theme::font(SIZE_LABEL)),
+                        ui.horizontal_wrapped(|ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(selected.clone())
+                                        .font(Theme::font(SIZE_LABEL)),
+                                )
+                                .truncate(),
                             );
                             if network.is_some_and(|network| {
                                 network.secured
@@ -532,7 +541,7 @@ impl Module for Wifi {
                                     egui::TextEdit::singleline(&mut self.password)
                                         .password(true)
                                         .hint_text("Password")
-                                        .desired_width(170.0),
+                                        .desired_width(ui.available_width().clamp(90.0, 170.0)),
                                 );
                             }
                             let ready = network.is_some_and(|network| {
