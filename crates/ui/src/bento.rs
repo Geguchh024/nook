@@ -19,6 +19,7 @@ use crate::paint;
 use crate::shell::ContentCtx;
 use crate::spring::SpringParams;
 use crate::theme::{self, SIZE_ICON, SIZE_LABEL, TILE_PADDING, TILE_RADIUS, Theme, with_alpha};
+use crate::widgets;
 use egui::emath::TSTransform;
 use egui::{Align2, Area, Color32, Id, Order, Rect, Sense, Ui, UiBuilder, Vec2, pos2, vec2};
 
@@ -154,8 +155,17 @@ fn tile_glass(
 fn tile_inner(rect: Rect, size: TileSize) -> Rect {
     rect.shrink(match size {
         TileSize::Small => 8.0,
+        TileSize::Tall => 10.0,
         _ => TILE_PADDING,
     })
+}
+
+const EDITOR_SELECTION_ID: &str = "nook-editor-selected-tile";
+
+/// Extra shell height for the selected tile's continuous radius inspector.
+pub fn editor_extra_height(ctx: &egui::Context) -> f32 {
+    ctx.data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
+        .map_or(0.0, |_| 76.0)
 }
 
 pub fn show(
@@ -187,6 +197,9 @@ pub fn show(
     };
     if cctx.closing {
         expanded.id = None;
+    }
+    if !editing {
+        ctx.data_mut(|data| data.remove::<String>(Id::new(EDITOR_SELECTION_ID)));
     }
     // The open tile is packed at its full size.
     let open_id = expanded.id;
@@ -379,6 +392,7 @@ pub fn show(
     // Where the open tile is drawn, to tell clicks outside it.
     let mut open_rect: Option<Rect> = None;
     let mut new_drag: Option<Drag> = None;
+    let mut resizing_handle = false;
 
     for (page_idx, placements) in pages.iter().enumerate() {
         let distance = page_idx as f32 - scroll;
@@ -520,7 +534,9 @@ pub fn show(
                         child.disable();
                     }
                     if editing {
-                        if let Some(e) = edit_face(&mut child, rect, tile, theme, radius as u8) {
+                        if let Some(e) =
+                            edit_face(&mut child, rect, tile, theme, &mut resizing_handle)
+                        {
                             out.edits.push(e);
                         }
                     } else if compact {
@@ -539,6 +555,7 @@ pub fn show(
 
                     if editing {
                         if resp.drag_started()
+                            && !resizing_handle
                             && let Some(ptr) = pointer
                         {
                             new_drag = Some(Drag {
@@ -546,6 +563,13 @@ pub fn show(
                                 grab: ptr - rect.min,
                                 order: order.iter().map(|&i| ids[i]).collect(),
                                 last_move: now,
+                            });
+                        } else if resp.clicked() {
+                            ctx.data_mut(|data| {
+                                data.insert_temp(
+                                    Id::new(EDITOR_SELECTION_ID),
+                                    tile.module.id().to_owned(),
+                                )
                             });
                         }
                     } else if resp.clicked() && ready {
@@ -595,6 +619,63 @@ pub fn show(
             data.remove::<Drag>(drag_id);
         }
     });
+
+    if editing
+        && let Some(selected) =
+            ctx.data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
+        && let Some(tile) = tiles.iter().find(|tile| tile.module.id() == selected)
+    {
+        let current = radii
+            .get(&selected)
+            .copied()
+            .unwrap_or(TILE_RADIUS as u8)
+            .min(32);
+        let inspector = Rect::from_min_size(
+            pos2(cctx.panel.min.x + PANEL_PADDING, grid.max.y + 8.0),
+            vec2(cctx.panel.width() - 2.0 * PANEL_PADDING, 64.0),
+        );
+        widgets::card(ui.painter(), inspector, theme);
+        let title = format!("{} · corner radius", tile.module.name());
+        ui.painter().text(
+            pos2(inspector.min.x + 14.0, inspector.min.y + 15.0),
+            Align2::LEFT_CENTER,
+            title,
+            Theme::font_semibold(SIZE_LABEL),
+            theme.text,
+        );
+        let value = pos2(inspector.max.x - 14.0, inspector.min.y + 15.0);
+        ui.painter().text(
+            value,
+            Align2::RIGHT_CENTER,
+            format!("{current} px"),
+            Theme::font(SIZE_LABEL),
+            theme.text_dim,
+        );
+        let slider_rect = Rect::from_min_size(
+            pos2(inspector.min.x + 14.0, inspector.min.y + 30.0),
+            vec2(inspector.width() - 28.0, 22.0),
+        );
+        let mut slider_ui = ui.new_child(
+            UiBuilder::new()
+                .max_rect(slider_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        let mut normalized = current as f32 / 32.0;
+        if widgets::slider(
+            &mut slider_ui,
+            &mut normalized,
+            slider_rect.width(),
+            32,
+            theme,
+        )
+        .changed()
+        {
+            out.edits.push(Edit::SetRadius(
+                tile.module.id(),
+                (normalized * 32.0).round() as u8,
+            ));
+        }
+    }
 
     // A click anywhere but the open tile (another tile included, which
     // still gets its click) folds it back, and so does Esc.
@@ -649,7 +730,7 @@ fn edit_face(
     rect: Rect,
     tile: &GridTile<'_>,
     theme: &Theme,
-    radius: u8,
+    resizing: &mut bool,
 ) -> Option<Edit> {
     let ctx = ui.ctx().clone();
     let id = Id::new(("nook-edit", tile.module.id()));
@@ -705,124 +786,112 @@ fn edit_face(
         edit = Some(Edit::ToggleShown(tile.module.id()));
     }
 
-    // Reuse the compact size-picker row for four per-tile corner radii.
-    let radius_mode_id = id.with("radius-mode");
-    let mut radius_mode = ctx
-        .data(|d| d.get_temp::<bool>(radius_mode_id))
-        .unwrap_or(false);
-    let switch = Rect::from_center_size(pos2(rect.max.x - 9.0, c.y + 21.0), vec2(12.0, 14.0));
-    if ui
-        .interact(switch, id.with("radius-mode-switch"), Sense::click())
-        .on_hover_text(if radius_mode {
-            "Tile size"
+    // The radius is edited in the shell's inspector below the grid.
+    // Three original presets plus a vertical medium tile.
+    let shape = |size: TileSize| {
+        let (w, h) = size.cells();
+        vec2(
+            w as f32 * 4.0 + (w - 1) as f32,
+            h as f32 * 4.0 + (h - 1) as f32,
+        )
+    };
+    let total = TileSize::ALL.iter().map(|&size| shape(size).x).sum::<f32>() + 3.0 * 3.0;
+    let mut x = c.x - total * 0.5 - 10.0;
+    let y = c.y + 21.0;
+    let native = tile.module.size_hint();
+    for size in TileSize::ALL {
+        let glyph_size = shape(size);
+        let glyph = Rect::from_min_size(pos2(x, y - glyph_size.y * 0.5), glyph_size);
+        x += glyph_size.x + 3.0;
+        let hit = Rect::from_center_size(glyph.center(), vec2(glyph_size.x + 3.0, 17.0));
+        let response = ui.interact(hit, id.with(("size", size)), Sense::click());
+        let selected = size == tile.size;
+        let color = if selected {
+            theme.accent
+        } else if response.hovered() {
+            theme.text
         } else {
-            "Corner radius"
-        })
-        .clicked()
-    {
-        radius_mode = !radius_mode;
-        ctx.data_mut(|d| d.insert_temp(radius_mode_id, radius_mode));
-    }
-    painter.text(
-        switch.center(),
-        Align2::CENTER_CENTER,
-        if radius_mode { "S" } else { "R" },
-        Theme::font(SIZE_LABEL - 1.0),
-        theme.text_dim,
-    );
-
-    if radius_mode {
-        let values = [0_u8, 8, 16, 24];
-        let start = c.x - 25.0;
-        for (index, value) in values.into_iter().enumerate() {
-            let center = pos2(start + index as f32 * 12.0, c.y + 21.0);
-            let glyph = Rect::from_center_size(center, vec2(8.0, 8.0));
-            let selected = radius == value;
-            let response = ui.interact(
-                Rect::from_center_size(center, vec2(11.0, 15.0)),
-                id.with(("radius", value)),
-                Sense::click(),
-            );
-            let color = if selected {
-                theme.accent
-            } else if response.hovered() {
-                theme.text
-            } else {
-                theme.text_faint
-            };
-            let shape = Squircle::new(glyph, (value as f32 / 24.0 * 4.0).min(4.0));
-            if selected || response.hovered() {
-                painter.add(egui::Shape::convex_polygon(
-                    shape.outline(),
-                    color,
-                    egui::Stroke::NONE,
-                ));
-            } else {
-                painter.add(egui::epaint::PathShape::closed_line(
-                    shape.outline(),
-                    egui::epaint::PathStroke::new(1.0, color),
-                ));
-            }
-            if response
-                .on_hover_text(format!("Corner radius: {value}"))
-                .clicked()
-                && !selected
-            {
-                edit = Some(Edit::SetRadius(tile.module.id(), value));
-            }
-        }
-    } else {
-        // Size picker: 1x1, 2x1 and 2x2 drawn to scale.
-        let unit = 5.0;
-        let shape = |s: TileSize| {
-            let (w, h) = s.cells();
-            vec2(
-                w as f32 * unit + (w - 1) as f32,
-                h as f32 * unit + (h - 1) as f32,
-            )
+            theme.text_faint
         };
-        let total: f32 = TileSize::ALL.iter().map(|&s| shape(s).x).sum::<f32>() + 2.0 * 6.0;
-        let mut x = c.x - total * 0.5 - 5.0;
-        let y = c.y + 20.0;
-        let native = tile.module.size_hint();
-        for s in TileSize::ALL {
-            let size = shape(s);
-            let glyph = Rect::from_min_size(pos2(x, y - size.y * 0.5), size);
-            x += size.x + 6.0;
-            let hit = Rect::from_center_size(glyph.center(), vec2(size.x + 5.0, 16.0));
-            let resp = ui.interact(hit, id.with(("size", s.area())), Sense::click());
-            let selected = s == tile.size;
-            let color = if selected {
-                theme.accent
-            } else if resp.hovered() {
-                theme.text
-            } else {
-                theme.text_faint
-            };
-            if selected || resp.hovered() {
-                painter.rect_filled(glyph, 1.5, color);
-            } else {
-                painter.rect_stroke(
-                    glyph,
-                    1.5,
-                    egui::Stroke::new(1.0, color),
-                    egui::StrokeKind::Inside,
-                );
-            }
-            let label = match s {
-                TileSize::Small => "Small",
-                TileSize::Wide => "Wide",
-                TileSize::Large => "Large",
-            };
-            let tip = if s.area() < native.area() {
-                format!("{label}: compact, click it to open")
-            } else {
-                label.to_owned()
-            };
-            if resp.on_hover_text(tip).clicked() && !selected {
-                edit = Some(Edit::Resize(tile.module.id(), s));
-            }
+        if selected || response.hovered() {
+            painter.rect_filled(glyph, 1.2, color);
+        } else {
+            painter.rect_stroke(
+                glyph,
+                1.2,
+                egui::Stroke::new(1.0, color),
+                egui::StrokeKind::Inside,
+            );
         }
+        let label = match size {
+            TileSize::Small => "Small",
+            TileSize::Wide => "Medium",
+            TileSize::Tall => "Tall",
+            TileSize::Large => "Large",
+        };
+        let tip = if size.area() < native.area() {
+            format!("{label}: compact, click it to open")
+        } else {
+            label.to_owned()
+        };
+        if response.on_hover_text(tip).clicked() && !selected {
+            edit = Some(Edit::Resize(tile.module.id(), size));
+        }
+    }
+
+    // Drag the curved lower-right handle to resize continuously; the grid
+    // snaps to its supported footprints (including the vertical medium tile).
+    let handle = Rect::from_center_size(pos2(rect.max.x - 7.0, rect.max.y - 7.0), vec2(18.0, 18.0));
+    let response = ui.interact(handle, id.with("resize-handle"), Sense::click_and_drag());
+    *resizing |= response.dragged() || response.drag_started();
+    let handle_color = if response.hovered() || response.dragged() {
+        theme.accent
+    } else {
+        theme.text_dim
+    };
+    painter.add(egui::epaint::PathShape::line(
+        vec![
+            pos2(handle.max.x - 1.0, handle.min.y + 1.0),
+            pos2(handle.max.x - 1.0, handle.max.y - 1.0),
+            pos2(handle.min.x + 1.0, handle.max.y - 1.0),
+        ],
+        egui::epaint::PathStroke::new(2.0, handle_color),
+    ));
+    let resize_id = id.with("resize-origin");
+    if response.drag_started()
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        ctx.data_mut(|data| data.insert_temp(resize_id, (pointer, tile.size)));
+    }
+    if response.dragged()
+        && let (Some((origin, start_size)), Some(pointer)) = (
+            ctx.data(|data| data.get_temp::<(egui::Pos2, TileSize)>(resize_id)),
+            response.interact_pointer_pos(),
+        )
+    {
+        let (w, h) = start_size.cells();
+        let start = vec2(
+            w as f32 * GRID.cell + (w - 1) as f32 * GRID.gap,
+            h as f32 * GRID.cell + (h - 1) as f32 * GRID.gap,
+        );
+        let target = start + (pointer - origin);
+        if let Some(next) = TileSize::ALL.into_iter().min_by(|a, b| {
+            let distance = |size: TileSize| {
+                let (w, h) = size.cells();
+                let candidate = vec2(
+                    w as f32 * GRID.cell + (w - 1) as f32 * GRID.gap,
+                    h as f32 * GRID.cell + (h - 1) as f32 * GRID.gap,
+                );
+                (candidate - target).length_sq()
+            };
+            distance(*a).total_cmp(&distance(*b))
+        }) && next != tile.size
+        {
+            edit = Some(Edit::Resize(tile.module.id(), next));
+        }
+    }
+    if response.drag_stopped() {
+        ctx.data_mut(|data| data.remove::<(egui::Pos2, TileSize)>(resize_id));
     }
     edit
 }

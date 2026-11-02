@@ -161,17 +161,25 @@ pub enum TileSize {
     Small,
     /// 2x1
     Wide,
+    /// 1x2
+    Tall,
     /// 2x2
     Large,
 }
 
 impl TileSize {
-    pub const ALL: [TileSize; 3] = [TileSize::Small, TileSize::Wide, TileSize::Large];
+    pub const ALL: [TileSize; 4] = [
+        TileSize::Small,
+        TileSize::Wide,
+        TileSize::Tall,
+        TileSize::Large,
+    ];
 
     pub fn cells(self) -> (usize, usize) {
         match self {
             TileSize::Small => (1, 1),
             TileSize::Wide => (2, 1),
+            TileSize::Tall => (1, 2),
             TileSize::Large => (2, 2),
         }
     }
@@ -443,6 +451,22 @@ mod tests {
                 row: 0
             }]
         );
+    }
+
+    #[test]
+    fn vertical_medium_tiles_pack_as_one_column_by_two_rows() {
+        let spec = GridSpec {
+            columns: 2,
+            rows: 3,
+            cell: 10.0,
+            gap: 2.0,
+        };
+        assert_eq!(TileSize::Tall.cells(), (1, 2));
+        assert_eq!(
+            spec.cell_rect(Pos2::ZERO, 1, 1, TileSize::Tall).size(),
+            vec2(10.0, 22.0)
+        );
+        assert_eq!(pack(&spec, &[TileSize::Tall]).len(), 1);
     }
 
     #[test]

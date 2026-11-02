@@ -1,5 +1,12 @@
 # Progress
 
+## Step 26 — Direct tile resize and radius inspector
+
+- Kept the existing tile presets and added a vertical Medium footprint. Plugin tiles receive the new `tall` layout notification, and the plugin docs/checker describe its 1×2 dimensions.
+- Added a curved corner grip in layout editing. Dragging snaps to the supported Small, horizontal Medium, vertical Tall and Large footprints; the original drag-to-reorder interaction remains available elsewhere on each tile.
+- Clicking a tile in edit mode selects it and expands a compact inspector below the grid. Its continuous slider changes that tile's corner radius from square to a rounded capsule/circle, then shrinks back when editing ends.
+- Verification: workspace tests passed (163 passed, 7 ignored); workspace clippy passed with `-D warnings`.
+
 ## Step 25 — Select a connected display
 
 - Added a Display mode beside Primary and Follow cursor. Settings lists connected displays with resolution and virtual-desktop coordinates; choosing one updates the live target and is saved.

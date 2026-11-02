@@ -173,7 +173,7 @@ footer { margin-top: 80px; color: var(--faint); font-size: 13px; }
 <pre data-label="plugin.toml"><code>id   = <span class="s">"hello"</span>
 name = <span class="s">"Hello"</span>
 icon = <span class="s">"hand-waving"</span>        <span class="c"># any icon from phosphoricons.com</span>
-size = <span class="s">"wide"</span>               <span class="c"># small | wide | large</span>
+size = <span class="s">"wide"</span>               <span class="c"># small | wide | tall | large</span>
 run  = [<span class="s">"python"</span>, <span class="s">"main.py"</span>]</code></pre></li>
       <li>Add <code>main.py</code>. It prints one JSON object per line and reads one per line:
 <pre data-label="main.py"><code><span class="k">import</span> json, sys
@@ -252,7 +252,7 @@ draw()
         <tr><td><code>name</code></td><td>required</td><td>Shown in the page header and the tile editor.</td></tr>
         <tr><td><code>run</code></td><td>required</td><td>Program and arguments, e.g. <code>["node", "main.js"]</code>. Runs in the plugin folder. A path like <code>"bin/tool.exe"</code> is resolved inside the folder; other names come from <code>PATH</code>.</td></tr>
         <tr><td><code>icon</code></td><td><code>"puzzle-piece"</code></td><td>A <a href="https://phosphoricons.com">Phosphor</a> icon name. Shown in the tile editor and on the default tile.</td></tr>
-        <tr><td><code>size</code></td><td><code>"small"</code></td><td><code>small</code> (1×1), <code>wide</code> (2×1) or <code>large</code> (2×2). Users can resize the tile anyway.</td></tr>
+        <tr><td><code>size</code></td><td><code>"small"</code></td><td><code>small</code> (1×1), <code>wide</code> (2×1), <code>tall</code> (1×2) or <code>large</code> (2×2). Users can resize the tile anyway.</td></tr>
         <tr><td><code>mode</code></td><td><code>"live"</code></td><td><code>live</code>: one long-running process. <code>poll</code>: run again every <code>interval</code> seconds. See <a href="#modes">modes</a>.</td></tr>
         <tr><td><code>interval</code></td><td><code>60</code></td><td>Seconds between runs in poll mode (minimum 1).</td></tr>
         <tr><td><code>hotkey</code></td><td>none</td><td>A global shortcut, e.g. <code>"ctrl+alt+KeyY"</code>. Pressing it sends you <code>hotkey</code>.</td></tr>
@@ -262,7 +262,7 @@ draw()
       </tbody>
     </table></div>
     <p class="muted">Nook doesn't know the space of a tile until it draws it, so it tells you in a <code>layout</code> message. The usual content sizes are about
-      <b>44×44</b> (small), <b>104×36</b> (wide), <b>104×104</b> (large) and <b>536×168</b> for a page.</p>
+      <b>44×44</b> (small), <b>104×36</b> (wide), <b>44×104</b> (tall), <b>104×104</b> (large) and <b>536×168</b> for a page.</p>
 
     <h3>Environment</h3>
     <div class="table-wrap"><table>

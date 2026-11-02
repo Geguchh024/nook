@@ -1267,7 +1267,14 @@ impl eframe::App for NookApp {
         self.shell.hold_open =
             (typing && ctx.input(|i| i.focused)) || ctx.input(|i| !i.raw.hovered_files.is_empty());
         self.route_dropped_files(&ctx);
-        self.shell.expanded_override = self.page_size(&ctx);
+        let editor_height = if self.editing {
+            bento::editor_extra_height(&ctx)
+        } else {
+            0.0
+        };
+        self.shell.expanded_override = self.page_size(&ctx).or_else(|| {
+            (editor_height > 0.0).then_some(self.shell.metrics.expanded + vec2(0.0, editor_height))
+        });
         let registry = &mut self.registry;
         let cfg = &mut self.cfg;
         let out = self.shell.show(
