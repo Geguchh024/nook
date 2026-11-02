@@ -314,12 +314,24 @@ pub fn page(
                 MonitorMode::Display => 2,
             };
             if row(&mut rui, "Monitor", theme, |ui| {
-                widgets::segmented(
-                    ui,
-                    &["Primary", "Follow cursor", "Display"],
-                    &mut mon_idx,
-                    theme,
-                )
+                if ui.available_width() < 210.0 {
+                    egui::ComboBox::from_id_salt("nook-monitor-mode")
+                        .width(ui.available_width())
+                        .selected_text(["Primary", "Follow cursor", "Display"][mon_idx])
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut mon_idx, 0, "Primary");
+                            ui.selectable_value(&mut mon_idx, 1, "Follow cursor");
+                            ui.selectable_value(&mut mon_idx, 2, "Choose display…");
+                        })
+                        .response
+                } else {
+                    widgets::segmented(
+                        ui,
+                        &["Primary", "Follow cursor", "Display"],
+                        &mut mon_idx,
+                        theme,
+                    )
+                }
             }) {
                 cfg.monitor = [
                     MonitorMode::Primary,
@@ -348,6 +360,7 @@ pub fn page(
                         .collect();
                     row(&mut rui, "Choose display", theme, |ui| {
                         egui::ComboBox::from_id_salt("nook-target-display")
+                            .width(ui.available_width())
                             .selected_text(&names[display_idx])
                             .show_ui(ui, |ui| {
                                 for (index, name) in names.iter().enumerate() {
@@ -1066,16 +1079,21 @@ fn row(
 ) -> bool {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, ROW), Sense::hover());
-    ui.painter().text(
-        pos2(rect.min.x, rect.center().y),
-        Align2::LEFT_CENTER,
-        label,
-        Theme::font(SIZE_BODY),
-        theme.text,
+    let label_width = (w * 0.38).clamp(68.0, 116.0).min((w - 72.0).max(0.0));
+    let label_rect = Rect::from_min_size(rect.min, vec2(label_width, ROW));
+    ui.put(
+        label_rect,
+        egui::Label::new(
+            egui::RichText::new(label)
+                .font(Theme::font(SIZE_BODY))
+                .color(theme.text),
+        )
+        .truncate(),
     );
+    let control_rect = Rect::from_min_max(pos2(rect.min.x + label_width, rect.min.y), rect.max);
     let mut cui = ui.new_child(
         UiBuilder::new()
-            .max_rect(rect)
+            .max_rect(control_rect)
             .layout(Layout::right_to_left(Align::Center)),
     );
     let response = control(&mut cui);

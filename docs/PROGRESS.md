@@ -330,3 +330,9 @@
 - The edit inspector now has linked/unlinked corner sliders and a live outline preview. The same radii drive tile drawing and tile interaction checks; the radius slider remains available and uses accurate Circle/Pill labels by footprint.
 - Added geometry, serialization, and legacy migration tests.
 - Verification: `cargo test --workspace --offline --quiet` passed (177 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 34 — Fix responsive Settings rows
+
+- Settings rows now reserve a fixed, measured label column and give controls their own right-aligned area, preventing the Monitor label from overlapping its choices.
+- Narrow Monitor layouts switch to a compact dropdown, and the display picker is sized to its available column so its popup and selection remain usable on constrained panels.
+- Verification: `cargo test --workspace --offline --quiet` passed (177 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
