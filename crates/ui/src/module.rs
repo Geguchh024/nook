@@ -19,6 +19,8 @@ pub enum Badge {
     Ring { progress: f32, label: String },
     /// A small glyph (Phosphor codepoint), e.g. a coffee cup.
     Glyph { icon: &'static str },
+    /// Playing media: a glyph with a small animated level meter.
+    Audio { icon: &'static str },
     /// A pulsing dot: something arrived.
     Pulse,
     /// A short-lived system connection event shown inside the collapsed shell.

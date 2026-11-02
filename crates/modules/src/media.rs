@@ -115,7 +115,7 @@ impl Module for Media {
         self.now
             .as_ref()
             .is_some_and(|now| now.playing)
-            .then_some(Badge::Glyph {
+            .then_some(Badge::Audio {
                 icon: icons::MUSIC_NOTES,
             })
     }

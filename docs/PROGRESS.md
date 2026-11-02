@@ -208,3 +208,9 @@
 - Media now defaults to the Small footprint. Small shows album art (or the media glyph); Medium shows artwork, title and previous/play/next controls; Large retains the detailed player card.
 - Wide and Tall Medium footprints reflow controls and artwork to stay inside their bounds, and clicking the artwork or information opens the full media page.
 - Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 15 — Collapsed playback meter
+
+- The collapsed notch now pairs the playing media glyph with three animated audio level bars when the existing “Music in closed pill” option is enabled.
+- The renderer schedules 33 ms repaints only while the media badge is visible in the collapsed shell; the idle path remains event-driven.
+- Verification: `cargo test --workspace --offline --quiet` passed (163 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

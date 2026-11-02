@@ -882,6 +882,31 @@ fn draw_pill(
                 right = ink.min.x - 6.0;
                 any_right = true;
             }
+            Badge::Audio { icon } => {
+                let ink = ink_text(
+                    painter,
+                    icon,
+                    icon_font(14.0, true),
+                    theme.accent_fg(),
+                    right,
+                    cy,
+                    true,
+                );
+                right = ink.min.x - 5.0;
+                let phase = now * std::f64::consts::TAU * 1.4;
+                for index in 0..3 {
+                    let wave = ((phase + index as f64 * 1.65).sin() * 0.5 + 0.5) as f32;
+                    let height = 4.0 + wave * 8.0;
+                    let bar = Rect::from_center_size(
+                        pos2(right - 3.0, cy + 2.0 - height * 0.5),
+                        vec2(2.5, height),
+                    );
+                    painter.rect_filled(bar, 1.25, theme.accent);
+                    right -= 5.0;
+                }
+                any_right = true;
+                ui.ctx().request_repaint_after(Duration::from_millis(33));
+            }
             Badge::Pulse => {
                 let phase = ((now * 1.6).sin() * 0.5 + 0.5) as f32;
                 let c = pos2(right - 3.0, cy);
