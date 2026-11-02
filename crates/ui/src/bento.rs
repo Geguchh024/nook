@@ -170,7 +170,7 @@ const EDITOR_SELECTION_ID: &str = "nook-editor-selected-tile";
 /// Extra shell height for the selected tile's continuous radius inspector.
 pub fn editor_extra_height(ctx: &egui::Context) -> f32 {
     ctx.data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
-        .map_or(0.0, |_| 82.0)
+        .map_or(0.0, |_| 116.0)
 }
 
 fn radius_limit(size: TileSize) -> u8 {
@@ -645,10 +645,10 @@ pub fn show(
             .min(max_radius);
         let inspector = Rect::from_min_size(
             pos2(cctx.panel.min.x + PANEL_PADDING, grid.max.y + 8.0),
-            vec2(cctx.panel.width() - 2.0 * PANEL_PADDING, 70.0),
+            vec2(cctx.panel.width() - 2.0 * PANEL_PADDING, 104.0),
         );
         widgets::card(ui.painter(), inspector, theme);
-        let title = format!("{} · corner radius", tile.module.name());
+        let title = "Tile shape";
         ui.painter().text(
             pos2(inspector.min.x + 14.0, inspector.min.y + 15.0),
             Align2::LEFT_CENTER,
@@ -668,9 +668,53 @@ pub fn show(
             Theme::font(SIZE_LABEL),
             theme.text_dim,
         );
+        let sizes_rect = Rect::from_min_size(
+            pos2(inspector.min.x + 12.0, inspector.min.y + 29.0),
+            vec2(inspector.width() - 24.0, 26.0),
+        );
+        let mut sizes_ui = ui.new_child(
+            UiBuilder::new()
+                .max_rect(sizes_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        let mut size_idx = TileSize::ALL
+            .iter()
+            .position(|size| *size == tile.size)
+            .unwrap_or(0);
+        let previous_size_idx = size_idx;
+        let size_changed = if sizes_rect.width() < 220.0 {
+            egui::ComboBox::from_id_salt(("nook-tile-size", selected.as_str()))
+                .width(sizes_rect.width())
+                .selected_text(["Small", "Wide", "Tall", "Large"][size_idx])
+                .show_ui(&mut sizes_ui, |ui| {
+                    ui.selectable_value(&mut size_idx, 0, "Small · square");
+                    ui.selectable_value(&mut size_idx, 1, "Wide");
+                    ui.selectable_value(&mut size_idx, 2, "Tall");
+                    ui.selectable_value(&mut size_idx, 3, "Large · square");
+                });
+            size_idx != previous_size_idx
+        } else {
+            widgets::segmented(
+                &mut sizes_ui,
+                &["Small", "Wide", "Tall", "Large"],
+                &mut size_idx,
+                theme,
+            )
+            .changed()
+        };
+        if size_changed && let Some(size) = TileSize::ALL.get(size_idx).copied() {
+            out.edits.push(Edit::Resize(tile.module.id(), size));
+        }
+        ui.painter().text(
+            pos2(inspector.min.x + 14.0, inspector.min.y + 69.0),
+            Align2::LEFT_CENTER,
+            "Radius",
+            Theme::font(SIZE_LABEL),
+            theme.text_dim,
+        );
         let slider_rect = Rect::from_min_size(
-            pos2(inspector.min.x + 14.0, inspector.min.y + 30.0),
-            vec2(inspector.width() - 28.0, 22.0),
+            pos2(inspector.min.x + 65.0, inspector.min.y + 58.0),
+            vec2(inspector.width() - 79.0, 22.0),
         );
         let mut slider_ui = ui.new_child(
             UiBuilder::new()
@@ -769,94 +813,66 @@ fn edit_face(
     );
 
     // The tick: filled accent when shown, an empty ring when hidden.
-    let tick_c = c + vec2(0.0, 4.0);
-    let tick = ui.interact(
-        Rect::from_center_size(tick_c, vec2(20.0, 16.0)),
-        id.with("tick"),
+    let locked = !tile.module.can_hide();
+    let visibility_center = rect.min + vec2(14.0, 14.0);
+    let visibility = ui.interact(
+        Rect::from_center_size(visibility_center, vec2(25.0, 25.0)),
+        id.with("visibility"),
         Sense::click(),
     );
-    let locked = !tile.module.can_hide();
-    let hover = anim::tween(&ctx, id.with("tick-hover"), tick.hovered() && !locked, 0.1);
-    let r = 6.0 + hover;
-    painter.circle_stroke(
-        tick_c,
-        r,
-        egui::Stroke::new(1.2, with_alpha(theme.text_dim, 1.0 - on)),
+    let hover = anim::tween(&ctx, id.with("visibility-hover"), visibility.hovered(), 0.1);
+    let badge = if shown {
+        theme::mix(theme.text, theme.accent, hover * 0.8)
+    } else {
+        theme::mix(theme.tile_bottom, theme.accent, 0.75 + hover * 0.25)
+    };
+    painter.circle_filled(
+        visibility_center,
+        10.5,
+        with_alpha(badge, if locked { 0.55 } else { 0.95 }),
     );
-    if on > 0.0 {
-        let pop = 0.6 + 0.4 * anim::ease_out_cubic(on);
-        painter.circle_filled(tick_c, r * pop, with_alpha(theme.accent, on));
-        paint::icon(
-            &painter,
-            tick_c,
-            icons::CHECK,
-            8.5 * pop,
-            with_alpha(Color32::WHITE, on),
-            true,
-        );
-    }
+    painter.circle_stroke(
+        visibility_center,
+        10.5,
+        egui::Stroke::new(1.0, with_alpha(theme.text, 0.24)),
+    );
+    paint::icon(
+        &painter,
+        visibility_center,
+        if shown { icons::MINUS } else { icons::PLUS },
+        12.0,
+        if shown {
+            theme.glass_bottom
+        } else {
+            theme.text
+        },
+        true,
+    );
     let tip = if locked {
         "Always shown"
     } else if shown {
-        "Shown. Click to hide"
+        "Hide tile"
     } else {
-        "Hidden. Click to show"
+        "Show tile"
     };
-    if tick.on_hover_text(tip).clicked() && !locked {
+    if visibility.on_hover_text(tip).clicked() && !locked {
         edit = Some(Edit::ToggleShown(tile.module.id()));
     }
 
-    // The radius is edited in the shell's inspector below the grid.
-    // Three original presets plus a vertical medium tile.
-    let shape = |size: TileSize| {
-        let (w, h) = size.cells();
-        vec2(
-            w as f32 * 4.0 + (w - 1) as f32,
-            h as f32 * 4.0 + (h - 1) as f32,
-        )
-    };
-    let total = TileSize::ALL.iter().map(|&size| shape(size).x).sum::<f32>() + 3.0 * 3.0;
-    let mut x = c.x - total * 0.5 - 10.0;
-    let y = c.y + 21.0;
-    let native = tile.module.size_hint();
-    for size in TileSize::ALL {
-        let glyph_size = shape(size);
-        let glyph = Rect::from_min_size(pos2(x, y - glyph_size.y * 0.5), glyph_size);
-        x += glyph_size.x + 3.0;
-        let hit = Rect::from_center_size(glyph.center(), vec2(glyph_size.x + 3.0, 17.0));
-        let response = ui.interact(hit, id.with(("size", size)), Sense::click());
-        let selected = size == tile.size;
-        let color = if selected {
-            theme.accent
-        } else if response.hovered() {
-            theme.text
-        } else {
-            theme.text_faint
-        };
-        if selected || response.hovered() {
-            painter.rect_filled(glyph, 1.2, color);
-        } else {
-            painter.rect_stroke(
-                glyph,
-                1.2,
-                egui::Stroke::new(1.0, color),
-                egui::StrokeKind::Inside,
-            );
-        }
-        let label = match size {
-            TileSize::Small => "Small",
-            TileSize::Wide => "Medium",
-            TileSize::Tall => "Tall",
-            TileSize::Large => "Large",
-        };
-        let tip = if size.area() < native.area() {
-            format!("{label}: compact, click it to open")
-        } else {
-            label.to_owned()
-        };
-        if response.on_hover_text(tip).clicked() && !selected {
-            edit = Some(Edit::Resize(tile.module.id(), size));
-        }
+    if rect.width() >= 90.0 {
+        let name_rect = Rect::from_center_size(
+            pos2(c.x, c.y + 15.0),
+            vec2((rect.width() - 36.0).max(24.0), 18.0),
+        );
+        ui.put(
+            name_rect,
+            egui::Label::new(
+                egui::RichText::new(tile.module.name())
+                    .font(Theme::font(SIZE_LABEL - 1.0))
+                    .color(with_alpha(theme.text, 0.82)),
+            )
+            .truncate(),
+        );
     }
 
     // Drag the curved lower-right handle to resize continuously; the grid

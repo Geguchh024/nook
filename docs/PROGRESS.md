@@ -271,3 +271,9 @@
 - Increased the frosted fill and reflective rim on non-OLED acrylic tiles for a clearer layered-glass look inspired by the supplied UI references.
 - OLED stays pure black with its original surface, rim, and highlight values; a regression test locks those tokens.
 - Verification: `cargo test --workspace --offline --quiet` passed (167 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 25 — Simplify responsive tile editing
+
+- Replaced the dense per-tile tick and miniature size marks with a compact visibility badge, tile name where the footprint has room, and the curved resize grip.
+- The selected tile's inspector now groups the four footprint choices and the corner-radius slider; narrow panels use a size dropdown to prevent the segmented control from spilling out.
+- Verification: `cargo test --workspace --offline --quiet` passed (167 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
