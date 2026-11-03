@@ -1,0 +1,11 @@
+# Private helper: gives Nook's built-in tools a second, freely chosen
+# shortcut. Nook's own shortcuts are fixed in its code, so this plugin
+# registers your new key itself and presses the original one for you.
+id = "key-remap"
+name = "Key Remap"
+icon = "keyboard"
+size = "small"
+run = ["python", "main.py"]
+description = "Pick your own shortcut for any Nook tool."
+author = "me"
+version = "1.0.0"
