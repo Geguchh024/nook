@@ -328,7 +328,23 @@ impl Module for Clipboard {
 
     fn page_size(&self) -> Option<egui::Vec2> {
         let picker = self.filter.picker_height();
-        (picker > 0.0).then_some(vec2(760.0, 430.0 + picker + 14.0))
+        let count = self
+            .history
+            .entries
+            .iter()
+            .filter(|entry| {
+                let text = match &entry.content {
+                    ClipContent::Text(text) => text.as_str(),
+                    ClipContent::Image(_) => "",
+                };
+                self.filter.matches(text, entry.day)
+            })
+            .count();
+        let visible = count.clamp(1, 4) as f32;
+        // Header, filter row, panel padding and footer, plus enough room for
+        // each visible card. More than four entries stay in the scroll list.
+        let cards = visible * 76.0 + (visible - 1.0) * 8.0;
+        Some(vec2(760.0, (128.0 + cards + picker).max(260.0)))
     }
 
     fn attach(&mut self, ctx: &egui::Context) {

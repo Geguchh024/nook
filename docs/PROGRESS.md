@@ -1,5 +1,10 @@
 # Progress
 
+## Step 53 — Size clipboard history for four visible cards
+
+- The clipboard page now requests enough shell height to show up to four filtered history cards at once; further entries remain in the existing scroll area.
+- Page height follows the filtered count and date picker, and the expanded history page size is now requested even when the date picker is closed.
+
 ## Step 52 — Make tile interactions responsive across footprints
 
 - Airplane mode, microphone mute and Windows theme toggles now show the chosen state immediately while their worker actions run, then reconcile with the returned snapshot or revert on failure.
