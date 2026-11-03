@@ -26,8 +26,8 @@ const ROW: f32 = 28.0;
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
 const BODY: [f32; 5] = [
-    6.0 * ROW + 12.0,
-    7.0 * ROW + 16.0,
+    6.0 * ROW + 24.0,
+    6.0 * ROW + 24.0,
     9.0 * ROW + 16.0,
     6.0 * ROW + 12.0,
     5.0 * ROW + 36.0,

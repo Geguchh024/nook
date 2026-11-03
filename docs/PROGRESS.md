@@ -432,3 +432,8 @@
 - The monitor selector now presents Primary, Follow cursor, and Choose displays. The last option opens the connected-display checkbox list and keeps legacy single-display configs working by migrating them to a one-item selection.
 - The advanced corner preview now uses the same shape generator as the tile, including true circular geometry, so its preview matches the tile hover and rim.
 - Verification: isolated-AppData `cargo test --workspace --offline --quiet`, targeted rustfmt check, and `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 52 — Fit all rows inside the expanded settings cards
+
+- Increased the expanded Appearance and Behavior body padding so each control row remains within its card at the narrow settings width.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet` and Clippy passed.
