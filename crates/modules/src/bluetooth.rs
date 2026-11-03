@@ -401,7 +401,7 @@ impl Module for Bluetooth {
             self.tile_summary(),
             active,
             Some(&format!("{} nearby or paired", self.devices.len())),
-            ctx.theme,
+            ctx,
         );
         if response.clicked() {
             self.page_request = true;

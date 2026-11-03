@@ -3,6 +3,7 @@
 
 use crate::anim;
 use crate::geometry::Squircle;
+use crate::module::{SizeClass, TileCtx, TileShape};
 use crate::paint;
 use crate::spring::SpringParams;
 use crate::theme::{SIZE_BODY, SIZE_LABEL, Theme, mix, with_alpha};
@@ -311,8 +312,11 @@ pub fn wireless_tile(
     summary: &str,
     active: bool,
     detail: Option<&str>,
-    theme: &Theme,
+    ctx: &TileCtx<'_>,
 ) {
+    let theme = ctx.theme;
+    let shape = ctx.shape;
+    let size = ctx.size;
     let rect = ui.max_rect();
     let painter = ui.painter();
     let accent = if active {
@@ -325,6 +329,57 @@ pub fn wireless_tile(
     } else {
         theme.control_fill
     };
+
+    if shape == TileShape::Circle {
+        let diameter = rect.width().min(rect.height());
+        let compact = size == SizeClass::Small;
+        let center = if compact {
+            rect.center()
+        } else {
+            pos2(rect.center().x, rect.center().y - diameter * 0.18)
+        };
+        let radius = diameter * if compact { 0.30 } else { 0.22 };
+        painter.circle_filled(center, radius, badge_fill);
+        painter.circle_stroke(center, radius, Stroke::new(1.0, theme.tile_rim));
+        paint::icon(painter, center, glyph, radius * 1.15, accent, active);
+        if !compact {
+            let mut line = |y: f32, value: &str, color: Color32, font: egui::FontId| {
+                let line_rect = egui::Rect::from_center_size(
+                    pos2(rect.center().x, y),
+                    vec2(rect.width(), font.size + 3.0),
+                );
+                ui.put(
+                    line_rect,
+                    egui::Label::new(egui::RichText::new(value).font(font).color(color))
+                        .halign(egui::Align::Center)
+                        .truncate(),
+                );
+            };
+            line(
+                rect.center().y + diameter * 0.14,
+                title,
+                theme.text,
+                Theme::font(SIZE_LABEL),
+            );
+            line(
+                rect.center().y + diameter * 0.28,
+                summary,
+                theme.text_dim,
+                Theme::font(SIZE_LABEL - 1.0),
+            );
+            if size == SizeClass::Large
+                && let Some(detail) = detail
+            {
+                line(
+                    rect.center().y + diameter * 0.41,
+                    detail,
+                    theme.text_faint,
+                    Theme::font(SIZE_LABEL - 2.0),
+                );
+            }
+        }
+        return;
+    }
 
     if rect.width() >= 100.0 && rect.width() > rect.height() * 1.45 {
         let center = pos2(rect.left() + 23.0, rect.center().y);
@@ -385,7 +440,7 @@ pub fn wireless_tile(
             Theme::font(SIZE_LABEL - 1.0),
             theme.text_dim,
         );
-        if rect.height() >= 130.0
+        if size == SizeClass::Large
             && let Some(detail) = detail
         {
             painter.text(

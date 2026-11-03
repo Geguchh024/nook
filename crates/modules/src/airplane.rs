@@ -252,7 +252,7 @@ impl Module for Airplane {
             summary,
             all_radios_off(self.wifi, self.bluetooth) == Some(true),
             None,
-            ctx.theme,
+            ctx,
         );
         if response.clicked() {
             self.page_request = true;

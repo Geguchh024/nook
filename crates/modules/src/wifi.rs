@@ -369,7 +369,7 @@ impl Module for Wifi {
             self.tile_summary(),
             self.state.enabled == Some(true),
             Some(&format!("{} networks nearby", self.state.networks.len())),
-            ctx.theme,
+            ctx,
         );
         if response.clicked() {
             self.page_request = true;

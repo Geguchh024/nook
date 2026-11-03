@@ -393,3 +393,9 @@
 
 - The main controls page now scrolls inside its available panel body height, so optional rows such as battery, microphone, theme, lock, and hotspot remain reachable on shorter displays instead of extending past the shell.
 - Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 45 — Adapt radio tiles to Circle and footprint
+
+- The shared Wi-Fi, Bluetooth, and Airplane tile face now uses the renderer's `TileShape` and `SizeClass`. Small Circle tiles stay icon-only; larger Circle tiles center the title and connection summary, with extra detail reserved for Large. Rounded tiles keep their existing horizontal pill and stacked layouts.
+- Tile activation and full-page navigation are unchanged.
+- Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
