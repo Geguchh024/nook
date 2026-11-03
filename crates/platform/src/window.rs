@@ -19,9 +19,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HWND_TOPMOST, IsWindowVisible, LWA_ALPHA, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetLayeredWindowAttributes, SetWindowLongPtrW,
     SetWindowPos, ShowWindow, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOMPOSITIONCHANGED,
-    WM_ERASEBKGND, WM_NCCALCSIZE, WM_NCPAINT, WM_PAINT, WM_SHOWWINDOW, WM_WINDOWPOSCHANGED,
-    WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_EX_TRANSPARENT, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    WM_ERASEBKGND, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCPAINT, WM_PAINT, WM_SHOWWINDOW,
+    WM_STYLECHANGED, WM_WINDOWPOSCHANGED, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 use windows::core::BOOL;
 
@@ -103,6 +104,36 @@ pub fn fill_client(hwnd: Hwnd) -> Result<()> {
         if msg == WM_NCPAINT {
             // The overlay is frameless. In particular, do not let DWM flash
             // a caption strip when a native tray menu changes activation.
+            return LRESULT(0);
+        }
+        if msg == WM_NCACTIVATE {
+            // The overlay has no non-client area. Returning TRUE tells Windows
+            // to keep the active state without asking the default procedure to
+            // repaint a caption when a tray popup steals and returns focus.
+            return LRESULT(1);
+        }
+        if msg == WM_STYLECHANGED {
+            // winit can restore caption/frame bits while processing activation
+            // from a native tray menu. Remove them synchronously so they never
+            // get a paint cycle before the next egui frame reasserts styles.
+            // SAFETY: this is the window's own style and the callback runs on
+            // the window thread; SetWindowPos is safe for the live HWND.
+            unsafe {
+                let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+                let frameless = (style | WS_POPUP.0 as isize) & !(FRAME_STYLE as isize);
+                if style != frameless {
+                    SetWindowLongPtrW(hwnd, GWL_STYLE, frameless);
+                    let _ = SetWindowPos(
+                        hwnd,
+                        None,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                    );
+                }
+            }
             return LRESULT(0);
         }
         if CLEAR_GDI.load(Ordering::Relaxed) {
