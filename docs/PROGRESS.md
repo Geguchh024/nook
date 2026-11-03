@@ -1,5 +1,11 @@
 # Progress
 
+## Step 52 — Make tile interactions responsive across footprints
+
+- Airplane mode, microphone mute and Windows theme toggles now show the chosen state immediately while their worker actions run, then reconcile with the returned snapshot or revert on failure.
+- Coffee uses a centered vertical layout for Tall, square and circular tiles so its label, status and switch keep separate hit areas.
+- The layout editor's Done control and page dots move below the shape inspector, with shell space reserved for the footer. Hover glow now uses restrained outline strokes and respects per-corner radii to avoid filled wedges on transformed tiles.
+
 ## Step 26 — Direct tile resize and radius inspector
 
 - Kept the existing tile presets and added a vertical Medium footprint. Plugin tiles receive the new `tall` layout notification, and the plugin docs/checker describe its 1×2 dimensions.

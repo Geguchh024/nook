@@ -205,9 +205,9 @@ pub fn editor_extra_height(ctx: &egui::Context, editing: bool) -> f32 {
             data.get_temp::<bool>(Id::new(EDITOR_CORNERS_OPEN_ID))
                 .unwrap_or(false)
         }) {
-            226.0
+            264.0
         } else {
-            116.0
+            154.0
         }
     } else if editing {
         58.0
@@ -334,7 +334,15 @@ pub fn show(
     }
 
     // Bottom gutter: edit pencil on the left, page dots on the right.
-    let gutter_y = grid.max.y + (cctx.panel.max.y - grid.max.y) * 0.5 - 1.0;
+    let inspector_selected = editing
+        && ctx
+            .data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
+            .is_some();
+    let gutter_y = if inspector_selected {
+        cctx.panel.max.y - 18.0
+    } else {
+        grid.max.y + (cctx.panel.max.y - grid.max.y) * 0.5 - 1.0
+    };
     {
         let c = pos2(grid.min.x + 8.0, gutter_y);
         let hit = Rect::from_center_size(c, vec2(22.0, 18.0));

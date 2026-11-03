@@ -16,7 +16,7 @@ enum Command {
 
 enum Event {
     Snapshot(Option<bool>, Option<bool>),
-    Action(Result<ActionState, String>),
+    Action(Option<bool>, Result<ActionState, String>),
 }
 
 struct ActionState {
@@ -39,7 +39,7 @@ impl Worker {
             .name("nook-airplane".into())
             .spawn(move || {
                 if let Err(error) = controls::initialize_worker() {
-                    let _ = events.send(Event::Action(Err(error.to_string())));
+                    let _ = events.send(Event::Action(None, Err(error.to_string())));
                     return;
                 }
                 while let Ok(command) = commands.recv() {
@@ -59,7 +59,7 @@ impl Worker {
                         }
                         Command::Set(enabled, restore) => {
                             let result = set_airplane(enabled, restore);
-                            if events.send(Event::Action(result)).is_err() {
+                            if events.send(Event::Action(Some(enabled), result)).is_err() {
                                 break;
                             }
                         }
@@ -163,6 +163,8 @@ pub struct Airplane {
     wifi: Option<bool>,
     bluetooth: Option<bool>,
     restore: Option<RadioRestore>,
+    /// State shown immediately while Windows updates the radio adapters.
+    pending: Option<bool>,
     restore_update: Option<Option<RadioRestore>>,
     page_request: bool,
     refresh_on_page: bool,
@@ -192,7 +194,9 @@ impl Module for Airplane {
     }
 
     fn is_active(&self) -> bool {
-        all_radios_off(self.wifi, self.bluetooth) == Some(true)
+        self.pending
+            .or_else(|| all_radios_off(self.wifi, self.bluetooth))
+            == Some(true)
     }
 
     fn uses_active_tile_fill(&self) -> bool {
@@ -225,14 +229,22 @@ impl Module for Airplane {
                     self.wifi = wifi;
                     self.bluetooth = bluetooth;
                 }
-                Event::Action(Ok(state)) => {
+                Event::Action(target, Ok(state)) => {
                     self.wifi = state.wifi;
                     self.bluetooth = state.bluetooth;
                     self.restore = state.restore;
                     self.restore_update = Some(state.restore);
+                    if target.is_none() || self.pending == target {
+                        self.pending = None;
+                    }
                     self.error = None;
                 }
-                Event::Action(Err(error)) => self.error = Some(error),
+                Event::Action(target, Err(error)) => {
+                    if target.is_none() || self.pending == target {
+                        self.pending = None;
+                    }
+                    self.error = Some(error);
+                }
             }
         }
     }
@@ -240,7 +252,10 @@ impl Module for Airplane {
     fn ui_tile(&mut self, ui: &mut egui::Ui, ctx: &mut TileCtx<'_>) {
         let rect = ui.max_rect();
         let response = ui.interact(rect, ui.id().with("airplane-page"), egui::Sense::click());
-        let summary = match all_radios_off(self.wifi, self.bluetooth) {
+        let enabled = self
+            .pending
+            .or_else(|| all_radios_off(self.wifi, self.bluetooth));
+        let summary = match enabled {
             Some(true) => "Radios off",
             Some(false) => "Airplane off",
             None => "Not available",
@@ -250,7 +265,7 @@ impl Module for Airplane {
             self.icon(),
             "Airplane",
             summary,
-            all_radios_off(self.wifi, self.bluetooth) == Some(true),
+            enabled == Some(true),
             None,
             ctx,
         );
@@ -280,8 +295,12 @@ impl Module for Airplane {
             |ui| {
                 ui.set_width(body.width());
                 ui.horizontal_wrapped(|ui| {
-                    let mut enabled = all_radios_off(self.wifi, self.bluetooth).unwrap_or(false);
+                    let mut enabled = self
+                        .pending
+                        .or_else(|| all_radios_off(self.wifi, self.bluetooth))
+                        .unwrap_or(false);
                     if widgets::toggle(ui, &mut enabled, theme).changed() {
+                        self.pending = Some(enabled);
                         self.send(Command::Set(enabled, self.restore));
                     }
                     ui.label(

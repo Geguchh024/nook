@@ -204,19 +204,27 @@ pub fn top_highlight(painter: &Painter, shape: &Squircle, color: Color32) {
     painter.add(Shape::mesh(mesh));
 }
 
-/// Soft glow: a few expanding, fading squircles under a shape.
+/// Soft glow: restrained, expanding outline strokes under a shape.
+/// Strokes avoid the large filled wedges produced by convex polygon
+/// tessellation on layered, transformed overlay windows.
 pub fn glow(painter: &Painter, shape: &Squircle, color: Color32, strength: f32) {
     if strength <= 0.01 {
         return;
     }
-    for (grow, a) in [(6.0, 0.10), (3.5, 0.16), (1.5, 0.24)] {
+    for (grow, width, alpha) in [(6.0, 7.0, 0.025), (3.5, 4.0, 0.06), (1.5, 2.0, 0.12)] {
+        let corners = crate::geometry::Corners {
+            tl: shape.corners.tl + grow,
+            tr: shape.corners.tr + grow,
+            br: shape.corners.br + grow,
+            bl: shape.corners.bl + grow,
+        };
         let s = Squircle::new(shape.rect.expand(grow), shape.radius + grow)
+            .with_corners(corners)
             .with_exponent(shape.exponent);
-        painter.add(Shape::convex_polygon(
+        painter.add(Shape::Path(PathShape::closed_line(
             s.outline(),
-            with_alpha(color, a * strength),
-            Stroke::NONE,
-        ));
+            PathStroke::new(width, with_alpha(color, alpha * strength)),
+        )));
     }
 }
 

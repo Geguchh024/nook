@@ -25,9 +25,17 @@ enum Command {
     Stop,
 }
 
+#[derive(Clone, Copy)]
+enum PendingToggle {
+    MicrophoneMute,
+    WindowsTheme,
+}
+
+type WorkerEvent = (Option<PendingToggle>, Result<Option<Snapshot>, String>);
+
 struct Worker {
     tx: Sender<Command>,
-    rx: Receiver<Result<Option<Snapshot>, String>>,
+    rx: Receiver<WorkerEvent>,
     join: Option<JoinHandle<()>>,
 }
 
@@ -39,7 +47,7 @@ impl Worker {
             .name("nook-controls".into())
             .spawn(move || {
                 if let Err(error) = controls::initialize_worker() {
-                    let _ = results.send(Err(error.to_string()));
+                    let _ = results.send((None, Err(error.to_string())));
                     return;
                 }
                 let mut deferred = VecDeque::new();
@@ -80,6 +88,11 @@ impl Worker {
                         }
                         other => other,
                     };
+                    let pending_toggle = match &command {
+                        Command::MicrophoneMute(_) => Some(PendingToggle::MicrophoneMute),
+                        Command::WindowsTheme(_) => Some(PendingToggle::WindowsTheme),
+                        _ => None,
+                    };
                     let result = match command {
                         Command::Stop => break,
                         Command::Volume(value) => controls::set_volume(value).map(|()| None),
@@ -112,7 +125,10 @@ impl Worker {
                             action.map(|()| Some(controls::snapshot()))
                         }
                     };
-                    if results.send(result.map_err(|e| e.to_string())).is_err() {
+                    if results
+                        .send((pending_toggle, result.map_err(|e| e.to_string())))
+                        .is_err()
+                    {
                         break;
                     }
                     ctx.request_repaint();
@@ -155,6 +171,8 @@ pub struct Controls {
     brightness_display: Option<f32>,
     volume_overridden: bool,
     brightness_overridden: bool,
+    microphone_pending: Option<bool>,
+    windows_theme_pending: Option<bool>,
     audio_page: bool,
     audio_textures: HashMap<String, egui::TextureHandle>,
 }
@@ -174,6 +192,8 @@ impl Default for Controls {
             brightness_display: None,
             volume_overridden: false,
             brightness_overridden: false,
+            microphone_pending: None,
+            windows_theme_pending: None,
             audio_page: false,
             audio_textures: HashMap::new(),
         }
@@ -243,12 +263,17 @@ impl Module for Controls {
             }
         }
         if let Some(worker) = &self.worker {
-            while let Ok(result) = worker.rx.try_recv() {
+            while let Ok((pending_toggle, result)) = worker.rx.try_recv() {
                 match result {
                     Ok(Some(state)) => {
                         let snapshot_volume = state.volume;
                         let snapshot_brightness = state.brightness;
                         self.state = state;
+                        match pending_toggle {
+                            Some(PendingToggle::MicrophoneMute) => self.microphone_pending = None,
+                            Some(PendingToggle::WindowsTheme) => self.windows_theme_pending = None,
+                            None => {}
+                        }
                         if !self.volume_overridden {
                             self.volume_display = snapshot_volume;
                         }
@@ -259,6 +284,11 @@ impl Module for Controls {
                     Ok(None) => {}
                     Err(error) => {
                         tracing::warn!("quick controls: {error}");
+                        match pending_toggle {
+                            Some(PendingToggle::MicrophoneMute) => self.microphone_pending = None,
+                            Some(PendingToggle::WindowsTheme) => self.windows_theme_pending = None,
+                            None => {}
+                        }
                         self.send(Command::Refresh);
                     }
                 }
@@ -605,8 +635,11 @@ impl Module for Controls {
 
                         ui.horizontal(|ui| {
                             Self::row_label(ui, "Microphone mute", theme);
-                            if let Some(mut muted) = self.state.microphone_muted {
+                            if let Some(mut muted) =
+                                self.microphone_pending.or(self.state.microphone_muted)
+                            {
                                 if widgets::toggle(ui, &mut muted, theme).changed() {
+                                    self.microphone_pending = Some(muted);
                                     let _ = tx.send(Command::MicrophoneMute(muted));
                                 }
                             } else {
@@ -620,8 +653,11 @@ impl Module for Controls {
 
                         ui.horizontal(|ui| {
                             Self::row_label(ui, "Windows dark mode", theme);
-                            if let Some(mut dark) = self.state.windows_dark_mode {
+                            if let Some(mut dark) =
+                                self.windows_theme_pending.or(self.state.windows_dark_mode)
+                            {
                                 if widgets::toggle(ui, &mut dark, theme).changed() {
+                                    self.windows_theme_pending = Some(dark);
                                     let _ = tx.send(Command::WindowsTheme(dark));
                                 }
                             } else {

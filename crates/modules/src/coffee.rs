@@ -8,7 +8,7 @@
 
 use egui::{Align2, Rect, Sense, Ui, UiBuilder, pos2};
 use nook_platform::power;
-use nook_ui::module::{Badge, Module, TileCtx, TileSize};
+use nook_ui::module::{Badge, Module, Orient, TileCtx, TileShape, TileSize};
 use nook_ui::theme::{SIZE_ICON, SIZE_LABEL, Theme};
 use nook_ui::{icons, paint, widgets};
 use std::sync::mpsc::{self, Sender};
@@ -165,6 +165,71 @@ impl Module for Coffee {
         let active = self.is_active();
         let cy = rect.center().y;
         let painter = ui.painter().clone();
+
+        // Tall and square tiles use a vertical composition. The wide layout
+        // reserves a fixed column for the switch, which otherwise collides
+        // with the label when the user changes the tile to Tall or Circle.
+        if ctx.orient != Orient::Horizontal || ctx.shape == TileShape::Circle {
+            let center = rect.center();
+            let icon_y = rect.min.y + (rect.height() * 0.20).clamp(12.0, 22.0);
+            let text_top = rect.min.y + rect.height() * 0.34;
+            let text = Rect::from_min_max(
+                pos2(rect.min.x + 4.0, text_top),
+                pos2(rect.max.x - 4.0, (rect.max.y - 34.0).max(text_top)),
+            );
+            let resp = ui.interact(text, ui.id().with("coffee-duration"), Sense::click());
+            if resp.clicked() && !active {
+                self.choice = (self.choice + 1) % DURATIONS.len();
+            }
+            let status = match (self.on, self.left()) {
+                (Some(_), Some(left)) => remaining_label(left),
+                (Some(_), None) => "Awake".to_owned(),
+                (None, _) => duration_label(DURATIONS[self.choice]),
+            };
+            paint::icon(
+                &painter,
+                pos2(center.x, icon_y),
+                icons::COFFEE,
+                SIZE_ICON,
+                if active {
+                    theme.accent_fg()
+                } else {
+                    theme.text_dim
+                },
+                active,
+            );
+            painter.text(
+                pos2(text.center().x, text.center().y - 7.0),
+                Align2::CENTER_CENTER,
+                "Coffee",
+                Theme::font_semibold(SIZE_LABEL + 1.0),
+                theme.text,
+            );
+            painter.text(
+                pos2(text.center().x, text.center().y + 8.0),
+                Align2::CENTER_CENTER,
+                status,
+                Theme::font(SIZE_LABEL - 1.0),
+                if resp.hovered() && !active {
+                    theme.text
+                } else {
+                    theme.text_dim
+                },
+            );
+            if !active {
+                resp.on_hover_text("Click to change how long");
+            }
+            let sw = Rect::from_center_size(
+                pos2(center.x, rect.max.y - widgets::TOGGLE_SIZE.y * 0.5 - 4.0),
+                widgets::TOGGLE_SIZE,
+            );
+            let mut sui = ui.new_child(UiBuilder::new().max_rect(sw));
+            let mut on = active;
+            if widgets::toggle(&mut sui, &mut on, theme).changed() {
+                self.set(on);
+            }
+            return;
+        }
 
         let icon_color = if active {
             theme.accent_fg()
