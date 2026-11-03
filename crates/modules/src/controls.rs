@@ -457,6 +457,27 @@ impl Module for Controls {
             ui.set_height(body.height());
             ui.spacing_mut().item_spacing.y = 14.0;
             ui.vertical(|ui| {
+                if let Some(battery) = self.state.battery {
+                    let status = if battery.charging {
+                        format!("{}% · Charging", battery.percent)
+                    } else {
+                        format!("{}% battery", battery.percent)
+                    };
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("Battery")
+                                .font(Theme::font(SIZE_LABEL))
+                                .color(theme.text_dim),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(status)
+                                    .font(Theme::font(SIZE_LABEL))
+                                    .color(theme.text),
+                            );
+                        });
+                    });
+                }
                 ui.horizontal(|ui| {
                     Self::row_label(ui, "System volume", theme);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

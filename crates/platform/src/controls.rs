@@ -48,6 +48,7 @@ pub struct Snapshot {
     pub muted: Option<bool>,
     pub microphone_muted: Option<bool>,
     pub windows_dark_mode: Option<bool>,
+    pub battery: Option<crate::system::Battery>,
     pub brightness: Option<f32>,
     pub outputs: Vec<AudioOutput>,
     pub audio_apps: Vec<AudioApp>,
@@ -477,6 +478,7 @@ pub fn snapshot() -> Snapshot {
             "AppsUseLightTheme",
         )
         .map(|light| light == 0),
+        battery: crate::system::battery(),
         brightness: read_brightness(),
         outputs: output_devices(),
         audio_apps: audio_apps(),

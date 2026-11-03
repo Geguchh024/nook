@@ -373,3 +373,8 @@
 
 - Added a Lock now action that calls the checked Windows `LockWorkStation` API from the existing Quick Controls worker thread. Failures flow through the normal worker error log.
 - Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 41 — Show battery status in Quick Controls
+
+- The on-demand Quick Controls snapshot now includes battery percentage and charging state. A compact status row appears only when Windows reports a battery; desktops without one show no placeholder or fabricated value.
+- Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
