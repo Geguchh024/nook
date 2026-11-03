@@ -386,24 +386,14 @@ pub fn page(
                     MonitorMode::Cursor => 1,
                     MonitorMode::Display | MonitorMode::SelectedDisplays => 2,
                 };
+                let previous_mon_idx = mon_idx;
                 let displays = nook_platform::monitor::all();
-                let names: Vec<String> = displays
-                    .iter()
-                    .enumerate()
-                    .map(|(index, display)| {
-                        format!(
-                            "Display {} · {}×{} · {}, {}",
-                            index + 1,
-                            display.bounds.width(),
-                            display.bounds.height(),
-                            display.bounds.left,
-                            display.bounds.top,
-                        )
-                    })
-                    .collect();
                 let mut selection = cfg.monitor_displays.clone();
                 let mut selection_changed = false;
-                if row(&mut rui, "Monitor", theme, |ui| {
+                let mut monitor_popup_id = None;
+                row(&mut rui, "Monitor", theme, |ui| {
+                    monitor_popup_id =
+                        Some(ui.make_persistent_id("nook-monitor-mode").with("popup"));
                     egui::ComboBox::from_id_salt("nook-monitor-mode")
                         .width(ui.available_width())
                         .selected_text(if mon_idx == 2 {
@@ -416,18 +406,25 @@ pub fn page(
                             ui.selectable_value(&mut mon_idx, 0, "Primary display");
                             ui.selectable_value(&mut mon_idx, 1, "Follow cursor");
                             ui.selectable_value(&mut mon_idx, 2, "Choose displays…");
-
                             if mon_idx == 2 {
                                 ui.separator();
                                 ui.label("Connected displays · follow cursor on selected");
-                                if names.is_empty() {
+                                if displays.is_empty() {
                                     ui.label("No connected displays found");
                                 } else {
                                     egui::ScrollArea::vertical()
                                         .id_salt("nook-connected-displays")
                                         .max_height(220.0)
                                         .show(ui, |ui| {
-                                            for (index, name) in names.iter().enumerate() {
+                                            for (index, display) in displays.iter().enumerate() {
+                                                let name = format!(
+                                                    "Display {} · {}×{} · {}, {}",
+                                                    index + 1,
+                                                    display.bounds.width(),
+                                                    display.bounds.height(),
+                                                    display.bounds.left,
+                                                    display.bounds.top,
+                                                );
                                                 let mut checked =
                                                     selection.contains(&(index as u8));
                                                 if ui.checkbox(&mut checked, name).changed() {
@@ -444,7 +441,12 @@ pub fn page(
                             }
                         })
                         .response
-                }) {
+                });
+                // ComboBox::show_ui returns the trigger button's Response;
+                // selecting a menu item changes `mon_idx` without changing
+                // that response. Compare the value directly so the choice is
+                // saved and the watcher receives it immediately.
+                if mon_idx != previous_mon_idx {
                     cfg.monitor = [
                         MonitorMode::Primary,
                         MonitorMode::Cursor,
@@ -454,6 +456,13 @@ pub fn page(
                         && cfg.monitor_displays.is_empty()
                     {
                         cfg.monitor_displays.push(cfg.monitor_display);
+                    }
+                    if cfg.monitor == MonitorMode::SelectedDisplays
+                        && let Some(popup_id) = monitor_popup_id
+                    {
+                        // Selection closes the mode menu; reopen it with the
+                        // connected-display checklist visible.
+                        egui::Popup::open_id(&ctx, popup_id);
                     }
                     out.changed = true;
                 }

@@ -1,5 +1,10 @@
 # Progress
 
+## Step 56 — Apply Monitor choices and open the display checklist
+
+- Monitor mode now saves the selected menu value directly instead of relying on the combo box trigger response, so Primary, Follow cursor, and Choose displays all apply.
+- Choosing displays reopens the selector with connected-display checkboxes and their resolution/desktop coordinates; the checklist remains scrollable.
+
 ## Step 55 — Keep brightness changes on the selected display
 
 - DDC/CI brightness continues to target the monitor under Nook. The WMI laptop-panel fallback now runs only when Windows reports one connected display and one active WMI brightness endpoint, preventing an external display selection from changing the laptop panel by mistake.
