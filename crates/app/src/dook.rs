@@ -25,7 +25,7 @@ const ITEM_GAP: f32 = 6.0;
 const DEFAULT_TASKBAR_COLOR: &str = "#17171A";
 const PIN_REFRESH: Duration = Duration::from_secs(8);
 
-type IconResult = (String, Option<(u32, u32, Vec<u8>)>);
+type IconResult = (String, u32, Option<(u32, u32, Vec<u8>)>);
 
 struct TrayLook<'a> {
     theme: &'a Theme,
@@ -67,6 +67,7 @@ pub struct Runtime {
     next_pin_refresh: Instant,
     icons: HashMap<String, TextureHandle>,
     requested_icons: HashSet<String>,
+    icon_pixels: u32,
     icon_tx: Sender<IconResult>,
     icon_rx: Receiver<IconResult>,
     auto_hidden: bool,
@@ -90,6 +91,7 @@ impl Default for Runtime {
             next_pin_refresh: Instant::now(),
             icons: HashMap::new(),
             requested_icons: HashSet::new(),
+            icon_pixels: 0,
             icon_tx,
             icon_rx,
             auto_hidden: false,
@@ -174,7 +176,7 @@ impl Runtime {
         );
     }
 
-    fn refresh_pins(&mut self, ctx: &Context) {
+    fn refresh_pins(&mut self) {
         if Instant::now() < self.next_pin_refresh {
             return;
         }
@@ -197,11 +199,18 @@ impl Runtime {
             }
             Err(error) => tracing::debug!("reading Windows taskbar pins: {error}"),
         }
-        self.load_pin_icons(ctx);
     }
 
-    fn load_pin_icons(&mut self, ctx: &Context) {
-        while let Ok((path, image)) = self.icon_rx.try_recv() {
+    fn load_pin_icons(&mut self, ctx: &Context, pixels: u32) {
+        if pixels != self.icon_pixels {
+            self.icon_pixels = pixels;
+            self.icons.clear();
+            self.requested_icons.clear();
+        }
+        while let Ok((path, request_pixels, image)) = self.icon_rx.try_recv() {
+            if request_pixels != self.icon_pixels {
+                continue;
+            }
             if let Some((width, height, rgba)) = image {
                 let image = egui::ColorImage::from_rgba_premultiplied(
                     [width as usize, height as usize],
@@ -209,7 +218,11 @@ impl Runtime {
                 );
                 self.icons.insert(
                     path.clone(),
-                    ctx.load_texture(format!("dook-pin-{path}"), image, TextureOptions::LINEAR),
+                    ctx.load_texture(
+                        format!("dook-pin-{path}-{request_pixels}"),
+                        image,
+                        TextureOptions::NEAREST,
+                    ),
                 );
             }
         }
@@ -220,19 +233,23 @@ impl Runtime {
             self.requested_icons.insert(pin.path.clone());
             let tx = self.icon_tx.clone();
             let worker_path = pin.path.clone();
+            let worker_pixels = self.icon_pixels;
             let repaint = ctx.clone();
             let spawned = std::thread::Builder::new()
                 .name("nook-dook-icon".into())
                 .spawn(move || {
                     nook_platform::files::init_thumbnail_thread();
-                    let image = match nook_platform::files::icon(&PathBuf::from(&worker_path), 64) {
+                    let image = match nook_platform::files::icon(
+                        &PathBuf::from(&worker_path),
+                        worker_pixels as i32,
+                    ) {
                         Ok(image) => Some(image),
                         Err(error) => {
                             tracing::debug!("Dook pinned app icon {worker_path}: {error}");
                             None
                         }
                     };
-                    if tx.send((worker_path, image)).is_ok() {
+                    if tx.send((worker_path, worker_pixels, image)).is_ok() {
                         repaint.request_repaint();
                     }
                 });
@@ -347,7 +364,7 @@ pub fn show(
     }
     let monitor = monitor?;
     runtime.viewport_open = true;
-    runtime.refresh_pins(ctx);
+    runtime.refresh_pins();
 
     let scale = monitor.dpi as f32 / 96.0;
     let area = if cfg.style.is_notch() || cfg.hide_windows_taskbar {
@@ -413,7 +430,8 @@ pub fn show(
         .with_taskbar(false)
         .with_active(false)
         .with_window_level(WindowLevel::AlwaysOnTop);
-    runtime.load_pin_icons(ctx);
+    let icon_pixels = ((BUTTON_SIZE - 10.0) * scale).ceil().clamp(1.0, 256.0) as u32;
+    runtime.load_pin_icons(ctx, icon_pixels);
     let icons = &runtime.icons;
     let pins = &runtime.pins;
     let native_window = &mut runtime.native_window;

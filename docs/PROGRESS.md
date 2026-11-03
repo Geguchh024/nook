@@ -1,5 +1,11 @@
 # Progress
 
+## Step 66 — Request taskbar icons at display resolution
+
+- Pinned shortcut icons now request the actual physical display size derived from monitor DPI and the button geometry, instead of always loading 64 px images. Textures use nearest sampling at the matching logical size to avoid unnecessary blur.
+- The icon cache is invalidated when DPI changes, and late worker results from an old DPI are discarded so a monitor-scale change cannot repopulate it with stale-sized images.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed (190 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings`, targeted rustfmt check, and `git diff --check` passed. Nook was not launched, per the prior request.
+
 ## Step 65 — Add the four taskbar silhouettes
 
 - Replaced the two-way Floating/Bar choice with Gooey Notch, Flat Notch, Pill, and Segmented Pills. Legacy `floating`, `bar`, `pill`, and `notch` config values migrate to Pill or Flat Notch without breaking old config files.
