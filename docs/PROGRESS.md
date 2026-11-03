@@ -378,3 +378,8 @@
 
 - The on-demand Quick Controls snapshot now includes battery percentage and charging state. A compact status row appears only when Windows reports a battery; desktops without one show no placeholder or fabricated value.
 - Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 42 — Add Windows Mobile hotspot control
+
+- Quick Controls now checks the active Internet connection profile and exposes Mobile hotspot only when Windows reports tethering capability. Start/stop runs through WinRT on the existing worker, and operation failures are returned to its normal error path.
+- Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

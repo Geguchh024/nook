@@ -21,6 +21,7 @@ enum Command {
     WindowsTheme(bool),
     Notifications(bool),
     LockWorkstation,
+    MobileHotspot(bool),
     Stop,
 }
 
@@ -100,6 +101,9 @@ impl Worker {
                                     controls::set_notifications_muted(muted)
                                 }
                                 Command::LockWorkstation => controls::lock_workstation(),
+                                Command::MobileHotspot(enabled) => {
+                                    controls::set_mobile_hotspot(enabled)
+                                }
                                 Command::Stop => continue,
                                 Command::Volume(_) => continue,
                                 Command::Brightness(_) => continue,
@@ -253,7 +257,10 @@ impl Module for Controls {
                         }
                     }
                     Ok(None) => {}
-                    Err(error) => tracing::warn!("quick controls: {error}"),
+                    Err(error) => {
+                        tracing::warn!("quick controls: {error}");
+                        self.send(Command::Refresh);
+                    }
                 }
             }
         }
@@ -606,6 +613,16 @@ impl Module for Controls {
                         let _ = tx.send(Command::LockWorkstation);
                     }
                 });
+
+                if let Some(mut enabled) = self.state.mobile_hotspot {
+                    ui.horizontal(|ui| {
+                        Self::row_label(ui, "Mobile hotspot", theme);
+                        if widgets::toggle(ui, &mut enabled, theme).changed() {
+                            let _ = tx.send(Command::MobileHotspot(enabled));
+                            self.state.mobile_hotspot = Some(enabled);
+                        }
+                    });
+                }
             });
         });
         false

@@ -6,6 +6,11 @@ use crate::{PlatformError, Result, Win32Context};
 use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use windows::Devices::Radios::{Radio, RadioAccessStatus, RadioKind as WinRadioKind, RadioState};
+use windows::Networking::Connectivity::NetworkInformation;
+use windows::Networking::NetworkOperators::{
+    NetworkOperatorTetheringManager, TetheringCapability, TetheringOperationStatus,
+    TetheringOperationalState,
+};
 use windows::Win32::Devices::Display::{
     DestroyPhysicalMonitors, GetMonitorBrightness, GetNumberOfPhysicalMonitorsFromHMONITOR,
     GetPhysicalMonitorsFromHMONITOR, PHYSICAL_MONITOR, SetMonitorBrightness,
@@ -49,6 +54,7 @@ pub struct Snapshot {
     pub microphone_muted: Option<bool>,
     pub windows_dark_mode: Option<bool>,
     pub battery: Option<crate::system::Battery>,
+    pub mobile_hotspot: Option<bool>,
     pub brightness: Option<f32>,
     pub outputs: Vec<AudioOutput>,
     pub audio_apps: Vec<AudioApp>,
@@ -261,6 +267,59 @@ fn radio_state(kind: RadioKind) -> Option<bool> {
 
 pub fn radio_enabled(kind: RadioKind) -> Option<bool> {
     radio_state(kind)
+}
+
+fn tethering_manager() -> Result<NetworkOperatorTetheringManager> {
+    let profile = NetworkInformation::GetInternetConnectionProfile()
+        .api("NetworkInformation::GetInternetConnectionProfile")?;
+    let capability =
+        NetworkOperatorTetheringManager::GetTetheringCapabilityFromConnectionProfile(&profile)
+            .api("GetTetheringCapabilityFromConnectionProfile")?;
+    if capability != TetheringCapability::Enabled {
+        return Err(PlatformError::Other(format!(
+            "mobile hotspot is unavailable ({capability:?})"
+        )));
+    }
+    NetworkOperatorTetheringManager::CreateFromConnectionProfile(&profile)
+        .api("CreateFromConnectionProfile(mobile hotspot)")
+}
+
+/// Returns `None` when Windows has no supported tethering profile.
+pub fn mobile_hotspot_state() -> Option<bool> {
+    let state = tethering_manager().ok()?.TetheringOperationalState().ok()?;
+    match state {
+        TetheringOperationalState::On => Some(true),
+        TetheringOperationalState::Off => Some(false),
+        _ => None,
+    }
+}
+
+/// Starts or stops Windows Mobile hotspot. Call only from the WinRT worker.
+pub fn set_mobile_hotspot(enabled: bool) -> Result<()> {
+    let manager = tethering_manager()?;
+    let result = if enabled {
+        manager
+            .StartTetheringAsync()
+            .api("StartTetheringAsync")?
+            .join()
+            .api("StartTetheringAsync.join")?
+    } else {
+        manager
+            .StopTetheringAsync()
+            .api("StopTetheringAsync")?
+            .join()
+            .api("StopTetheringAsync.join")?
+    };
+    let status = result.Status().api("TetheringOperationResult::Status")?;
+    if status == TetheringOperationStatus::Success
+        || (enabled && status == TetheringOperationStatus::AlreadyOn)
+    {
+        Ok(())
+    } else {
+        Err(PlatformError::Other(format!(
+            "mobile hotspot operation failed ({status:?})"
+        )))
+    }
 }
 
 fn endpoint_for(
@@ -479,6 +538,7 @@ pub fn snapshot() -> Snapshot {
         )
         .map(|light| light == 0),
         battery: crate::system::battery(),
+        mobile_hotspot: mobile_hotspot_state(),
         brightness: read_brightness(),
         outputs: output_devices(),
         audio_apps: audio_apps(),

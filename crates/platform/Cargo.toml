@@ -27,6 +27,8 @@ features = [
   "Graphics",
   "Graphics_Imaging",
   "Media_Control",
+  "Networking_Connectivity",
+  "Networking_NetworkOperators",
   "Media_Ocr",
   "Devices_Radios",
   "Devices_Bluetooth",
