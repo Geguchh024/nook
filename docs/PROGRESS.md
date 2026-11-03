@@ -388,3 +388,8 @@
 
 - Circle-shaped media tiles now clip cover art to a true circle, draw a playback progress ring, and provide a centered play/pause action; tapping elsewhere opens the full media page. The idle state uses the same restrained glass treatment.
 - Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 44 — Keep Quick Controls usable in short panels
+
+- The main controls page now scrolls inside its available panel body height, so optional rows such as battery, microphone, theme, lock, and hotspot remain reachable on shorter displays instead of extending past the shell.
+- Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
