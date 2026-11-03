@@ -583,3 +583,12 @@ pub fn set_notifications_muted(muted: bool) -> Result<()> {
         u32::from(!muted),
     )
 }
+
+/// Locks the interactive Windows session.
+pub fn lock_workstation() -> Result<()> {
+    use windows::Win32::System::Shutdown::LockWorkStation;
+
+    // SAFETY: this asks Windows to lock the current interactive session. It
+    // does not access caller-owned memory or retain any handles.
+    unsafe { LockWorkStation() }.api("LockWorkStation")
+}

@@ -368,3 +368,8 @@
 - Added a monitor picker with a checkbox for each connected display. One selected display pins the notch there; with multiple selected, the single notch follows the cursor only among the selected screens. The picker states this behavior explicitly.
 - Existing `primary`, `cursor`, and single `display` config values remain supported. The new `selected_displays` mode persists a sorted list of display indices and safely falls back if a selected screen disconnects.
 - Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 40 — Add a Lock PC Quick Control
+
+- Added a Lock now action that calls the checked Windows `LockWorkStation` API from the existing Quick Controls worker thread. Failures flow through the normal worker error log.
+- Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

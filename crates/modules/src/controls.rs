@@ -20,6 +20,7 @@ enum Command {
     MicrophoneMute(bool),
     WindowsTheme(bool),
     Notifications(bool),
+    LockWorkstation,
     Stop,
 }
 
@@ -98,6 +99,7 @@ impl Worker {
                                 Command::Notifications(muted) => {
                                     controls::set_notifications_muted(muted)
                                 }
+                                Command::LockWorkstation => controls::lock_workstation(),
                                 Command::Stop => continue,
                                 Command::Volume(_) => continue,
                                 Command::Brightness(_) => continue,
@@ -574,6 +576,13 @@ impl Module for Controls {
                                 .font(Theme::font(SIZE_LABEL))
                                 .color(theme.text_faint),
                         );
+                    }
+                });
+
+                ui.horizontal(|ui| {
+                    Self::row_label(ui, "Lock this PC", theme);
+                    if ui.button("Lock now").clicked() {
+                        let _ = tx.send(Command::LockWorkstation);
                     }
                 });
             });
