@@ -75,21 +75,43 @@ pub enum DookPosition {
     Right,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DookStyle {
+    #[default]
+    Pill,
+    Notch,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DookTarget {
+    #[default]
+    Nook,
+    Windows,
+}
+
 /// A compact, user-configurable dock that can replace the Windows taskbar.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DookConfig {
     pub enabled: bool,
     pub hide_windows_taskbar: bool,
-    pub position: DookPosition,
+    pub auto_hide: bool,
+    pub style: DookStyle,
+    pub apps_position: DookPosition,
     pub oled: bool,
     pub monochrome_icons: bool,
     pub background_hex: String,
     pub icon_hex: String,
     pub radius: u8,
     pub button_radius: u8,
-    pub show_logo: bool,
-    pub apps: Vec<DookApp>,
+    pub start_target: DookTarget,
+    pub search_target: DookTarget,
+    pub quick_settings_target: DookTarget,
+    pub show_start: bool,
+    pub show_search: bool,
+    pub show_quick_settings: bool,
     pub show_clock: bool,
     pub show_date: bool,
     pub show_wifi: bool,
@@ -98,26 +120,26 @@ pub struct DookConfig {
     pub show_emoji: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DookApp {
-    pub path: String,
-    pub label: String,
-}
-
 impl Default for DookConfig {
     fn default() -> Self {
         Self {
             enabled: false,
             hide_windows_taskbar: false,
-            position: DookPosition::Center,
+            auto_hide: false,
+            style: DookStyle::Pill,
+            apps_position: DookPosition::Center,
             oled: false,
             monochrome_icons: true,
             background_hex: "#17171A".into(),
             icon_hex: "#D7D7DE".into(),
             radius: 28,
             button_radius: 12,
-            show_logo: true,
-            apps: Vec::new(),
+            start_target: DookTarget::Nook,
+            search_target: DookTarget::Windows,
+            quick_settings_target: DookTarget::Windows,
+            show_start: true,
+            show_search: true,
+            show_quick_settings: true,
             show_clock: true,
             show_date: true,
             show_wifi: true,
@@ -505,7 +527,8 @@ mod tests {
         assert!(cfg.on_top);
         assert!(!cfg.dook.enabled);
         assert!(cfg.dook.show_clock);
-        assert_eq!(cfg.dook.position, DookPosition::Center);
+        assert_eq!(cfg.dook.apps_position, DookPosition::Center);
+        assert_eq!(cfg.dook.style, DookStyle::Pill);
     }
 
     #[test]

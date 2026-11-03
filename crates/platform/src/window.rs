@@ -350,6 +350,17 @@ pub fn activate(hwnd: Hwnd) {
     let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd.get()) };
 }
 
+/// Current cursor coordinates in physical desktop pixels.
+pub fn cursor_position() -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut point = POINT::default();
+    // SAFETY: GetCursorPos writes one initialized POINT.
+    unsafe { GetCursorPos(&mut point) }
+        .is_ok()
+        .then_some((point.x, point.y))
+}
+
 /// Whole-window opacity of a layered window (0 hides it, 255 shows the
 /// per-pixel alpha content as is).
 pub fn set_opacity(hwnd: Hwnd, alpha: u8) -> Result<()> {

@@ -1,7 +1,10 @@
 //! Visibility controls for the native Windows taskbar.
 
+use crate::monitor::Monitor;
 use crate::{PlatformError, Result};
+use std::path::PathBuf;
 use windows::Win32::Foundation::{HWND, LPARAM};
+use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetClassNameW, IsWindow, SW_HIDE, SW_SHOWNA, ShowWindow,
 };
@@ -12,9 +15,50 @@ use windows::core::BOOL;
 #[derive(Default)]
 pub struct VisibilitySnapshot(Vec<(HWND, bool)>);
 
+/// Reads the current user's pinned taskbar shortcuts from Explorer's taskbar
+/// pin directory. This mirrors Windows pins without maintaining a second list.
+pub fn pinned_shortcuts() -> Result<Vec<PathBuf>> {
+    let roaming = std::env::var_os("APPDATA")
+        .ok_or_else(|| PlatformError::Other("APPDATA is unavailable".into()))?;
+    let directory = PathBuf::from(roaming)
+        .join(r"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar");
+    let entries = match std::fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(PlatformError::Other(format!(
+                "reading pinned taskbar shortcuts: {error}"
+            )));
+        }
+    };
+    let mut shortcuts = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            PlatformError::Other(format!("reading a pinned taskbar shortcut: {error}"))
+        })?;
+        let path = entry.path();
+        let supported = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                matches!(extension.to_ascii_lowercase().as_str(), "lnk" | "url")
+            });
+        if supported && path.is_file() {
+            shortcuts.push(path);
+        }
+    }
+    shortcuts.sort_by_cached_key(|path| {
+        path.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase()
+    });
+    Ok(shortcuts)
+}
+
 /// Hides currently visible primary and per-monitor taskbars, retaining their
 /// original visibility for restoration when Dook closes.
-pub fn hide() -> Result<VisibilitySnapshot> {
+pub fn hide(monitor: Monitor) -> Result<VisibilitySnapshot> {
     struct Taskbars(Vec<(HWND, bool)>);
 
     extern "system" fn collect(hwnd: HWND, state: LPARAM) -> BOOL {
@@ -55,14 +99,26 @@ pub fn hide() -> Result<VisibilitySnapshot> {
         ));
     }
 
+    let mut hidden = Vec::new();
     for (hwnd, was_visible) in taskbars.0.iter().copied() {
         // Explorer can recreate a secondary taskbar during enumeration.
-        // SAFETY: verify the handle is still a window before changing visibility.
-        if unsafe { IsWindow(Some(hwnd)) }.as_bool() && was_visible {
+        // Only replace the Windows taskbar on the monitor Dook occupies.
+        // SAFETY: verify the handle before querying its monitor or visibility.
+        let on_target = unsafe {
+            IsWindow(Some(hwnd)).as_bool()
+                && MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST).0 as isize == monitor.id
+        };
+        if on_target && was_visible {
             let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
+            hidden.push((hwnd, was_visible));
         }
     }
-    Ok(VisibilitySnapshot(taskbars.0))
+    if hidden.is_empty() {
+        return Err(PlatformError::Other(
+            "no visible Windows taskbar found on the selected monitor".into(),
+        ));
+    }
+    Ok(VisibilitySnapshot(hidden))
 }
 
 /// Restores exactly the taskbars that were visible before [`hide`].

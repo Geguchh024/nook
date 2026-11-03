@@ -10,7 +10,7 @@ use crate::tray::{Tray, TrayCommand};
 use crate::update::{self, Updater};
 use crate::watcher::{self, SystemState, WatcherControl};
 use anyhow::{Context as _, Result};
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{Receiver, unbounded};
 use egui::{
     Color32, ColorImage, FontFamily, FontId, Rect, TextureHandle, TextureOptions, Ui, pos2, vec2,
 };
@@ -107,8 +107,6 @@ pub struct NookApp {
     pinned_before_edit: bool,
     tray: Option<Tray>,
     dook: DookRuntime,
-    dook_apps_tx: Sender<Vec<String>>,
-    dook_apps_rx: Receiver<Vec<String>>,
     tray_rx: Receiver<TrayCommand>,
     hotkeys: Option<Hotkeys>,
     sys: SystemState,
@@ -196,7 +194,6 @@ impl NookApp {
         };
 
         let watcher = Arc::new(WatcherControl::default());
-        let (dook_apps_tx, dook_apps_rx) = unbounded();
         watcher.set_target(cfg.monitor, cfg.monitor_display, &cfg.monitor_displays);
         let sys = watcher::sample(
             hwnd,
@@ -291,8 +288,6 @@ impl NookApp {
             pinned_before_edit: false,
             tray,
             dook: DookRuntime::default(),
-            dook_apps_tx,
-            dook_apps_rx,
             tray_rx,
             hotkeys,
             sys,
@@ -478,66 +473,6 @@ impl NookApp {
             t.set_startup(self.cfg.launch_at_startup);
         }
         self.save_config();
-    }
-
-    fn start_dook_app_picker(&self, ctx: &egui::Context) {
-        let tx = self.dook_apps_tx.clone();
-        let repaint = ctx.clone();
-        let spawned = std::thread::Builder::new()
-            .name("nook-dook-app-picker".into())
-            .spawn(
-                move || match nook_platform::files::pick_files("Choose apps for Dook") {
-                    Ok(paths) => {
-                        let paths = paths
-                            .into_iter()
-                            .map(|path| path.to_string_lossy().into_owned())
-                            .collect();
-                        if tx.send(paths).is_ok() {
-                            repaint.request_repaint();
-                        }
-                    }
-                    Err(error) => tracing::warn!("Dook app picker: {error}"),
-                },
-            );
-        if let Err(error) = spawned {
-            tracing::warn!("starting Dook app picker: {error}");
-        }
-    }
-
-    fn add_dook_app_paths(&mut self, paths: Vec<String>) {
-        let mut changed = false;
-        for path in paths {
-            if self.cfg.dook.apps.len() >= 6 {
-                break;
-            }
-            let path_ref = std::path::Path::new(&path);
-            let allowed = path_ref
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| {
-                    matches!(ext.to_ascii_lowercase().as_str(), "exe" | "lnk" | "url")
-                });
-            if !allowed
-                || !path_ref.is_file()
-                || self.cfg.dook.apps.iter().any(|app| app.path == path)
-            {
-                continue;
-            }
-            let label = path_ref
-                .file_stem()
-                .and_then(|name| name.to_str())
-                .filter(|name| !name.is_empty())
-                .unwrap_or("App")
-                .to_owned();
-            self.cfg
-                .dook
-                .apps
-                .push(crate::config::DookApp { path, label });
-            changed = true;
-        }
-        if changed {
-            self.save_config();
-        }
     }
 
     /// Spans the window across the top of the target monitor's work area.
@@ -1382,9 +1317,6 @@ impl eframe::App for NookApp {
         while let Ok(cmd) = self.tray_rx.try_recv() {
             self.handle_tray(ctx, cmd);
         }
-        while let Ok(paths) = self.dook_apps_rx.try_recv() {
-            self.add_dook_app_paths(paths);
-        }
         if let Some(hk) = &self.hotkeys {
             let mut toggle = false;
             while let Ok(e) = hk.rx.try_recv() {
@@ -1665,15 +1597,6 @@ impl eframe::App for NookApp {
         if settings_out.startup_toggled {
             self.apply_startup();
         }
-        if settings_out.pick_dook_apps {
-            self.start_dook_app_picker(&ctx);
-        }
-        if let Some(index) = settings_out.remove_dook_app
-            && index < self.cfg.dook.apps.len()
-        {
-            self.cfg.dook.apps.remove(index);
-            settings_out.changed = true;
-        }
         if update_clicked || settings_out.install_update {
             self.updater.install();
         }
@@ -1754,8 +1677,8 @@ impl eframe::App for NookApp {
             out.visible.then_some(out.outline.as_slice()),
             overlay_rect,
         );
-        self.dook.sync(&self.cfg.dook);
-        dook::show(
+        self.dook.sync(&self.cfg.dook, self.sys.monitor);
+        let dook_action = dook::show(
             &mut self.dook,
             &ctx,
             &self.cfg.dook,
@@ -1763,6 +1686,14 @@ impl eframe::App for NookApp {
             self.sys.monitor,
             self.sys.battery,
         );
+        if let Some(action) = dook_action {
+            self.page = match action {
+                dook::Action::Start => Page::Bento,
+                dook::Action::Search => Page::Module("clipboard"),
+                dook::Action::QuickSettings => Page::Module("controls"),
+            };
+            self.shell.state.set_pinned(true, Self::now(&ctx));
+        }
 
         // Reveal the window once real frames have been presented.
         self.frames = self.frames.saturating_add(1);

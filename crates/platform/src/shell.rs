@@ -28,6 +28,28 @@ pub fn show_emoji_picker() {
     }
 }
 
+/// Invokes a Windows shell shortcut using the user's existing key bindings.
+pub fn windows_shortcut(key: u8) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, VK_LWIN, keybd_event};
+    // SAFETY: sends one balanced Windows-key + letter shortcut.
+    unsafe {
+        keybd_event(VK_LWIN.0 as u8, 0, Default::default(), 0);
+        keybd_event(key, 0, Default::default(), 0);
+        keybd_event(key, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+    }
+}
+
+/// Opens the Windows Start menu without pressing a second key.
+pub fn show_start_menu() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, VK_LWIN, keybd_event};
+    // SAFETY: emits a balanced tap of the Windows key.
+    unsafe {
+        keybd_event(VK_LWIN.0 as u8, 0, Default::default(), 0);
+        keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+    }
+}
+
 /// The user's Screenshots folder (Pictures\Screenshots unless moved).
 pub fn screenshots_dir() -> Option<std::path::PathBuf> {
     // SAFETY: the returned string is freed with CoTaskMemFree after copying.

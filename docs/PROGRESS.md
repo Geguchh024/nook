@@ -1,5 +1,12 @@
 # Progress
 
+## Step 61 — Rebuild Dook as a taskbar
+
+- Replaced the six-entry custom launcher with a live list of the current user's Explorer taskbar pins. Shortcuts are rescanned and their shell icons load asynchronously; the horizontal strip remains scrollable when all pins do not fit.
+- Added Pill and bottom-connected Notch styles, app alignment, separate dock and app-button radii, OLED/color and monochrome controls, auto-hide, and taskbar replacement scoped to the monitor where Dook is shown.
+- Added working Nook/Windows Start, Search, and Quick Settings targets plus independently visible clock/date, Wi-Fi, volume, battery, and emoji actions.
+- Verification: `cargo check --workspace --offline`, isolated-AppData `cargo test --workspace --offline --quiet`, and `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. Nook was not launched for live visual verification.
+
 ## Step 60 — Add the customizable Dook dock
 
 - Added a responsive Dook settings disclosure for its enable state, monitor-side alignment, OLED/background/icon colors, corner radius, monochrome glyphs, and independently visible system items.

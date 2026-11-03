@@ -31,7 +31,7 @@ const BODY: [f32; 6] = [
     9.0 * ROW + 16.0,
     6.0 * ROW + 12.0,
     5.0 * ROW + 36.0,
-    10.0 * ROW + 20.0,
+    12.0 * ROW + 20.0,
 ];
 /// Collapsible sections, in page order.
 const APPEARANCE: usize = 0;
@@ -163,8 +163,6 @@ pub struct PageOutput {
     pub check_update: bool,
     /// The Update button was clicked.
     pub install_update: bool,
-    pub pick_dook_apps: bool,
-    pub remove_dook_app: Option<usize>,
 }
 
 /// The settings page, laid out in the expanded panel.
@@ -538,7 +536,7 @@ pub fn page(
                 widgets::card(ui.painter(), card, theme);
                 let head = Rect::from_min_size(card.min, vec2(card.width(), DISCLOSURE));
                 let (glyph, title, summary) = match section {
-                    DOOK => (icons::LAYOUT, "Dook", dook_summary(cfg)),
+                    DOOK => (icons::LAYOUT, "Taskbar", dook_summary(cfg)),
                     CUSTOMIZE => (icons::PALETTE, "Customize", customize_summary(cfg)),
                     MOTION => (
                         icons::ARROW_CLOCKWISE,
@@ -675,19 +673,26 @@ fn dook_summary(cfg: &Config) -> String {
     if !cfg.dook.enabled {
         return "Off · Windows taskbar unchanged".to_owned();
     }
-    let position = match cfg.dook.position {
+    let position = match cfg.dook.apps_position {
         crate::config::DookPosition::Left => "Left",
         crate::config::DookPosition::Center => "Center",
         crate::config::DookPosition::Right => "Right",
     };
     format!(
-        "{} · {} · {}",
+        "{} · {} · {} · {}",
+        if cfg.dook.style == crate::config::DookStyle::Notch {
+            "Notch"
+        } else {
+            "Pill"
+        },
         position,
         if cfg.dook.oled { "OLED" } else { "Glass" },
-        if cfg.dook.hide_windows_taskbar {
-            "replaces taskbar"
+        if cfg.dook.auto_hide {
+            "auto-hide"
+        } else if cfg.dook.hide_windows_taskbar {
+            "replaces Windows taskbar"
         } else {
-            "taskbar visible"
+            "Windows taskbar visible"
         }
     )
 }
@@ -712,25 +717,35 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
     );
 
     let mut enabled = cfg.dook.enabled;
-    if row(&mut left, "Enable Dook", theme, |ui| {
+    if row(&mut left, "Nook taskbar", theme, |ui| {
         widgets::toggle(ui, &mut enabled, theme)
     }) {
         cfg.dook.enabled = enabled;
         out.changed = true;
     }
-    let mut position = match cfg.dook.position {
-        crate::config::DookPosition::Left => 0,
-        crate::config::DookPosition::Center => 1,
-        crate::config::DookPosition::Right => 2,
-    };
-    if row(&mut left, "Position", theme, |ui| {
-        widgets::segmented(ui, &["Left", "Center", "Right"], &mut position, theme)
+    let mut style = usize::from(cfg.dook.style == crate::config::DookStyle::Notch);
+    if row(&mut left, "Style", theme, |ui| {
+        widgets::segmented(ui, &["Pill", "Notch"], &mut style, theme)
     }) {
-        cfg.dook.position = [
-            crate::config::DookPosition::Left,
-            crate::config::DookPosition::Center,
-            crate::config::DookPosition::Right,
-        ][position];
+        cfg.dook.style = if style == 1 {
+            crate::config::DookStyle::Notch
+        } else {
+            crate::config::DookStyle::Pill
+        };
+        out.changed = true;
+    }
+    let mut position = match cfg.dook.apps_position {
+        crate::config::DookPosition::Center | crate::config::DookPosition::Right => 0,
+        crate::config::DookPosition::Left => 1,
+    };
+    if row(&mut left, "Apps position", theme, |ui| {
+        widgets::segmented(ui, &["Center", "Left"], &mut position, theme)
+    }) {
+        cfg.dook.apps_position = if position == 0 {
+            crate::config::DookPosition::Center
+        } else {
+            crate::config::DookPosition::Left
+        };
         out.changed = true;
     }
     let mut hide_taskbar = cfg.dook.hide_windows_taskbar;
@@ -744,6 +759,14 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         cfg.dook.hide_windows_taskbar = hide_taskbar;
         out.changed = true;
     }
+    let mut auto_hide = cfg.dook.auto_hide;
+    if row(&mut left, "Auto-hide", theme, |ui| {
+        widgets::toggle(ui, &mut auto_hide, theme)
+            .on_hover_text("Reveal Dook when the pointer reaches the screen bottom")
+    }) {
+        cfg.dook.auto_hide = auto_hide;
+        out.changed = true;
+    }
     let mut oled = cfg.dook.oled;
     if row(&mut left, "OLED black", theme, |ui| {
         widgets::toggle(ui, &mut oled, theme)
@@ -751,22 +774,22 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         cfg.dook.oled = oled;
         out.changed = true;
     }
-    let mut radius = cfg.dook.radius.min(36) as f32 / 36.0;
+    let mut radius = cfg.dook.radius.min(40) as f32 / 40.0;
     if row(&mut left, "Corner radius", theme, |ui| {
         let response = widgets::slider(ui, &mut radius, 110.0, 52, theme);
         value_label(ui, &format!("{}", cfg.dook.radius), theme);
         response
     }) {
-        cfg.dook.radius = (radius * 36.0).round() as u8;
+        cfg.dook.radius = (radius * 40.0).round() as u8;
         out.changed = true;
     }
-    let mut button_radius = cfg.dook.button_radius.min(18) as f32 / 18.0;
+    let mut button_radius = cfg.dook.button_radius.min(20) as f32 / 20.0;
     if row(&mut left, "Button radius", theme, |ui| {
         let response = widgets::slider(ui, &mut button_radius, 110.0, 54, theme);
         value_label(ui, &format!("{}", cfg.dook.button_radius), theme);
         response
     }) {
-        cfg.dook.button_radius = (button_radius * 18.0).round() as u8;
+        cfg.dook.button_radius = (button_radius * 20.0).round() as u8;
         out.changed = true;
     }
     let mut background =
@@ -792,84 +815,99 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         cfg.dook.icon_hex = to_hex(icon_color);
         out.changed = true;
     }
-
-    let mut logo = cfg.dook.show_logo;
-    if row(&mut right, "Nook logo", theme, |ui| {
-        widgets::toggle(ui, &mut logo, theme)
+    let mut monochrome = cfg.dook.monochrome_icons;
+    if row(&mut left, "Monochrome icons", theme, |ui| {
+        widgets::toggle(ui, &mut monochrome, theme)
     }) {
-        cfg.dook.show_logo = logo;
+        cfg.dook.monochrome_icons = monochrome;
         out.changed = true;
     }
-    if row(&mut right, "App shortcuts", theme, |ui| {
-        let rect = Rect::from_center_size(ui.max_rect().center(), vec2(68.0, 24.0));
-        let response = ui.add_enabled_ui(cfg.dook.apps.len() < 6, |ui| {
-            nook_modules::kit::button(
-                ui,
-                rect,
-                if cfg.dook.apps.len() < 6 {
-                    "Add"
-                } else {
-                    "Full"
-                },
-                Some(icons::PLUS),
-                false,
-                theme,
-            )
-        });
-        response.inner
+
+    row(&mut right, "Pinned apps", theme, |ui| {
+        ui.label("All Windows taskbar pins");
+        ui.allocate_response(egui::Vec2::ZERO, Sense::hover())
+    });
+    let mut start_target = usize::from(cfg.dook.start_target == crate::config::DookTarget::Windows);
+    let mut show_start = cfg.dook.show_start;
+    if row(&mut right, "Start button", theme, |ui| {
+        let segmented = widgets::segmented(ui, &["Nook", "Windows"], &mut start_target, theme);
+        ui.add_space(4.0);
+        segmented | widgets::toggle(ui, &mut show_start, theme)
     }) {
-        out.pick_dook_apps = true;
+        cfg.dook.start_target = if start_target == 0 {
+            crate::config::DookTarget::Nook
+        } else {
+            crate::config::DookTarget::Windows
+        };
+        cfg.dook.show_start = show_start;
+        out.changed = true;
     }
-    if !cfg.dook.apps.is_empty() {
-        row(&mut right, "Pinned", theme, |ui| {
-            let mut removed = None;
-            ui.horizontal(|ui| {
-                for (index, app) in cfg.dook.apps.iter().enumerate() {
-                    let short = app.label.chars().take(6).collect::<String>();
-                    if ui
-                        .small_button(format!("{short} ×"))
-                        .on_hover_text(format!("Remove {}", app.label))
-                        .clicked()
-                    {
-                        removed = Some(index);
-                    }
-                }
-            });
-            if let Some(index) = removed {
-                out.remove_dook_app = Some(index);
-            }
-            ui.allocate_response(egui::Vec2::ZERO, Sense::hover())
-        });
+    let mut search_target =
+        usize::from(cfg.dook.search_target == crate::config::DookTarget::Windows);
+    let mut show_search = cfg.dook.show_search;
+    if row(&mut right, "Search button", theme, |ui| {
+        let segmented = widgets::segmented(ui, &["Nook", "Windows"], &mut search_target, theme);
+        ui.add_space(4.0);
+        segmented | widgets::toggle(ui, &mut show_search, theme)
+    }) {
+        cfg.dook.search_target = if search_target == 0 {
+            crate::config::DookTarget::Nook
+        } else {
+            crate::config::DookTarget::Windows
+        };
+        cfg.dook.show_search = show_search;
+        out.changed = true;
     }
-    for label in [
-        "Clock",
-        "Date",
-        "Wi-Fi",
-        "Volume",
-        "Battery",
-        "Emoji picker",
-        "Monochrome icons",
-    ] {
+    let mut quick_target =
+        usize::from(cfg.dook.quick_settings_target == crate::config::DookTarget::Windows);
+    let mut show_quick = cfg.dook.show_quick_settings;
+    if row(&mut right, "Quick settings", theme, |ui| {
+        let segmented = widgets::segmented(ui, &["Nook", "Windows"], &mut quick_target, theme);
+        ui.add_space(4.0);
+        segmented | widgets::toggle(ui, &mut show_quick, theme)
+    }) {
+        cfg.dook.quick_settings_target = if quick_target == 0 {
+            crate::config::DookTarget::Nook
+        } else {
+            crate::config::DookTarget::Windows
+        };
+        cfg.dook.show_quick_settings = show_quick;
+        out.changed = true;
+    }
+    let mut show_clock = cfg.dook.show_clock;
+    let mut show_date = cfg.dook.show_date;
+    if row(&mut right, "Time & date", theme, |ui| {
+        let (time_response, date_response) = ui
+            .horizontal(|ui| {
+                ui.label("Time");
+                let time = widgets::toggle(ui, &mut show_clock, theme);
+                ui.add_space(6.0);
+                ui.label("Date");
+                let date = widgets::toggle(ui, &mut show_date, theme);
+                (time, date)
+            })
+            .inner;
+        time_response | date_response
+    }) {
+        cfg.dook.show_clock = show_clock;
+        cfg.dook.show_date = show_date;
+        out.changed = true;
+    }
+    for label in ["Wi-Fi", "Volume", "Battery", "Emoji picker"] {
         let mut value = match label {
-            "Clock" => cfg.dook.show_clock,
-            "Date" => cfg.dook.show_date,
             "Wi-Fi" => cfg.dook.show_wifi,
             "Volume" => cfg.dook.show_volume,
             "Battery" => cfg.dook.show_battery,
-            "Emoji picker" => cfg.dook.show_emoji,
-            _ => cfg.dook.monochrome_icons,
+            _ => cfg.dook.show_emoji,
         };
         if row(&mut right, label, theme, |ui| {
             widgets::toggle(ui, &mut value, theme)
         }) {
             match label {
-                "Clock" => cfg.dook.show_clock = value,
-                "Date" => cfg.dook.show_date = value,
                 "Wi-Fi" => cfg.dook.show_wifi = value,
                 "Volume" => cfg.dook.show_volume = value,
                 "Battery" => cfg.dook.show_battery = value,
-                "Emoji picker" => cfg.dook.show_emoji = value,
-                _ => cfg.dook.monochrome_icons = value,
+                _ => cfg.dook.show_emoji = value,
             }
             out.changed = true;
         }
