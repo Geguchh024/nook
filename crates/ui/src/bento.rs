@@ -889,8 +889,7 @@ pub fn show(
                 vec2(48.0, 48.0),
             );
             let preview_corners = corner_values.clamp_to(preview.width(), preview.height());
-            let preview_shape =
-                Squircle::new(preview, preview_corners.max()).with_corners(preview_corners);
+            let preview_shape = outline_shape(preview, preview_corners.max(), preview_corners);
             ui.painter().add(egui::Shape::convex_polygon(
                 preview_shape.outline(),
                 theme.control_fill,

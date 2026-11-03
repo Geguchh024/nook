@@ -384,32 +384,22 @@ pub fn page(
                 let mut mon_idx = match cfg.monitor {
                     MonitorMode::Primary => 0,
                     MonitorMode::Cursor => 1,
-                    MonitorMode::Display => 2,
-                    MonitorMode::SelectedDisplays => 3,
+                    MonitorMode::Display | MonitorMode::SelectedDisplays => 2,
                 };
                 if row(&mut rui, "Monitor", theme, |ui| {
                     egui::ComboBox::from_id_salt("nook-monitor-mode")
                         .width(ui.available_width())
-                        .selected_text(
-                            [
-                                "Primary",
-                                "Follow cursor",
-                                "One display…",
-                                "Selected displays…",
-                            ][mon_idx],
-                        )
+                        .selected_text(["Primary", "Follow cursor", "Choose displays…"][mon_idx])
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut mon_idx, 0, "Primary display");
                             ui.selectable_value(&mut mon_idx, 1, "Follow cursor");
-                            ui.selectable_value(&mut mon_idx, 2, "Choose one display…");
-                            ui.selectable_value(&mut mon_idx, 3, "Choose displays…");
+                            ui.selectable_value(&mut mon_idx, 2, "Choose displays…");
                         })
                         .response
                 }) {
                     cfg.monitor = [
                         MonitorMode::Primary,
                         MonitorMode::Cursor,
-                        MonitorMode::Display,
                         MonitorMode::SelectedDisplays,
                     ][mon_idx];
                     if cfg.monitor == MonitorMode::SelectedDisplays
@@ -425,8 +415,7 @@ pub fn page(
                 ) {
                     let displays = nook_platform::monitor::all();
                     if !displays.is_empty() {
-                        let mut display_idx =
-                            (cfg.monitor_display as usize).min(displays.len() - 1);
+                        let display_idx = (cfg.monitor_display as usize).min(displays.len() - 1);
                         let names: Vec<String> = displays
                             .iter()
                             .enumerate()
@@ -441,27 +430,15 @@ pub fn page(
                                 )
                             })
                             .collect();
+                        if cfg.monitor_displays.is_empty() {
+                            cfg.monitor_displays.push(display_idx as u8);
+                            out.changed = true;
+                        }
                         if cfg.monitor == MonitorMode::Display {
-                            row(&mut rui, "Show on", theme, |ui| {
-                                egui::ComboBox::from_id_salt("nook-target-display")
-                                    .width(ui.available_width())
-                                    .selected_text(&names[display_idx])
-                                    .show_ui(ui, |ui| {
-                                        for (index, name) in names.iter().enumerate() {
-                                            ui.selectable_value(&mut display_idx, index, name);
-                                        }
-                                    })
-                                    .response
-                            });
-                            if display_idx != cfg.monitor_display as usize {
-                                cfg.monitor_display = display_idx as u8;
-                                out.changed = true;
-                            }
-                        } else {
-                            if cfg.monitor_displays.is_empty() {
-                                cfg.monitor_displays.push(cfg.monitor_display);
-                                out.changed = true;
-                            }
+                            cfg.monitor = MonitorMode::SelectedDisplays;
+                            out.changed = true;
+                        }
+                        {
                             let mut selection = cfg.monitor_displays.clone();
                             let mut selection_changed = false;
                             row(&mut rui, "Displays", theme, |ui| {

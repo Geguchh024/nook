@@ -426,3 +426,9 @@
 - The layout editor now shows a gap slider when no tile shape is selected. Selecting a tile replaces that inspector with its shape controls, so the panels do not overlap.
 - Gap is saved in module configuration, affects packing, drag targets, radius limits and the size handle, and old configs default to the existing 8 px spacing.
 - Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 51 — Simplify monitor selection and match circle previews
+
+- The monitor selector now presents Primary, Follow cursor, and Choose displays. The last option opens the connected-display checkbox list and keeps legacy single-display configs working by migrating them to a one-item selection.
+- The advanced corner preview now uses the same shape generator as the tile, including true circular geometry, so its preview matches the tile hover and rim.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet`, targeted rustfmt check, and `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
