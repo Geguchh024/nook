@@ -1,5 +1,9 @@
 # Progress
 
+## Step 57 — Keep layout editor controls visible on round tiles
+
+- The visibility minus/plus and resize arc now stay within each tile's safe clip bounds, including when a tile is resized to a circle. Their hit areas follow the visible controls.
+
 ## Step 56 — Apply Monitor choices and open the display checklist
 
 - Monitor mode now saves the selected menu value directly instead of relying on the combo box trigger response, so Primary, Follow cursor, and Choose displays all apply.

@@ -1092,6 +1092,12 @@ fn edit_face(
     let on = anim::tween(&ctx, id.with("on"), shown, 0.15);
     let c = rect.center();
     let painter = ui.painter().clone();
+    let clipped_bounds = ui.clip_rect().intersect(rect);
+    let bounds = if clipped_bounds.width() >= 26.0 && clipped_bounds.height() >= 26.0 {
+        clipped_bounds
+    } else {
+        rect.shrink(13.0)
+    };
     paint::icon(
         &painter,
         c - vec2(0.0, 14.0),
@@ -1103,7 +1109,13 @@ fn edit_face(
 
     // The tick: filled accent when shown, an empty ring when hidden.
     let locked = !tile.module.can_hide();
-    let visibility_center = rect.min + vec2(14.0, 14.0);
+    // Keep the minus/plus badge inside the safe drawing area even when the
+    // tile is a circle and its outer corners are clipped.
+    let badge_inset = 13.0;
+    let visibility_center = pos2(
+        (rect.min.x + 14.0).clamp(bounds.min.x + badge_inset, bounds.max.x - badge_inset),
+        (rect.min.y + 14.0).clamp(bounds.min.y + badge_inset, bounds.max.y - badge_inset),
+    );
     let visibility = ui.interact(
         Rect::from_center_size(visibility_center, vec2(25.0, 25.0)),
         id.with("visibility"),
@@ -1166,10 +1178,8 @@ fn edit_face(
 
     // Drag the curved lower-right handle to resize continuously; the grid
     // snaps to its supported footprints (including the vertical medium tile).
-    let handle = Rect::from_min_max(
-        pos2(rect.max.x - 30.0, rect.max.y - 30.0),
-        pos2(rect.max.x + 2.0, rect.max.y + 2.0),
-    );
+    let arc_center = bounds.max - vec2(18.0, 18.0);
+    let handle = Rect::from_center_size(arc_center, vec2(30.0, 30.0)).intersect(bounds);
     let response = ui.interact(handle, id.with("resize-handle"), Sense::click_and_drag());
     *resizing |= response.dragged() || response.drag_started();
     if response.hovered() || response.dragged() {
@@ -1180,7 +1190,6 @@ fn edit_face(
     } else {
         theme.text
     };
-    let arc_center = rect.max - vec2(22.0, 22.0);
     let arc = (0..=12)
         .map(|step| {
             let angle = std::f32::consts::FRAC_PI_2 * step as f32 / 12.0;
