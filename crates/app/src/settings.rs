@@ -31,7 +31,7 @@ const BODY: [f32; 6] = [
     9.0 * ROW + 16.0,
     6.0 * ROW + 12.0,
     5.0 * ROW + 36.0,
-    14.0 * ROW + 20.0,
+    15.0 * ROW + 20.0,
 ];
 /// Collapsible sections, in page order.
 const APPEARANCE: usize = 0;
@@ -680,10 +680,11 @@ fn dook_summary(cfg: &Config) -> String {
     };
     format!(
         "{} · {} · {} · {} · {}",
-        if cfg.dook.style == crate::config::DookStyle::Bar {
-            "Bar"
-        } else {
-            "Floating"
+        match cfg.dook.style {
+            crate::config::DookStyle::NotchGooey => "Gooey notch",
+            crate::config::DookStyle::NotchFlat => "Flat notch",
+            crate::config::DookStyle::Pill => "Pill",
+            crate::config::DookStyle::Segmented => "Segmented pills",
         },
         if cfg.dook.edge == crate::config::DookEdge::Top {
             "Top"
@@ -692,7 +693,9 @@ fn dook_summary(cfg: &Config) -> String {
         },
         position,
         if cfg.dook.oled { "OLED" } else { "Glass" },
-        if cfg.dook.auto_hide {
+        if cfg.dook.reserve_work_area {
+            "reserves space"
+        } else if cfg.dook.auto_hide {
             "auto-hide"
         } else if cfg.dook.hide_windows_taskbar {
             "replaces Windows taskbar"
@@ -728,14 +731,20 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         cfg.dook.enabled = enabled;
         out.changed = true;
     }
-    let mut style = usize::from(cfg.dook.style == crate::config::DookStyle::Bar);
+    let mut style = match cfg.dook.style {
+        crate::config::DookStyle::NotchGooey => 0,
+        crate::config::DookStyle::NotchFlat => 1,
+        crate::config::DookStyle::Pill => 2,
+        crate::config::DookStyle::Segmented => 3,
+    };
     if row(&mut left, "Style", theme, |ui| {
-        widgets::segmented(ui, &["Floating", "Bar"], &mut style, theme)
+        widgets::segmented(ui, &["Gooey", "Flat", "Pill", "Split"], &mut style, theme)
     }) {
-        cfg.dook.style = if style == 1 {
-            crate::config::DookStyle::Bar
-        } else {
-            crate::config::DookStyle::Floating
+        cfg.dook.style = match style {
+            0 => crate::config::DookStyle::NotchGooey,
+            1 => crate::config::DookStyle::NotchFlat,
+            3 => crate::config::DookStyle::Segmented,
+            _ => crate::config::DookStyle::Pill,
         };
         out.changed = true;
     }
@@ -780,6 +789,17 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
             .on_hover_text("Dook stays active while the Windows taskbar is hidden")
     }) {
         cfg.dook.hide_windows_taskbar = hide_taskbar;
+        out.changed = true;
+    }
+    let mut reserve = cfg.dook.reserve_work_area;
+    if row(&mut left, "Reserve space", theme, |ui| {
+        if cfg.dook.style != crate::config::DookStyle::NotchFlat {
+            ui.disable();
+        }
+        widgets::toggle(ui, &mut reserve, theme)
+            .on_hover_text("Keep maximized windows above the flat notch taskbar")
+    }) {
+        cfg.dook.reserve_work_area = reserve;
         out.changed = true;
     }
     let mut auto_hide = cfg.dook.auto_hide;

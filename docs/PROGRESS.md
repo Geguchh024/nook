@@ -1,5 +1,12 @@
 # Progress
 
+## Step 65 — Add the four taskbar silhouettes
+
+- Replaced the two-way Floating/Bar choice with Gooey Notch, Flat Notch, Pill, and Segmented Pills. Legacy `floating`, `bar`, `pill`, and `notch` config values migrate to Pill or Flat Notch without breaking old config files.
+- Gooey Notch uses separate attached center and right surfaces; Flat Notch is an edge-to-edge surface; Pill remains a single floating capsule; Segmented Pills separates the centered app group from the right status group. Maximized-window space reservation is now an explicit opt-in for Flat Notch.
+- Updated style summaries, the four-choice Settings selector, and the manual acceptance checklist. The weather/left pill and per-pill controls are not rendered yet because Nook currently has no weather data source; those are tracked for the weather phase rather than shown as a fake widget.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed (190 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings`, targeted rustfmt check, and `git diff --check` passed. Nook was not launched, per the prior request.
+
 ## Step 64 — Replace the dock mockup with taskbar surfaces
 
 - Rebuilt the single-monitor taskbar as one floating glass capsule or a full-width AppBar, with top/bottom placement, DPI-scaled 56/48 px heights, per-style corner geometry, a clipped pin scroller, and separate left/right control groups. The full-width style reserves work area and releases it when hidden or disabled.

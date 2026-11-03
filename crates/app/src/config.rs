@@ -76,13 +76,25 @@ pub enum DookPosition {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum DookStyle {
     #[default]
-    #[serde(alias = "pill")]
-    Floating,
-    #[serde(alias = "notch")]
-    Bar,
+    #[serde(alias = "floating")]
+    Pill,
+    #[serde(alias = "bar", alias = "notch", alias = "flat_notch")]
+    NotchFlat,
+    NotchGooey,
+    Segmented,
+}
+
+impl DookStyle {
+    pub const fn is_notch(self) -> bool {
+        matches!(self, Self::NotchGooey | Self::NotchFlat)
+    }
+
+    pub const fn is_floating(self) -> bool {
+        matches!(self, Self::Pill | Self::Segmented)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,6 +120,7 @@ pub struct DookConfig {
     pub enabled: bool,
     pub hide_windows_taskbar: bool,
     pub auto_hide: bool,
+    pub reserve_work_area: bool,
     pub style: DookStyle,
     pub edge: DookEdge,
     pub apps_position: DookPosition,
@@ -140,7 +153,8 @@ impl Default for DookConfig {
             enabled: false,
             hide_windows_taskbar: false,
             auto_hide: false,
-            style: DookStyle::Floating,
+            reserve_work_area: false,
+            style: DookStyle::Pill,
             edge: DookEdge::Bottom,
             apps_position: DookPosition::Center,
             oled: false,
@@ -546,15 +560,18 @@ mod tests {
         assert!(!cfg.dook.enabled);
         assert!(cfg.dook.show_clock);
         assert_eq!(cfg.dook.apps_position, DookPosition::Center);
-        assert_eq!(cfg.dook.style, DookStyle::Floating);
+        assert_eq!(cfg.dook.style, DookStyle::Pill);
     }
 
     #[test]
     fn legacy_dook_styles_migrate_to_floating_and_bar() {
-        let pill: DookConfig = toml::from_str("style = \"pill\"").expect("parse pill style");
-        let notch: DookConfig = toml::from_str("style = \"notch\"").expect("parse notch style");
-        assert_eq!(pill.style, DookStyle::Floating);
-        assert_eq!(notch.style, DookStyle::Bar);
+        let pill: DookConfig = toml::from_str("style = \"floating\"").expect("parse pill style");
+        let notch: DookConfig = toml::from_str("style = \"bar\"").expect("parse notch style");
+        let legacy_notch: DookConfig =
+            toml::from_str("style = \"notch\"").expect("parse legacy notch style");
+        assert_eq!(pill.style, DookStyle::Pill);
+        assert_eq!(notch.style, DookStyle::NotchFlat);
+        assert_eq!(legacy_notch.style, DookStyle::NotchFlat);
     }
 
     #[test]

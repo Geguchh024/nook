@@ -109,7 +109,11 @@ impl Runtime {
             self.restore_taskbar();
             return;
         }
-        if !cfg.enabled || fullscreen_hidden || cfg.style != DookStyle::Bar {
+        if !cfg.enabled
+            || fullscreen_hidden
+            || cfg.style != DookStyle::NotchFlat
+            || !cfg.reserve_work_area
+        {
             self.release_appbar();
         }
         let target =
@@ -246,7 +250,7 @@ impl Runtime {
             return 1.0;
         }
         let scale = monitor.dpi as f32 / 96.0;
-        let area = if cfg.style == DookStyle::Bar || cfg.hide_windows_taskbar {
+        let area = if cfg.style.is_notch() || cfg.hide_windows_taskbar {
             monitor.bounds
         } else {
             monitor.work
@@ -255,7 +259,7 @@ impl Runtime {
         let sensor_height = if self.auto_hidden {
             (7.0 * scale) as i32
         } else {
-            ((if cfg.style == DookStyle::Bar {
+            ((if cfg.style.is_notch() {
                 BAR_HEIGHT
             } else {
                 FLOATING_HEIGHT + EDGE
@@ -346,25 +350,23 @@ pub fn show(
     runtime.refresh_pins(ctx);
 
     let scale = monitor.dpi as f32 / 96.0;
-    let area = if cfg.style == DookStyle::Bar || cfg.hide_windows_taskbar {
+    let area = if cfg.style.is_notch() || cfg.hide_windows_taskbar {
         monitor.bounds
     } else {
         monitor.work
     };
     let width = area.width() as f32 / scale;
-    let height = if cfg.style == DookStyle::Bar {
+    let height = if cfg.style.is_notch() {
         BAR_HEIGHT
     } else {
         FLOATING_HEIGHT
     };
     let visible = runtime.sync_auto_hide(ctx, cfg, monitor);
-    let edge_inset = if cfg.style == DookStyle::Floating {
-        EDGE
-    } else {
-        0.0
-    };
+    let edge_inset = if cfg.style.is_floating() { EDGE } else { 0.0 };
     let window_height = 7.0 + (height + edge_inset - 7.0) * visible;
-    let reserve_appbar = cfg.style == DookStyle::Bar && (!cfg.auto_hide || !runtime.auto_hidden);
+    let reserve_appbar = cfg.style == DookStyle::NotchFlat
+        && cfg.reserve_work_area
+        && (!cfg.auto_hide || !runtime.auto_hidden);
     let appbar_height = (height * scale).round() as i32;
     let desired_appbar_key = AppBarKey {
         monitor_id: monitor.id,
@@ -540,7 +542,39 @@ fn ui(
             let full = ui.max_rect();
             let taskbar = taskbar_rect(full, cfg);
             let (apps_rect, tray_rect) = content_rects(taskbar, cfg);
-            paint_surface(ui, taskbar, cfg, radius, background, stroke);
+            if matches!(cfg.style, DookStyle::NotchGooey | DookStyle::Segmented) {
+                let (apps_rect, tray_rect) = content_rects(taskbar, cfg);
+                if apps_rect.width() > 0.0 {
+                    paint_surface(
+                        ui,
+                        if cfg.style == DookStyle::Segmented {
+                            apps_rect.expand2(vec2(10.0, 0.0))
+                        } else {
+                            apps_rect
+                        },
+                        cfg,
+                        radius,
+                        background,
+                        stroke,
+                    );
+                }
+                if tray_rect.width() > 0.0 {
+                    paint_surface(
+                        ui,
+                        if cfg.style == DookStyle::Segmented {
+                            tray_rect.expand2(vec2(8.0, 0.0))
+                        } else {
+                            tray_rect
+                        },
+                        cfg,
+                        radius,
+                        background,
+                        stroke,
+                    );
+                }
+            } else {
+                paint_surface(ui, taskbar, cfg, radius, background, stroke);
+            }
             if cfg.auto_hide && full.height() < taskbar.height() - 0.5 {
                 let sensor = if cfg.edge == DookEdge::Top {
                     Rect::from_min_max(full.min, pos2(full.max.x, full.min.y + full.height()))
@@ -579,17 +613,17 @@ fn ui(
 }
 
 fn taskbar_rect(full: Rect, cfg: &DookConfig) -> Rect {
-    let height = if cfg.style == DookStyle::Bar {
+    let height = if cfg.style.is_notch() {
         BAR_HEIGHT
     } else {
         FLOATING_HEIGHT
     };
-    let width = if cfg.style == DookStyle::Bar {
+    let width = if cfg.style.is_notch() || cfg.style == DookStyle::Segmented {
         full.width()
     } else {
         (full.width() - EDGE * 2.0).min(960.0)
     };
-    let x = if cfg.style == DookStyle::Bar {
+    let x = if cfg.style.is_notch() {
         full.min.x
     } else {
         match cfg.apps_position {
@@ -597,11 +631,7 @@ fn taskbar_rect(full: Rect, cfg: &DookConfig) -> Rect {
             DookPosition::Center | DookPosition::Right => full.center().x - width * 0.5,
         }
     };
-    let edge_inset = if cfg.style == DookStyle::Floating {
-        EDGE
-    } else {
-        0.0
-    };
+    let edge_inset = if cfg.style.is_floating() { EDGE } else { 0.0 };
     let y = match cfg.edge {
         DookEdge::Top => full.min.y + edge_inset,
         DookEdge::Bottom => full.max.y - height - edge_inset,
@@ -635,6 +665,23 @@ fn content_rects(taskbar: Rect, cfg: &DookConfig) -> (Rect, Rect) {
     let tray_width =
         (status_buttons * (STATUS_SIZE + ITEM_GAP) + clock_width + show_desktop_width + 12.0)
             .min((taskbar.width() - nav_width - 12.0).max(0.0));
+    if matches!(cfg.style, DookStyle::NotchGooey | DookStyle::Segmented) {
+        let inset = if cfg.style == DookStyle::Segmented {
+            10.0
+        } else {
+            0.0
+        };
+        let outer = taskbar.shrink2(vec2(inset, 0.0));
+        let tray_width = tray_width.min((outer.width() * 0.44).max(0.0));
+        let center_width = (outer.width() - tray_width * 2.0 - 28.0).clamp(0.0, 590.0);
+        let apps_min_x = outer.center().x - center_width * 0.5;
+        let apps = Rect::from_min_max(
+            pos2(apps_min_x, outer.min.y),
+            pos2(apps_min_x + center_width, outer.max.y),
+        );
+        let tray = Rect::from_min_max(pos2(outer.max.x - tray_width, outer.min.y), outer.max);
+        return (apps, tray);
+    }
     let content_min = pos2(taskbar.min.x + 8.0, taskbar.min.y);
     let content_max = pos2(taskbar.max.x - 8.0, taskbar.max.y);
     let app_min = pos2(content_min.x, content_min.y);
@@ -673,7 +720,7 @@ fn paint_surface(
 ) {
     let cap = (rect.height() * 0.5).round() as u8;
     let radius = radius.min(cap);
-    let rounding = if cfg.style == DookStyle::Bar {
+    let rounding = if cfg.style == DookStyle::NotchGooey {
         match cfg.edge {
             DookEdge::Top => CornerRadius {
                 nw: 0,
@@ -688,6 +735,8 @@ fn paint_surface(
                 se: 0,
             },
         }
+    } else if cfg.style == DookStyle::NotchFlat {
+        CornerRadius::ZERO
     } else {
         CornerRadius::same(radius)
     };
@@ -1062,7 +1111,7 @@ mod tests {
     fn bar_taskbar_touches_selected_screen_edge() {
         let full = Rect::from_min_size(pos2(0.0, 0.0), vec2(1920.0, 48.0));
         let cfg = DookConfig {
-            style: DookStyle::Bar,
+            style: DookStyle::NotchFlat,
             edge: DookEdge::Top,
             ..Default::default()
         };
@@ -1070,6 +1119,34 @@ mod tests {
         assert_eq!(rect.width(), full.width());
         assert_eq!(rect.min.y, full.min.y);
         assert_eq!(rect.height(), BAR_HEIGHT);
+    }
+
+    #[test]
+    fn segmented_pills_keep_the_center_group_separate_from_the_tray() {
+        let full = Rect::from_min_size(pos2(0.0, 0.0), vec2(1920.0, 66.0));
+        let cfg = DookConfig {
+            style: DookStyle::Segmented,
+            ..Default::default()
+        };
+        let shell = taskbar_rect(full, &cfg);
+        let (apps, tray) = content_rects(shell, &cfg);
+        assert!(apps.contains(shell.center()));
+        assert!(apps.max.x < tray.min.x);
+        assert_eq!(shell.min.x, full.min.x);
+        assert!(shell.max.y < full.max.y);
+    }
+
+    #[test]
+    fn notch_styles_anchor_to_the_screen_edge() {
+        let full = Rect::from_min_size(pos2(0.0, 0.0), vec2(1920.0, BAR_HEIGHT));
+        for style in [DookStyle::NotchGooey, DookStyle::NotchFlat] {
+            let cfg = DookConfig {
+                style,
+                edge: DookEdge::Bottom,
+                ..Default::default()
+            };
+            assert_eq!(taskbar_rect(full, &cfg).max.y, full.max.y);
+        }
     }
 
     #[test]

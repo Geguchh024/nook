@@ -6,7 +6,8 @@ show its unavailable state instead of drawing a nonfunctional control.
 
 ## Implementation phases
 
-- [ ] 1. Native taskbar window and responsive visuals: Floating and Bar styles,
+- [ ] 1. Native taskbar window and responsive visuals: Gooey Notch, Flat Notch,
+  Pill, and Segmented Pills styles,
   edge placement, monitor targeting, theme glass, DPI sizing, no-activate/tool
   window styles, fullscreen behavior, and functional Start/Search/Task View/
   Clock/Notifications/Show desktop buttons.
@@ -26,9 +27,9 @@ show its unavailable state instead of drawing a nonfunctional control.
 
 ## Manual Windows acceptance
 
-- [ ] Floating taskbar remains inset from the selected screen edge and does not
-  reserve work area; Bar taskbar spans the selected monitor and keeps maximized
-  windows clear of it.
+- [ ] Pill and Segmented Pills remain inset from the selected screen edge and
+  do not reserve work area; Notch styles attach to the edge. Work-area
+  reservation is opt-in and available for Flat Notch.
 - [ ] Top and bottom placement work at 100%, 125%, and 150% DPI and across
   monitors with different scaling and negative desktop coordinates.
 - [ ] All-monitors, primary-only, and follow-cursor targeting create the right
