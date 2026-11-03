@@ -1,5 +1,11 @@
 # Progress
 
+## Step 63 — Audit the taskbar brief and acceptance plan
+
+- Audited the current Dook viewport, theme/widgets, shell window setup, taskbar pin reader, monitor watcher, and recent taskbar commits against the supplied implementation brief.
+- Current baseline is one 84 px bottom viewport with Pill/Notch modes, initial-letter fallback for missing shortcut icons, no running-window list or AppBar, and no monitor-set selection. Secondary viewport transparency and its native styles need correction before visual polish; the expanded settings body is also too dense for the intended One UI treatment.
+- Added `docs/TASKBAR_TESTING.md` as the living manual acceptance checklist and recorded the implementation phases there. Continue in dependency order: native viewport and responsive visuals, live windows, shortcut icons/pin management, real status controls, AppBar and safe taskbar restore, then settings and polish.
+
 ## Step 62 — Close the dock when quitting from the tray
 
 - The tray Quit command now closes Dook's separate native viewport before closing the primary Nook window, prevents the dock from being recreated during shutdown, and restores any Windows taskbar Dook had hidden.
