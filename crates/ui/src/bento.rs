@@ -46,6 +46,7 @@ pub enum Edit {
     Resize(&'static str, TileSize),
     SetRadius(&'static str, u8),
     SetCorners(&'static str, Corners),
+    SetGap(u8),
 }
 
 #[derive(Default)]
@@ -58,9 +59,22 @@ pub struct BentoOutput {
     pub toggle_edit: bool,
 }
 
+pub struct LayoutStyle<'a> {
+    pub gap: u8,
+    pub radii: &'a std::collections::BTreeMap<String, u8>,
+    pub corners: &'a std::collections::BTreeMap<String, Corners>,
+}
+
 /// Grid origin within a panel rect.
-pub fn grid_rect(panel: Rect) -> Rect {
-    let size = GRID.size();
+fn grid_spec(gap: u8) -> GridSpec {
+    GridSpec {
+        gap: gap as f32,
+        ..GRID
+    }
+}
+
+pub fn grid_rect(panel: Rect, gap: u8) -> Rect {
+    let size = grid_spec(gap).size();
     let min = pos2(panel.center().x - size.x * 0.5, panel.min.y + PANEL_PADDING);
     Rect::from_min_size(min, size)
 }
@@ -182,24 +196,30 @@ const EDITOR_CORNERS_OPEN_ID: &str = "nook-editor-corners-open";
 const EDITOR_CORNERS_LINKED_ID: &str = "nook-editor-corners-linked";
 
 /// Extra shell height for the selected tile's continuous radius inspector.
-pub fn editor_extra_height(ctx: &egui::Context) -> f32 {
-    ctx.data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
-        .map_or(0.0, |_| {
-            if ctx.data(|data| {
-                data.get_temp::<bool>(Id::new(EDITOR_CORNERS_OPEN_ID))
-                    .unwrap_or(false)
-            }) {
-                226.0
-            } else {
-                116.0
-            }
-        })
+pub fn editor_extra_height(ctx: &egui::Context, editing: bool) -> f32 {
+    if ctx
+        .data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
+        .is_some()
+    {
+        if ctx.data(|data| {
+            data.get_temp::<bool>(Id::new(EDITOR_CORNERS_OPEN_ID))
+                .unwrap_or(false)
+        }) {
+            226.0
+        } else {
+            116.0
+        }
+    } else if editing {
+        58.0
+    } else {
+        0.0
+    }
 }
 
-fn radius_limit(size: TileSize) -> u8 {
+fn radius_limit(size: TileSize, grid: &GridSpec) -> u8 {
     let (w, h) = size.cells();
-    let width = w as f32 * GRID.cell + (w - 1) as f32 * GRID.gap;
-    let height = h as f32 * GRID.cell + (h - 1) as f32 * GRID.gap;
+    let width = w as f32 * grid.cell + (w - 1) as f32 * grid.gap;
+    let height = h as f32 * grid.cell + (h - 1) as f32 * grid.gap;
     (width.min(height) * 0.5).floor() as u8
 }
 
@@ -209,12 +229,12 @@ pub fn show(
     theme: &Theme,
     tiles: &mut [GridTile<'_>],
     editing: bool,
-    radii: &std::collections::BTreeMap<String, u8>,
-    corners_by_id: &std::collections::BTreeMap<String, Corners>,
+    style: LayoutStyle<'_>,
 ) -> BentoOutput {
     let ctx = ui.ctx().clone();
     let mut out = BentoOutput::default();
-    let grid = grid_rect(cctx.panel);
+    let grid_spec = grid_spec(style.gap);
+    let grid = grid_rect(cctx.panel, style.gap);
     let now = ctx.input(|i| i.time);
     let mut caption: Option<(String, bool)> = None;
     let ids: Vec<&'static str> = tiles.iter().map(|t| t.module.id()).collect();
@@ -262,7 +282,7 @@ pub fn show(
         None => (0..ids.len()).collect(),
     };
     let sizes: Vec<TileSize> = order.iter().map(|&i| size_of(&tiles[i])).collect();
-    let pages = pack_pages(&GRID, &sizes);
+    let pages = pack_pages(&grid_spec, &sizes);
 
     // Pointer in content space (the content scales while the shell opens).
     let pointer = ctx
@@ -286,7 +306,8 @@ pub fn show(
     let wheel_taken = pointer.is_some_and(|p| {
         pages[st.page].iter().any(|pl| {
             let t = &tiles[order[pl.index]];
-            GRID.cell_rect(grid.min, pl.col, pl.row, size_of(t))
+            grid_spec
+                .cell_rect(grid.min, pl.col, pl.row, size_of(t))
                 .contains(p)
                 && !editing
                 && (!is_compact(t) || expanded.id == Some(t.module.id()))
@@ -388,7 +409,7 @@ pub fn show(
             if ids[i] == d.id {
                 continue;
             }
-            let r = GRID.cell_rect(grid.min, pl.col, pl.row, tiles[i].size);
+            let r = grid_spec.cell_rect(grid.min, pl.col, pl.row, tiles[i].size);
             if r.shrink2(r.size() * 0.2).contains(p) {
                 target = Some(pl.index);
             }
@@ -398,12 +419,13 @@ pub fn show(
                 .iter()
                 .filter(|pl| ids[order[pl.index]] != d.id)
                 .map(|pl| {
-                    GRID.cell_rect(grid.min, pl.col, pl.row, tiles[order[pl.index]].size)
+                    grid_spec
+                        .cell_rect(grid.min, pl.col, pl.row, tiles[order[pl.index]].size)
                         .max
                         .x
                 })
                 .fold(f32::MIN, f32::max);
-            if p.x > right + GRID.gap * 0.5 {
+            if p.x > right + grid_spec.gap * 0.5 {
                 target = Some(order.len() - 1);
             }
         }
@@ -422,7 +444,7 @@ pub fn show(
         st.page as f32,
         SpringParams::snappy(),
     );
-    let step = GRID.size().y + PANEL_PADDING * 2.0;
+    let step = grid_spec.size().y + PANEL_PADDING * 2.0;
     let clip = grid.expand(PANEL_PADDING - 2.0);
     let files_hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
     // Where the open tile is drawn, to tell clicks outside it.
@@ -437,13 +459,14 @@ pub fn show(
             let ti = order[p.index];
             let size = size_of(&tiles[ti]);
             let tile = &mut tiles[ti];
-            let base_radius = radii
+            let base_radius = style
+                .radii
                 .get(tile.module.id())
                 .copied()
                 .map_or(TILE_RADIUS, f32::from);
             let id = Id::new(("nook-tile", tile.module.id()));
             let held = drag.as_ref().is_some_and(|d| d.id == tile.module.id());
-            let target = GRID.cell_rect(grid.min, p.col, p.row, size);
+            let target = grid_spec.cell_rect(grid.min, p.col, p.row, size);
             let is_open = expanded.id == Some(tile.module.id());
             // Tiles glide to new places and sizes when the layout changes.
             let (rect, page_alpha) = match (held, pointer, &drag) {
@@ -465,7 +488,8 @@ pub fn show(
                     )
                 }
             };
-            let corners = corners_by_id
+            let corners = style
+                .corners
                 .get(tile.module.id())
                 .copied()
                 .unwrap_or_else(|| Corners::uniform(base_radius))
@@ -590,9 +614,14 @@ pub fn show(
                         child.disable();
                     }
                     if editing {
-                        if let Some(e) =
-                            edit_face(&mut child, rect, tile, theme, &mut resizing_handle)
-                        {
+                        if let Some(e) = edit_face(
+                            &mut child,
+                            rect,
+                            tile,
+                            theme,
+                            &grid_spec,
+                            &mut resizing_handle,
+                        ) {
                             out.edits.push(e);
                         }
                     } else if compact {
@@ -687,21 +716,23 @@ pub fn show(
             ctx.data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
         && let Some(tile) = tiles.iter().find(|tile| tile.module.id() == selected)
     {
-        let max_radius = radius_limit(tile.size);
-        let base_radius = radii
+        let max_radius = radius_limit(tile.size, &grid_spec);
+        let base_radius = style
+            .radii
             .get(&selected)
             .copied()
             .unwrap_or(TILE_RADIUS as u8)
             .min(max_radius);
-        let mut corner_values = corners_by_id
+        let mut corner_values = style
+            .corners
             .get(&selected)
             .copied()
             .unwrap_or_else(|| Corners::uniform(base_radius as f32))
             .clamp_to(
-                tile.size.cells().0 as f32 * GRID.cell
-                    + (tile.size.cells().0 - 1) as f32 * GRID.gap,
-                tile.size.cells().1 as f32 * GRID.cell
-                    + (tile.size.cells().1 - 1) as f32 * GRID.gap,
+                tile.size.cells().0 as f32 * grid_spec.cell
+                    + (tile.size.cells().0 - 1) as f32 * grid_spec.gap,
+                tile.size.cells().1 as f32 * grid_spec.cell
+                    + (tile.size.cells().1 - 1) as f32 * grid_spec.gap,
             );
         let current = corner_values.max().round() as u8;
         let corners_open = ctx.data(|data| {
@@ -940,6 +971,54 @@ pub fn show(
         }
     }
 
+    if editing
+        && ctx
+            .data(|data| data.get_temp::<String>(Id::new(EDITOR_SELECTION_ID)))
+            .is_none()
+    {
+        let inspector = Rect::from_min_size(
+            pos2(cctx.panel.min.x + PANEL_PADDING, grid.max.y + 8.0),
+            vec2(cctx.panel.width() - 2.0 * PANEL_PADDING, 50.0),
+        );
+        widgets::card(ui.painter(), inspector, theme);
+        ui.painter().text(
+            pos2(inspector.min.x + 14.0, inspector.center().y),
+            Align2::LEFT_CENTER,
+            "Tile gap",
+            Theme::font(SIZE_LABEL),
+            theme.text_dim,
+        );
+        let slider_rect = Rect::from_min_size(
+            pos2(inspector.min.x + 88.0, inspector.center().y - 11.0),
+            vec2((inspector.width() - 150.0).max(50.0), 22.0),
+        );
+        let mut slider_ui = ui.new_child(
+            UiBuilder::new()
+                .max_rect(slider_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        let mut gap_value = style.gap as f32 / 24.0;
+        if widgets::slider(
+            &mut slider_ui,
+            &mut gap_value,
+            slider_rect.width(),
+            24,
+            theme,
+        )
+        .changed()
+        {
+            out.edits
+                .push(Edit::SetGap((gap_value * 24.0).round() as u8));
+        }
+        ui.painter().text(
+            pos2(inspector.max.x - 12.0, inspector.center().y),
+            Align2::RIGHT_CENTER,
+            format!("{} px", style.gap),
+            Theme::font(SIZE_LABEL),
+            theme.text_dim,
+        );
+    }
+
     // A click anywhere but the open tile (another tile included, which
     // still gets its click) folds it back, and so does Esc.
     if let Some(id) = expanded.id {
@@ -996,6 +1075,7 @@ fn edit_face(
     rect: Rect,
     tile: &GridTile<'_>,
     theme: &Theme,
+    grid: &GridSpec,
     resizing: &mut bool,
 ) -> Option<Edit> {
     let ctx = ui.ctx().clone();
@@ -1121,16 +1201,16 @@ fn edit_face(
     {
         let (w, h) = start_size.cells();
         let start = vec2(
-            w as f32 * GRID.cell + (w - 1) as f32 * GRID.gap,
-            h as f32 * GRID.cell + (h - 1) as f32 * GRID.gap,
+            w as f32 * grid.cell + (w - 1) as f32 * grid.gap,
+            h as f32 * grid.cell + (h - 1) as f32 * grid.gap,
         );
         let target = start + (pointer - origin);
         if let Some(next) = TileSize::ALL.into_iter().min_by(|a, b| {
             let distance = |size: TileSize| {
                 let (w, h) = size.cells();
                 let candidate = vec2(
-                    w as f32 * GRID.cell + (w - 1) as f32 * GRID.gap,
-                    h as f32 * GRID.cell + (h - 1) as f32 * GRID.gap,
+                    w as f32 * grid.cell + (w - 1) as f32 * grid.gap,
+                    h as f32 * grid.cell + (h - 1) as f32 * grid.gap,
                 );
                 (candidate - target).length_sq()
             };
@@ -1273,9 +1353,9 @@ mod tests {
 
     #[test]
     fn radius_limit_reaches_the_circle_for_square_tiles() {
-        assert_eq!(radius_limit(TileSize::Small), 30);
-        assert_eq!(radius_limit(TileSize::Wide), 30);
-        assert_eq!(radius_limit(TileSize::Tall), 30);
-        assert_eq!(radius_limit(TileSize::Large), 64);
+        assert_eq!(radius_limit(TileSize::Small, &super::GRID), 30);
+        assert_eq!(radius_limit(TileSize::Wide, &super::GRID), 30);
+        assert_eq!(radius_limit(TileSize::Tall, &super::GRID), 30);
+        assert_eq!(radius_limit(TileSize::Large, &super::GRID), 64);
     }
 }

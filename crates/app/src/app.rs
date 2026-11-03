@@ -404,6 +404,7 @@ impl NookApp {
                         .insert(id.to_owned(), corners.max().round() as u8);
                     modules.corners.insert(id.to_owned(), corners);
                 }
+                bento::Edit::SetGap(gap) => modules.layout_gap = gap.min(24),
             }
         }
         self.registry.arrange(&modules.order, &modules.disabled);
@@ -1455,7 +1456,7 @@ impl eframe::App for NookApp {
             (typing && ctx.input(|i| i.focused)) || ctx.input(|i| !i.raw.hovered_files.is_empty());
         self.route_dropped_files(&ctx);
         let editor_height = if self.editing {
-            bento::editor_extra_height(&ctx)
+            bento::editor_extra_height(&ctx, self.editing)
         } else {
             0.0
         };
@@ -1492,14 +1493,17 @@ impl eframe::App for NookApp {
                         &theme,
                         &mut tiles,
                         editing,
-                        &cfg.modules.radii,
-                        &cfg.modules.corners,
+                        bento::LayoutStyle {
+                            gap: cfg.modules.layout_gap,
+                            radii: &cfg.modules.radii,
+                            corners: &cfg.modules.corners,
+                        },
                     );
                     clicked = grid_out.clicked;
                     // The Update chip sits in the middle of the bottom
                     // gutter, between the pencil and the page dots.
                     if !editing && cctx.alpha > 0.5 {
-                        let grid = bento::grid_rect(cctx.panel);
+                        let grid = bento::grid_rect(cctx.panel, cfg.modules.layout_gap);
                         let y = grid.max.y + (cctx.panel.max.y - grid.max.y) * 0.5 - 1.0;
                         update_clicked = update::chip(
                             ui,

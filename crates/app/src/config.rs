@@ -184,8 +184,15 @@ pub struct ModulesConfig {
     pub radii: std::collections::BTreeMap<String, u8>,
     /// Per-tile top-left, top-right, bottom-right, bottom-left radii.
     pub corners: std::collections::BTreeMap<String, Corners>,
+    /// Spacing between layout tiles, in logical points.
+    #[serde(default = "default_layout_gap")]
+    pub layout_gap: u8,
     /// Radios that were on before the experimental Airplane tile disabled them.
     pub airplane_restore: Option<RadioRestore>,
+}
+
+fn default_layout_gap() -> u8 {
+    8
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -309,6 +316,7 @@ impl Default for Config {
                 sizes: Default::default(),
                 radii: Default::default(),
                 corners: Default::default(),
+                layout_gap: default_layout_gap(),
                 airplane_restore: None,
             },
         }
@@ -469,6 +477,13 @@ mod tests {
         let text = toml::to_string_pretty(&cfg).expect("serialize");
         let back: Config = toml::from_str(&text).expect("parse");
         assert_eq!(back.modules.corners, cfg.modules.corners);
+    }
+
+    #[test]
+    fn old_module_config_gets_default_layout_gap() {
+        let cfg: Config = toml::from_str("[modules]\norder = [\"timer\"]\n")
+            .expect("legacy module config should parse");
+        assert_eq!(cfg.modules.layout_gap, 8);
     }
 
     #[test]

@@ -420,3 +420,9 @@
 
 - Clipboard entries containing a standalone valid hex color now tint their row/card with that color, while preserving the existing copy and hover actions.
 - Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed; Clippy passed.
+
+## Step 50 — Add a saved tile-gap control to layout editing
+
+- The layout editor now shows a gap slider when no tile shape is selected. Selecting a tile replaces that inspector with its shape controls, so the panels do not overlap.
+- Gap is saved in module configuration, affects packing, drag targets, radius limits and the size handle, and old configs default to the existing 8 px spacing.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
