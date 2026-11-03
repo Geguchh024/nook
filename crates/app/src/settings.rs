@@ -22,20 +22,22 @@ pub const SETTINGS_ID: &str = "settings";
 const GAP: f32 = 8.0;
 const HEADER: f32 = 28.0;
 const ROW: f32 = 28.0;
-/// Height of the Appearance and Behavior cards when shown side by side.
-const TOP_CARD: f32 = 232.0;
-/// At narrower widths, keep each card full-width so segmented controls and
-/// labels retain enough room to respond without clipping.
-const STACK_BREAKPOINT: f32 = 760.0;
-const STACKED_CARD: f32 = 232.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
-const BODY: [f32; 3] = [9.0 * ROW + 16.0, 6.0 * ROW + 12.0, 5.0 * ROW + 36.0];
+const BODY: [f32; 5] = [
+    6.0 * ROW + 12.0,
+    7.0 * ROW + 16.0,
+    9.0 * ROW + 16.0,
+    6.0 * ROW + 12.0,
+    5.0 * ROW + 36.0,
+];
 /// Collapsible sections, in page order.
-const CUSTOMIZE: usize = 0;
-const MOTION: usize = 1;
-const ADVANCED: usize = 2;
+const APPEARANCE: usize = 0;
+const BEHAVIOR: usize = 1;
+const CUSTOMIZE: usize = 2;
+const MOTION: usize = 3;
+const ADVANCED: usize = 4;
 
 /// Which collapsible section is open (at most one at a time).
 fn open_section(ctx: &egui::Context) -> Option<usize> {
@@ -54,20 +56,18 @@ pub fn extra_height(ctx: &egui::Context, regular: f32, panel_width: f32) -> f32 
     (base_height(panel_width) + body - regular).max(0.0)
 }
 
-fn stacked(width: f32) -> bool {
-    width < STACK_BREAKPOINT
-}
-
-fn top_height(width: f32) -> f32 {
-    if stacked(width) {
-        STACKED_CARD * 2.0 + GAP
-    } else {
-        TOP_CARD
-    }
+fn top_height(_width: f32, open: Option<usize>) -> f32 {
+    2.0 * DISCLOSURE + GAP + open.filter(|i| *i < 2).map_or(0.0, |i| BODY[i])
 }
 
 fn base_height(width: f32) -> f32 {
-    2.0 * PANEL_PADDING + HEADER + GAP + top_height(width) + GAP + 3.0 * DISCLOSURE + 2.0 * GAP
+    2.0 * PANEL_PADDING
+        + HEADER
+        + GAP
+        + top_height(width, None)
+        + GAP
+        + 5.0 * DISCLOSURE
+        + 4.0 * GAP
 }
 
 /// Spring for a section's 0..1 reveal, tuned like the panel height so the
@@ -206,288 +206,336 @@ pub fn page(
             );
             update_header(ui, header, theme, update, &mut out);
 
-            // Appearance and Behavior side by side, then the collapsible
-            // Customize and Advanced cards.
-            let narrow = stacked(panel.width());
-            let card_height = if narrow { STACKED_CARD } else { TOP_CARD };
+            // Appearance and Behavior use one-at-a-time disclosures so the
+            // controls never overflow the available panel width.
+            let open = open_section(&ctx);
             let top = Rect::from_min_size(
                 pos2(panel.min.x, header.max.y + GAP),
-                vec2(panel.width(), top_height(panel.width())),
+                vec2(panel.width(), top_height(panel.width(), open)),
             );
-            let col_w = (top.width() - GAP) * 0.5;
-            let (left, right) = if narrow {
-                (
-                    Rect::from_min_size(top.min, vec2(top.width(), card_height)),
-                    Rect::from_min_size(
-                        pos2(top.min.x, top.min.y + card_height + GAP),
-                        vec2(top.width(), card_height),
-                    ),
-                )
-            } else {
-                (
-                    Rect::from_min_size(top.min, vec2(col_w, top.height())),
-                    Rect::from_min_size(
-                        pos2(top.min.x + col_w + GAP, top.min.y),
-                        vec2(col_w, top.height()),
-                    ),
-                )
-            };
-
-            widgets::card(ui.painter(), left, theme);
-            widgets::card(ui.painter(), right, theme);
-
-            let mut lui = card_ui(ui, left);
-            section_title(&mut lui, "Appearance", theme);
-            let mut style_idx = usize::from(cfg.shell_style == ShellStyle::Notch);
-            if row(&mut lui, "Style", theme, |ui| {
-                widgets::segmented(ui, &["Pill", "Notch"], &mut style_idx, theme)
-            }) {
-                cfg.shell_style = [ShellStyle::Pill, ShellStyle::Notch][style_idx];
-                out.changed = true;
-            }
-            let mut notch_size_idx = NotchSize::ALL
-                .iter()
-                .position(|&size| size == cfg.notch_size)
-                .unwrap_or(1);
-            if row(&mut lui, "Notch size", theme, |ui| {
-                if cfg.shell_style != ShellStyle::Notch {
-                    ui.disable();
-                }
-                widgets::segmented(
-                    ui,
-                    &["Compact", "Standard", "Large"],
-                    &mut notch_size_idx,
-                    theme,
-                )
-            }) {
-                cfg.notch_size = NotchSize::ALL[notch_size_idx];
-                out.changed = true;
-            }
-            let mut clock_idx = match cfg.clock_style {
-                crate::config::ClockStyle::Classic => 0,
-                crate::config::ClockStyle::Digital => 1,
-                crate::config::ClockStyle::DotMatrix => 2,
-            };
-            if row(&mut lui, "Clock", theme, |ui| {
-                widgets::segmented(
-                    ui,
-                    &["Classic", "Digital", "Dot matrix"],
-                    &mut clock_idx,
-                    theme,
-                )
-            }) {
-                cfg.clock_style = [
-                    crate::config::ClockStyle::Classic,
-                    crate::config::ClockStyle::Digital,
-                    crate::config::ClockStyle::DotMatrix,
-                ][clock_idx];
-                out.changed = true;
-            }
-            let mut theme_idx = match cfg.theme {
-                ThemeMode::Auto => 0,
-                ThemeMode::Dark => 1,
-                ThemeMode::Light => 2,
-            };
-            if row(&mut lui, "Theme", theme, |ui| {
-                if cfg.material == Material::Oled {
-                    ui.disable();
-                }
-                widgets::segmented(ui, &["Auto", "Dark", "Light"], &mut theme_idx, theme)
-                    .on_hover_text(if cfg.material == Material::Oled {
-                        "OLED material uses a fixed black theme"
-                    } else {
-                        "Choose the interface theme"
-                    })
-            }) && cfg.material != Material::Oled
+            let appearance_rect = Rect::from_min_size(top.min, vec2(top.width(), DISCLOSURE));
+            let behavior_rect = Rect::from_min_size(
+                pos2(
+                    top.min.x,
+                    appearance_rect.max.y
+                        + if open == Some(APPEARANCE) {
+                            BODY[APPEARANCE]
+                        } else {
+                            0.0
+                        }
+                        + GAP,
+                ),
+                vec2(top.width(), DISCLOSURE),
+            );
+            let appearance_body = Rect::from_min_size(
+                pos2(top.min.x, appearance_rect.max.y),
+                vec2(
+                    top.width(),
+                    BODY[APPEARANCE] * reveal(&ctx, APPEARANCE, open == Some(APPEARANCE)),
+                ),
+            );
+            let behavior_body = Rect::from_min_size(
+                pos2(top.min.x, behavior_rect.max.y),
+                vec2(
+                    top.width(),
+                    BODY[BEHAVIOR] * reveal(&ctx, BEHAVIOR, open == Some(BEHAVIOR)),
+                ),
+            );
+            widgets::card(
+                ui.painter(),
+                Rect::from_min_max(appearance_rect.min, appearance_body.max),
+                theme,
+            );
+            widgets::card(
+                ui.painter(),
+                Rect::from_min_max(behavior_rect.min, behavior_body.max),
+                theme,
+            );
+            if widgets::disclosure_header(
+                ui,
+                appearance_rect,
+                icons::PALETTE,
+                "Appearance",
+                "Style · clock · theme · accent · position",
+                reveal(&ctx, APPEARANCE, open == Some(APPEARANCE)),
+                theme,
+            )
+            .clicked()
             {
-                cfg.theme = [ThemeMode::Auto, ThemeMode::Dark, ThemeMode::Light][theme_idx];
-                out.changed = true;
+                set_open_section(&ctx, (open != Some(APPEARANCE)).then_some(APPEARANCE));
             }
-            let mut accent_idx = match cfg.accent {
-                AccentSource::Wallpaper => 0,
-                AccentSource::System => 1,
-                AccentSource::Custom => 2,
-            };
-            if row(&mut lui, "Accent", theme, |ui| {
-                widgets::segmented(
-                    ui,
-                    &["Wallpaper", "Windows", "Custom"],
-                    &mut accent_idx,
-                    theme,
-                )
-            }) {
-                cfg.accent = [
-                    AccentSource::Wallpaper,
-                    AccentSource::System,
-                    AccentSource::Custom,
-                ][accent_idx];
-                if parse_hex(&cfg.accent_hex).is_none() {
-                    cfg.accent_hex = to_hex(FALLBACK_ACCENT);
+            if widgets::disclosure_header(
+                ui,
+                behavior_rect,
+                icons::SLIDERS_HORIZONTAL,
+                "Behavior",
+                "Displays · startup · sound · fullscreen",
+                reveal(&ctx, BEHAVIOR, open == Some(BEHAVIOR)),
+                theme,
+            )
+            .clicked()
+            {
+                set_open_section(&ctx, (open != Some(BEHAVIOR)).then_some(BEHAVIOR));
+            }
+
+            if open == Some(APPEARANCE) {
+                let mut lui = card_ui(ui, appearance_body);
+                let mut style_idx = usize::from(cfg.shell_style == ShellStyle::Notch);
+                if row(&mut lui, "Style", theme, |ui| {
+                    widgets::segmented(ui, &["Pill", "Notch"], &mut style_idx, theme)
+                }) {
+                    cfg.shell_style = [ShellStyle::Pill, ShellStyle::Notch][style_idx];
+                    out.changed = true;
                 }
-                out.changed = true;
-            }
-            let mut pos_idx = Placement::ALL
-                .iter()
-                .position(|&p| p == cfg.placement)
-                .unwrap_or(1);
-            if row(&mut lui, "Position", theme, |ui| {
-                widgets::segmented(ui, &["Left", "Center", "Right"], &mut pos_idx, theme)
-            }) {
-                cfg.placement = Placement::ALL[pos_idx];
-                out.changed = true;
-            }
-            let mut rui = card_ui(ui, right);
-            section_title(&mut rui, "Behavior", theme);
-            let mut mon_idx = match cfg.monitor {
-                MonitorMode::Primary => 0,
-                MonitorMode::Cursor => 1,
-                MonitorMode::Display => 2,
-                MonitorMode::SelectedDisplays => 3,
-            };
-            if row(&mut rui, "Monitor", theme, |ui| {
-                egui::ComboBox::from_id_salt("nook-monitor-mode")
-                    .width(ui.available_width())
-                    .selected_text(
-                        [
-                            "Primary",
-                            "Follow cursor",
-                            "One display…",
-                            "Selected displays…",
-                        ][mon_idx],
+                let mut notch_size_idx = NotchSize::ALL
+                    .iter()
+                    .position(|&size| size == cfg.notch_size)
+                    .unwrap_or(1);
+                if row(&mut lui, "Notch size", theme, |ui| {
+                    if cfg.shell_style != ShellStyle::Notch {
+                        ui.disable();
+                    }
+                    widgets::segmented(
+                        ui,
+                        &["Compact", "Standard", "Large"],
+                        &mut notch_size_idx,
+                        theme,
                     )
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut mon_idx, 0, "Primary display");
-                        ui.selectable_value(&mut mon_idx, 1, "Follow cursor");
-                        ui.selectable_value(&mut mon_idx, 2, "Choose one display…");
-                        ui.selectable_value(&mut mon_idx, 3, "Choose displays…");
-                    })
-                    .response
-            }) {
-                cfg.monitor = [
-                    MonitorMode::Primary,
-                    MonitorMode::Cursor,
-                    MonitorMode::Display,
-                    MonitorMode::SelectedDisplays,
-                ][mon_idx];
-                if cfg.monitor == MonitorMode::SelectedDisplays && cfg.monitor_displays.is_empty() {
-                    cfg.monitor_displays.push(cfg.monitor_display);
+                }) {
+                    cfg.notch_size = NotchSize::ALL[notch_size_idx];
+                    out.changed = true;
                 }
-                out.changed = true;
-            }
-            if matches!(
-                cfg.monitor,
-                MonitorMode::Display | MonitorMode::SelectedDisplays
-            ) {
-                let displays = nook_platform::monitor::all();
-                if !displays.is_empty() {
-                    let mut display_idx = (cfg.monitor_display as usize).min(displays.len() - 1);
-                    let names: Vec<String> = displays
-                        .iter()
-                        .enumerate()
-                        .map(|(index, display)| {
-                            format!(
-                                "Display {} · {}×{} · {}, {}",
-                                index + 1,
-                                display.bounds.width(),
-                                display.bounds.height(),
-                                display.bounds.left,
-                                display.bounds.top,
-                            )
+                let mut clock_idx = match cfg.clock_style {
+                    crate::config::ClockStyle::Classic => 0,
+                    crate::config::ClockStyle::Digital => 1,
+                    crate::config::ClockStyle::DotMatrix => 2,
+                };
+                if row(&mut lui, "Clock", theme, |ui| {
+                    widgets::segmented(
+                        ui,
+                        &["Classic", "Digital", "Dot matrix"],
+                        &mut clock_idx,
+                        theme,
+                    )
+                }) {
+                    cfg.clock_style = [
+                        crate::config::ClockStyle::Classic,
+                        crate::config::ClockStyle::Digital,
+                        crate::config::ClockStyle::DotMatrix,
+                    ][clock_idx];
+                    out.changed = true;
+                }
+                let mut theme_idx = match cfg.theme {
+                    ThemeMode::Auto => 0,
+                    ThemeMode::Dark => 1,
+                    ThemeMode::Light => 2,
+                };
+                if row(&mut lui, "Theme", theme, |ui| {
+                    if cfg.material == Material::Oled {
+                        ui.disable();
+                    }
+                    widgets::segmented(ui, &["Auto", "Dark", "Light"], &mut theme_idx, theme)
+                        .on_hover_text(if cfg.material == Material::Oled {
+                            "OLED material uses a fixed black theme"
+                        } else {
+                            "Choose the interface theme"
                         })
-                        .collect();
-                    if cfg.monitor == MonitorMode::Display {
-                        row(&mut rui, "Show on", theme, |ui| {
-                            egui::ComboBox::from_id_salt("nook-target-display")
-                                .width(ui.available_width())
-                                .selected_text(&names[display_idx])
-                                .show_ui(ui, |ui| {
-                                    for (index, name) in names.iter().enumerate() {
-                                        ui.selectable_value(&mut display_idx, index, name);
-                                    }
-                                })
-                                .response
-                        });
-                        if display_idx != cfg.monitor_display as usize {
-                            cfg.monitor_display = display_idx as u8;
-                            out.changed = true;
+                }) && cfg.material != Material::Oled
+                {
+                    cfg.theme = [ThemeMode::Auto, ThemeMode::Dark, ThemeMode::Light][theme_idx];
+                    out.changed = true;
+                }
+                let mut accent_idx = match cfg.accent {
+                    AccentSource::Wallpaper => 0,
+                    AccentSource::System => 1,
+                    AccentSource::Custom => 2,
+                };
+                if row(&mut lui, "Accent", theme, |ui| {
+                    widgets::segmented(
+                        ui,
+                        &["Wallpaper", "Windows", "Custom"],
+                        &mut accent_idx,
+                        theme,
+                    )
+                }) {
+                    cfg.accent = [
+                        AccentSource::Wallpaper,
+                        AccentSource::System,
+                        AccentSource::Custom,
+                    ][accent_idx];
+                    if parse_hex(&cfg.accent_hex).is_none() {
+                        cfg.accent_hex = to_hex(FALLBACK_ACCENT);
+                    }
+                    out.changed = true;
+                }
+                let mut pos_idx = Placement::ALL
+                    .iter()
+                    .position(|&p| p == cfg.placement)
+                    .unwrap_or(1);
+                if row(&mut lui, "Position", theme, |ui| {
+                    widgets::segmented(ui, &["Left", "Center", "Right"], &mut pos_idx, theme)
+                }) {
+                    cfg.placement = Placement::ALL[pos_idx];
+                    out.changed = true;
+                }
+            }
+            if open == Some(BEHAVIOR) {
+                let mut rui = card_ui(ui, behavior_body);
+                let mut mon_idx = match cfg.monitor {
+                    MonitorMode::Primary => 0,
+                    MonitorMode::Cursor => 1,
+                    MonitorMode::Display => 2,
+                    MonitorMode::SelectedDisplays => 3,
+                };
+                if row(&mut rui, "Monitor", theme, |ui| {
+                    egui::ComboBox::from_id_salt("nook-monitor-mode")
+                        .width(ui.available_width())
+                        .selected_text(
+                            [
+                                "Primary",
+                                "Follow cursor",
+                                "One display…",
+                                "Selected displays…",
+                            ][mon_idx],
+                        )
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut mon_idx, 0, "Primary display");
+                            ui.selectable_value(&mut mon_idx, 1, "Follow cursor");
+                            ui.selectable_value(&mut mon_idx, 2, "Choose one display…");
+                            ui.selectable_value(&mut mon_idx, 3, "Choose displays…");
+                        })
+                        .response
+                }) {
+                    cfg.monitor = [
+                        MonitorMode::Primary,
+                        MonitorMode::Cursor,
+                        MonitorMode::Display,
+                        MonitorMode::SelectedDisplays,
+                    ][mon_idx];
+                    if cfg.monitor == MonitorMode::SelectedDisplays
+                        && cfg.monitor_displays.is_empty()
+                    {
+                        cfg.monitor_displays.push(cfg.monitor_display);
+                    }
+                    out.changed = true;
+                }
+                if matches!(
+                    cfg.monitor,
+                    MonitorMode::Display | MonitorMode::SelectedDisplays
+                ) {
+                    let displays = nook_platform::monitor::all();
+                    if !displays.is_empty() {
+                        let mut display_idx =
+                            (cfg.monitor_display as usize).min(displays.len() - 1);
+                        let names: Vec<String> = displays
+                            .iter()
+                            .enumerate()
+                            .map(|(index, display)| {
+                                format!(
+                                    "Display {} · {}×{} · {}, {}",
+                                    index + 1,
+                                    display.bounds.width(),
+                                    display.bounds.height(),
+                                    display.bounds.left,
+                                    display.bounds.top,
+                                )
+                            })
+                            .collect();
+                        if cfg.monitor == MonitorMode::Display {
+                            row(&mut rui, "Show on", theme, |ui| {
+                                egui::ComboBox::from_id_salt("nook-target-display")
+                                    .width(ui.available_width())
+                                    .selected_text(&names[display_idx])
+                                    .show_ui(ui, |ui| {
+                                        for (index, name) in names.iter().enumerate() {
+                                            ui.selectable_value(&mut display_idx, index, name);
+                                        }
+                                    })
+                                    .response
+                            });
+                            if display_idx != cfg.monitor_display as usize {
+                                cfg.monitor_display = display_idx as u8;
+                                out.changed = true;
+                            }
+                        } else {
+                            if cfg.monitor_displays.is_empty() {
+                                cfg.monitor_displays.push(cfg.monitor_display);
+                                out.changed = true;
+                            }
+                            let mut selection = cfg.monitor_displays.clone();
+                            let mut selection_changed = false;
+                            row(&mut rui, "Displays", theme, |ui| {
+                                let count = selection.len();
+                                egui::ComboBox::from_id_salt("nook-target-displays")
+                                    .width(ui.available_width())
+                                    .selected_text(format!("{} selected · follows cursor", count))
+                                    .show_ui(ui, |ui| {
+                                        ui.set_min_width(260.0);
+                                        ui.label("Follow the cursor on selected displays");
+                                        ui.separator();
+                                        egui::ScrollArea::vertical().max_height(220.0).show(
+                                            ui,
+                                            |ui| {
+                                                for (index, name) in names.iter().enumerate() {
+                                                    let mut checked =
+                                                        selection.contains(&(index as u8));
+                                                    if ui.checkbox(&mut checked, name).changed() {
+                                                        if checked {
+                                                            selection.push(index as u8);
+                                                        } else if selection.len() > 1 {
+                                                            selection.retain(|i| *i != index as u8);
+                                                        } else {
+                                                            continue;
+                                                        }
+                                                        selection_changed = true;
+                                                    }
+                                                }
+                                            },
+                                        );
+                                    })
+                                    .response
+                            });
+                            if selection_changed {
+                                selection.sort_unstable();
+                                selection.dedup();
+                                cfg.monitor_displays = selection;
+                                out.changed = true;
+                            }
                         }
                     } else {
-                        if cfg.monitor_displays.is_empty() {
-                            cfg.monitor_displays.push(cfg.monitor_display);
-                            out.changed = true;
-                        }
-                        let mut selection = cfg.monitor_displays.clone();
-                        let mut selection_changed = false;
-                        row(&mut rui, "Displays", theme, |ui| {
-                            let count = selection.len();
-                            egui::ComboBox::from_id_salt("nook-target-displays")
-                                .width(ui.available_width())
-                                .selected_text(format!("{} selected · follows cursor", count))
-                                .show_ui(ui, |ui| {
-                                    ui.set_min_width(260.0);
-                                    ui.label("Follow the cursor on selected displays");
-                                    ui.separator();
-                                    egui::ScrollArea::vertical()
-                                        .max_height(220.0)
-                                        .show(ui, |ui| {
-                                            for (index, name) in names.iter().enumerate() {
-                                                let mut checked =
-                                                    selection.contains(&(index as u8));
-                                                if ui.checkbox(&mut checked, name).changed() {
-                                                    if checked {
-                                                        selection.push(index as u8);
-                                                    } else if selection.len() > 1 {
-                                                        selection.retain(|i| *i != index as u8);
-                                                    } else {
-                                                        continue;
-                                                    }
-                                                    selection_changed = true;
-                                                }
-                                            }
-                                        });
-                                })
-                                .response
-                        });
-                        if selection_changed {
-                            selection.sort_unstable();
-                            selection.dedup();
-                            cfg.monitor_displays = selection;
-                            out.changed = true;
-                        }
+                        hint(&mut rui, "No connected displays are available", theme);
                     }
-                } else {
-                    hint(&mut rui, "No connected displays are available", theme);
                 }
-            }
-            let mut on_top = cfg.on_top;
-            if row(&mut rui, "Always on top", theme, |ui| {
-                widgets::toggle(ui, &mut on_top, theme)
-            }) {
-                cfg.on_top = on_top;
-                out.changed = true;
-            }
-            let mut startup = cfg.launch_at_startup;
-            if row(&mut rui, "Launch at startup", theme, |ui| {
-                widgets::toggle(ui, &mut startup, theme)
-            }) {
-                cfg.launch_at_startup = startup;
-                out.startup_toggled = true;
-                out.changed = true;
-            }
-            let mut sounds = cfg.sound_effects;
-            if row(&mut rui, "Sound effects", theme, |ui| {
-                widgets::toggle(ui, &mut sounds, theme)
-            }) {
-                cfg.sound_effects = sounds;
-                out.changed = true;
-            }
-            let mut hide = cfg.hide_in_fullscreen;
-            if row(&mut rui, "Hide in fullscreen", theme, |ui| {
-                widgets::toggle(ui, &mut hide, theme)
-                    .on_hover_text("Fade the notch out while a game or video is fullscreen")
-            }) {
-                cfg.hide_in_fullscreen = hide;
-                out.changed = true;
+                let mut on_top = cfg.on_top;
+                if row(&mut rui, "Always on top", theme, |ui| {
+                    widgets::toggle(ui, &mut on_top, theme)
+                }) {
+                    cfg.on_top = on_top;
+                    out.changed = true;
+                }
+                let mut startup = cfg.launch_at_startup;
+                if row(&mut rui, "Launch at startup", theme, |ui| {
+                    widgets::toggle(ui, &mut startup, theme)
+                }) {
+                    cfg.launch_at_startup = startup;
+                    out.startup_toggled = true;
+                    out.changed = true;
+                }
+                let mut sounds = cfg.sound_effects;
+                if row(&mut rui, "Sound effects", theme, |ui| {
+                    widgets::toggle(ui, &mut sounds, theme)
+                }) {
+                    cfg.sound_effects = sounds;
+                    out.changed = true;
+                }
+                let mut hide = cfg.hide_in_fullscreen;
+                if row(&mut rui, "Hide in fullscreen", theme, |ui| {
+                    widgets::toggle(ui, &mut hide, theme)
+                        .on_hover_text("Fade the notch out while a game or video is fullscreen")
+                }) {
+                    cfg.hide_in_fullscreen = hide;
+                    out.changed = true;
+                }
             }
 
             let open = open_section(&ctx);
@@ -1141,15 +1189,6 @@ fn card_ui(ui: &mut Ui, rect: Rect) -> Ui {
             .max_rect(rect.shrink2(vec2(14.0, 10.0)))
             .layout(Layout::top_down(Align::Min)),
     )
-}
-
-fn section_title(ui: &mut Ui, text: &str, theme: &Theme) {
-    ui.label(
-        egui::RichText::new(text.to_uppercase())
-            .font(Theme::font_semibold(SIZE_LABEL - 1.0))
-            .color(theme.text_faint),
-    );
-    ui.add_space(2.0);
 }
 
 /// Label on the left, control on the right. Returns whether it changed.
