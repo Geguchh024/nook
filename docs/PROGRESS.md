@@ -1,5 +1,9 @@
 # Progress
 
+## Step 59 — Keep the overlay frameless after tray menu activation
+
+- The window subclass now handles both forms of `WM_NCCALCSIZE` and suppresses non-client painting, preventing Windows from restoring a bright frame strip when a native tray menu changes activation.
+
 ## Step 58 — Fade hover outline as the shell opens
 
 - The shell's outer hover glow now fades with its opening progress, leaving the glass rim and top highlight without a separate straight accent stroke across the expanded panel.

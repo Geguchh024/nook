@@ -8,6 +8,7 @@
 //! shape fall through to the app behind.
 
 use crate::{Result, Win32Context};
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::System::Threading::{GetCurrentProcessId, GetCurrentThreadId};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -17,12 +18,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, HWND_BOTTOM, HWND_NOTOPMOST,
     HWND_TOPMOST, IsWindowVisible, LWA_ALPHA, SW_SHOWNOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetLayeredWindowAttributes, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_ERASEBKGND, WM_NCCALCSIZE,
-    WM_DWMCOMPOSITIONCHANGED, WM_NCPAINT, WM_PAINT, WM_SHOWWINDOW, WM_WINDOWPOSCHANGED, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    SetWindowPos, ShowWindow, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOMPOSITIONCHANGED,
+    WM_ERASEBKGND, WM_NCCALCSIZE, WM_NCPAINT, WM_PAINT, WM_SHOWWINDOW, WM_WINDOWPOSCHANGED,
+    WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
 use windows::core::BOOL;
 
 /// A window handle that can cross threads. Win32 handles are plain integers
@@ -96,23 +96,30 @@ pub fn fill_client(hwnd: Hwnd) -> Result<()> {
         _id: usize,
         _data: usize,
     ) -> LRESULT {
-        if msg == WM_NCCALCSIZE && wparam.0 != 0 {
+        if msg == WM_NCCALCSIZE {
             // Keep the proposed window rect as the client rect: no frame.
+            return LRESULT(0);
+        }
+        if msg == WM_NCPAINT {
+            // The overlay is frameless. In particular, do not let DWM flash
+            // a caption strip when a native tray menu changes activation.
             return LRESULT(0);
         }
         if CLEAR_GDI.load(Ordering::Relaxed) {
             let window = Hwnd::from_raw(hwnd.0 as isize);
             match msg {
-                // There is no frame to paint; DWM would fill it pale.
-                WM_NCPAINT => return LRESULT(0),
                 WM_ERASEBKGND => {
                     clear_gdi_surface(window);
                     return LRESULT(1);
                 }
                 // Anything that can hand the window a new GDI surface:
                 // repaint, show, move/resize, DPI or display change.
-                WM_PAINT | WM_SHOWWINDOW | WM_WINDOWPOSCHANGED | WM_DPICHANGED
-                | WM_DISPLAYCHANGE | WM_DWMCOMPOSITIONCHANGED => {
+                WM_PAINT
+                | WM_SHOWWINDOW
+                | WM_WINDOWPOSCHANGED
+                | WM_DPICHANGED
+                | WM_DISPLAYCHANGE
+                | WM_DWMCOMPOSITIONCHANGED => {
                     // SAFETY: forwarding to the next window procedure first.
                     let res = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
                     clear_gdi_surface(window);
