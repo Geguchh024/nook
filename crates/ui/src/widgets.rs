@@ -404,7 +404,7 @@ pub fn wireless_tile(
         return;
     }
 
-    let compact = rect.width() < 80.0 && rect.height() < 80.0;
+    let compact = size == SizeClass::Small;
     let center = if compact {
         rect.center()
     } else {

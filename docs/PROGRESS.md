@@ -399,3 +399,8 @@
 - The shared Wi-Fi, Bluetooth, and Airplane tile face now uses the renderer's `TileShape` and `SizeClass`. Small Circle tiles stay icon-only; larger Circle tiles center the title and connection summary, with extra detail reserved for Large. Rounded tiles keep their existing horizontal pill and stacked layouts.
 - Tile activation and full-page navigation are unchanged.
 - Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 46 — Respect Small radio tile sizing
+
+- The shared wireless face now keys its icon-only state to the actual Small footprint rather than a fixed pixel threshold, so DPI scaling does not unexpectedly add labels to compact tiles.
+- Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
