@@ -336,6 +336,7 @@ Text extractor, lens search and the color picker share one overlay
 | Shell spring | Width k=260, height k=220, both 4% overshoot | Height trails width slightly, so the morph feels organic rather than linear. |
 | Pin | Click on the glass (not a tile), the tray, or Ctrl+Alt+N | A pushpin glyph at the top center shows the pinned state. |
 | Toggle hotkey | `ctrl+alt+N` | Unused by Windows and common apps. Configurable as `toggle_hotkey`. |
+| Settings hotkey | `ctrl+alt+M` | Opens the settings page and pins the panel, like the tray entry. Configurable as `settings_hotkey`; empty turns it off. |
 | Accent | Wallpaper dominant hue (saturation-weighted histogram), else `#7C5CFF` | Windows accent and fixed violet are options in Settings. |
 | Hover delay presets | Fast 60 / Normal 120 / Calm 250 ms | Normal matches the spec. |
 | Reduced motion | Springs snap and tweens drop to 0 ms | Follows "Animation effects" (`SPI_GETCLIENTAREAANIMATION`). |

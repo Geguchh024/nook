@@ -9,7 +9,7 @@
 //! The preview is the exported image itself, rendered at screen resolution
 //! by the same anti-aliased rasterizer, so what you see is what you get.
 //! Codes use error correction Medium, or High when a logo covers the middle
-//! (High survives 30% of the code missing). Ctrl+Alt+Q makes a code from
+//! (High survives 30% of the code missing). Ctrl+Shift+Q makes a code from
 //! the clipboard.
 
 use egui::epaint::Mesh;
@@ -1512,7 +1512,7 @@ impl Module for QrCodeModule {
     }
 
     fn default_hotkey(&self) -> Option<&'static str> {
-        Some("ctrl+alt+KeyQ")
+        Some("ctrl+shift+KeyQ")
     }
 
     /// Makes a code from the clipboard and shows it.
@@ -1555,7 +1555,7 @@ impl Module for QrCodeModule {
             return;
         }
         if kit::tool_tile(ui, ctx, icons::QR_CODE, false)
-            .on_hover_text("Make a QR code  \u{00B7}  Ctrl+Alt+Q uses the clipboard")
+            .on_hover_text("Make a QR code  \u{00B7}  Ctrl+Shift+Q uses the clipboard")
             .clicked()
         {
             if self.text.trim().is_empty()

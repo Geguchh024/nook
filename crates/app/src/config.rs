@@ -110,6 +110,8 @@ pub struct Config {
     pub launch_at_startup: bool,
     /// Global shortcut that opens and pins the panel.
     pub toggle_hotkey: String,
+    /// Global shortcut that opens the settings page. Empty: no shortcut.
+    pub settings_hotkey: String,
     /// Plugin dev mode: plugins restart when their files are saved.
     pub plugin_dev: bool,
     /// Look for a new release on GitHub at start and every few hours.
@@ -142,6 +144,7 @@ impl Default for Config {
             collapse_grace_ms: 250,
             launch_at_startup: false,
             toggle_hotkey: "ctrl+alt+N".into(),
+            settings_hotkey: "ctrl+alt+M".into(),
             plugin_dev: false,
             check_updates: true,
             usage_stats: true,

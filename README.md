@@ -243,7 +243,7 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
 
 - **Tools** (second page of the grid). Each opens a full page; made Wide
   or Large, most show more on the tile itself.
-  - **QR code** (Ctrl+Alt+Q makes one from the clipboard): paste a link and
+  - **QR code** (Ctrl+Shift+Q makes one from the clipboard): paste a link and
     the code draws as you type. Styles: dots, liquid, round lines, rounded,
     square; corner eyes round, circle, leaf or square; solid colors,
     gradients or the accent; white, cream, night or clear background; your
@@ -432,7 +432,7 @@ drained in `on_tick`.
   control mode (Esc releases), adb notifications and phone keys, Wi-Fi adb
 
 - [x] QR code: five module styles, four eye styles, gradients, logo and
-  label, PNG/SVG/clipboard/drag export, Ctrl+Alt+Q
+  label, PNG/SVG/clipboard/drag export, Ctrl+Shift+Q
 - [x] Calculator: expression engine with percentages, functions and unit
   conversion, keypad, history, Ctrl+Alt+K
 - [x] System monitor: CPU, memory, network charts, drives, top apps
