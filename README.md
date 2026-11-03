@@ -79,6 +79,8 @@ settings page, `--page=<module id>` a module's page (e.g. `--page=phone_link`).
 
 ### Installer
 
+In this fork, `.github/workflows/build-windows.yml` builds the Setup wizard on GitHub Actions for every push (Actions > run > Artifacts > `Nook-Setup`). Pushing a tag such as `v0.3.1` also publishes it as a release.
+
 `installer\build.ps1` builds `nook.exe` and packs it into
 `dist\Nook-Setup-<version>.exe` with [Inno Setup](https://jrsoftware.org/isinfo.php)
 6.7 or newer:
@@ -108,7 +110,7 @@ gh release create v0.2.1 dist/Nook-Setup-0.2.1.exe --title "Nook 0.2.1"
 The website's download buttons point at that asset, so bump `VERSION` (and
 `SIZE`) in `lib/release.ts` of the website repository to match.
 
-Installed copies update themselves from the same release. Nook asks GitHub
+Installed copies update themselves from the same release (in this fork: `bohnespieler/nook`, not the original repo; see `crates/app/src/update.rs`). Nook asks GitHub
 for the latest release 20 seconds after start and every 6 hours. When the
 tag is newer than the running version, an **Update to x.y.z** button
 appears in the panel's bottom gutter, in the Settings header and in the
@@ -243,7 +245,7 @@ npx wrangler@4.153.0 d1 execute nook-stats --remote --file migrations/0002_usage
 
 - **Tools** (second page of the grid). Each opens a full page; made Wide
   or Large, most show more on the tile itself.
-  - **QR code** (Ctrl+Alt+Q makes one from the clipboard): paste a link and
+  - **QR code** (Ctrl+Shift+Q makes one from the clipboard): paste a link and
     the code draws as you type. Styles: dots, liquid, round lines, rounded,
     square; corner eyes round, circle, leaf or square; solid colors,
     gradients or the accent; white, cream, night or clear background; your
@@ -432,7 +434,7 @@ drained in `on_tick`.
   control mode (Esc releases), adb notifications and phone keys, Wi-Fi adb
 
 - [x] QR code: five module styles, four eye styles, gradients, logo and
-  label, PNG/SVG/clipboard/drag export, Ctrl+Alt+Q
+  label, PNG/SVG/clipboard/drag export, Ctrl+Shift+Q
 - [x] Calculator: expression engine with percentages, functions and unit
   conversion, keypad, history, Ctrl+Alt+K
 - [x] System monitor: CPU, memory, network charts, drives, top apps

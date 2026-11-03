@@ -140,7 +140,7 @@ Push the folder to a **public GitHub repository** (the plugin can sit at the roo
 
 **Icons must come from `references/icons.txt`.** An unknown name renders as a question mark. Names are kebab-case Phosphor names (`cloud-sun`, `hard-drives`, `arrow-clockwise`).
 
-**Hotkeys** use `global-hotkey` syntax: modifiers then one key, e.g. `"ctrl+alt+KeyW"`, `"ctrl+shift+Digit1"`, `"alt+F5"`. Nook already uses Ctrl+Alt with C, D, F, K, L, N, P, Q, R, S and T, and the to-do example uses Ctrl+Alt+Y, so pick something else.
+**Hotkeys** use `global-hotkey` syntax: modifiers then one key, e.g. `"ctrl+alt+KeyW"`, `"ctrl+shift+Digit1"`, `"alt+F5"`. Nook already uses Ctrl+Alt with C, D, F, K, L, M, N, P, R, S and T (and Ctrl+Shift+Q for the QR code), and the to-do example uses Ctrl+Alt+Y, so pick something else.
 
 **Ignore what you don't know.** Skip unknown message types and unknown event ids without crashing: newer versions of Nook add more.
 

@@ -46,6 +46,8 @@ type PushedShape = (Vec<(f32, f32)>, Option<Rect>);
 struct Hotkeys {
     manager: GlobalHotKeyManager,
     toggle_id: Option<u32>,
+    /// Opens the settings page.
+    settings_id: Option<u32>,
     /// Module hotkeys and the module each belongs to.
     modules: Vec<(HotKey, &'static str)>,
     rx: Receiver<GlobalHotKeyEvent>,
@@ -905,21 +907,31 @@ fn timings(cfg: &Config) -> ShellTimings {
     }
 }
 
-fn register_hotkeys(cfg: &Config, registry: &Registry, ctx: &egui::Context) -> Result<Hotkeys> {
-    let manager = GlobalHotKeyManager::new().context("creating hotkey manager")?;
-    let toggle_id = match HotKey::from_str(&cfg.toggle_hotkey) {
+/// Registers one global shortcut from its config string; an empty string
+/// means "none". A bad or taken shortcut is logged and skipped.
+fn register_one(manager: &GlobalHotKeyManager, accel: &str) -> Option<u32> {
+    if accel.trim().is_empty() {
+        return None;
+    }
+    match HotKey::from_str(accel) {
         Ok(hk) => match manager.register(hk) {
             Ok(()) => Some(hk.id()),
             Err(e) => {
-                tracing::warn!("hotkey {} unavailable: {e}", cfg.toggle_hotkey);
+                tracing::warn!("hotkey {accel} unavailable: {e}");
                 None
             }
         },
         Err(e) => {
-            tracing::warn!("bad hotkey {:?}: {e}", cfg.toggle_hotkey);
+            tracing::warn!("bad hotkey {accel:?}: {e}");
             None
         }
-    };
+    }
+}
+
+fn register_hotkeys(cfg: &Config, registry: &Registry, ctx: &egui::Context) -> Result<Hotkeys> {
+    let manager = GlobalHotKeyManager::new().context("creating hotkey manager")?;
+    let toggle_id = register_one(&manager, &cfg.toggle_hotkey);
+    let settings_id = register_one(&manager, &cfg.settings_hotkey);
     let (tx, rx) = unbounded();
     let ctx = ctx.clone();
     GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
@@ -930,6 +942,7 @@ fn register_hotkeys(cfg: &Config, registry: &Registry, ctx: &egui::Context) -> R
     let mut hotkeys = Hotkeys {
         manager,
         toggle_id,
+        settings_id,
         modules: Vec::new(),
         rx,
     };
@@ -1004,18 +1017,24 @@ impl eframe::App for NookApp {
         }
         if let Some(hk) = &self.hotkeys {
             let mut toggle = false;
+            let mut open_settings = false;
             while let Ok(e) = hk.rx.try_recv() {
                 if e.state != HotKeyState::Pressed {
                     continue;
                 }
                 if Some(e.id) == hk.toggle_id {
                     toggle = !toggle;
+                } else if Some(e.id) == hk.settings_id {
+                    open_settings = true;
                 } else if let Some((_, id)) = hk.modules.iter().find(|(k, _)| k.id() == e.id)
                     && let Some(m) = self.registry.get_mut(id)
                 {
                     self.stats.tool(id);
                     m.on_hotkey();
                 }
+            }
+            if open_settings {
+                self.handle_tray(ctx, TrayCommand::Settings);
             }
             if toggle {
                 let now = Self::now(ctx);
