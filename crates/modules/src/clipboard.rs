@@ -13,7 +13,7 @@ use egui::{
 use nook_platform::clipboard::{self, ClipContent, ClipImage, ClipboardWatcher};
 use nook_ui::bento::tile_header;
 use nook_ui::module::{Module, TileCtx, TileSize};
-use nook_ui::theme::{SIZE_LABEL, TILE_RADIUS, Theme, with_alpha};
+use nook_ui::theme::{SIZE_LABEL, TILE_RADIUS, Theme, parse_hex, with_alpha};
 use nook_ui::{anim, icons, paint, widgets};
 use std::time::{Duration, Instant};
 
@@ -23,6 +23,26 @@ const MAX_ENTRIES: usize = 40;
 const MAX_IMAGES: usize = 8;
 /// How long the "Copied" confirmation shows.
 const COPIED_FOR: f64 = 1.2;
+
+fn clipboard_color(text: &str) -> Option<Color32> {
+    let value = text.trim();
+    (value.starts_with('#') && matches!(value.len(), 4 | 7 | 9))
+        .then(|| parse_hex(value))
+        .flatten()
+}
+
+fn entry_color(entries: &[Entry], id: u64) -> Option<Color32> {
+    entries
+        .iter()
+        .find(|entry| entry.id == id)
+        .and_then(|entry| {
+            if let ClipContent::Text(text) = &entry.content {
+                clipboard_color(text)
+            } else {
+                None
+            }
+        })
+}
 
 struct Entry {
     id: u64,
@@ -420,6 +440,15 @@ impl Module for Clipboard {
             let Some(entry) = self.history.entries.iter_mut().find(|e| e.id == id) else {
                 continue;
             };
+            if let ClipContent::Text(text) = &entry.content
+                && let Some(color) = clipboard_color(text)
+            {
+                ui.painter().rect_filled(
+                    row,
+                    8.0,
+                    Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 112),
+                );
+            }
             let text_x = row.min.x + 6.0;
             if copied {
                 paint::icon(
@@ -567,6 +596,13 @@ impl Module for Clipboard {
                         continue;
                     }
                     widgets::card(ui.painter(), card, theme);
+                    if let Some(color) = entry_color(&self.history.entries, id) {
+                        ui.painter().rect_filled(
+                            card,
+                            TILE_RADIUS,
+                            Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 112),
+                        );
+                    }
                     let resp = hover_box(ui, card, Id::new(("clip-card", id)), TILE_RADIUS, theme);
                     let copied = self.just_copied(id, now);
                     let Some(entry) = self.history.entries.iter_mut().find(|e| e.id == id) else {
@@ -774,6 +810,16 @@ impl Module for Clipboard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clipboard_hex_colors_are_recognized_without_matching_other_text() {
+        assert_eq!(
+            clipboard_color("#ff89fa"),
+            Some(Color32::from_rgb(255, 137, 250))
+        );
+        assert!(clipboard_color("notes #ff89fa").is_none());
+        assert!(clipboard_color("#nothex").is_none());
+    }
 
     fn text(s: &str) -> ClipContent {
         ClipContent::Text(s.into())
