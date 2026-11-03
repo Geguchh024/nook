@@ -33,6 +33,7 @@ pub mod single_instance;
 pub mod snip;
 pub mod startup;
 pub mod system;
+pub mod taskbar;
 pub mod url_scheme;
 pub mod wallpaper;
 pub mod window;

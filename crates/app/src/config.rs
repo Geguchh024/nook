@@ -66,6 +66,68 @@ pub enum ShellStyle {
     Notch,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DookPosition {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+/// A compact, user-configurable dock that can replace the Windows taskbar.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DookConfig {
+    pub enabled: bool,
+    pub hide_windows_taskbar: bool,
+    pub position: DookPosition,
+    pub oled: bool,
+    pub monochrome_icons: bool,
+    pub background_hex: String,
+    pub icon_hex: String,
+    pub radius: u8,
+    pub button_radius: u8,
+    pub show_logo: bool,
+    pub apps: Vec<DookApp>,
+    pub show_clock: bool,
+    pub show_date: bool,
+    pub show_wifi: bool,
+    pub show_volume: bool,
+    pub show_battery: bool,
+    pub show_emoji: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DookApp {
+    pub path: String,
+    pub label: String,
+}
+
+impl Default for DookConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            hide_windows_taskbar: false,
+            position: DookPosition::Center,
+            oled: false,
+            monochrome_icons: true,
+            background_hex: "#17171A".into(),
+            icon_hex: "#D7D7DE".into(),
+            radius: 28,
+            button_radius: 12,
+            show_logo: true,
+            apps: Vec::new(),
+            show_clock: true,
+            show_date: true,
+            show_wifi: true,
+            show_volume: true,
+            show_battery: true,
+            show_emoji: true,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotchSize {
@@ -199,6 +261,7 @@ fn default_layout_gap() -> u8 {
 #[serde(default)]
 pub struct Config {
     pub shell_style: ShellStyle,
+    pub dook: DookConfig,
     pub notch_size: NotchSize,
     pub clock_style: ClockStyle,
     pub clipboard_retention: RetentionPeriod,
@@ -269,6 +332,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             shell_style: ShellStyle::Pill,
+            dook: DookConfig::default(),
             notch_size: NotchSize::Standard,
             clock_style: ClockStyle::Classic,
             clipboard_retention: RetentionPeriod::Never,
@@ -439,6 +503,9 @@ mod tests {
         assert_eq!(cfg.hover_delay_ms, 120);
         assert_eq!(cfg.placement, Placement::Center);
         assert!(cfg.on_top);
+        assert!(!cfg.dook.enabled);
+        assert!(cfg.dook.show_clock);
+        assert_eq!(cfg.dook.position, DookPosition::Center);
     }
 
     #[test]

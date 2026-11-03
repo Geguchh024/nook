@@ -14,6 +14,20 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow, SW_SHOWNORMAL};
 use windows::core::PCWSTR;
 
+/// Opens the Windows emoji and symbols picker with its native shortcut.
+pub fn show_emoji_picker() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_LWIN, VK_OEM_PERIOD, keybd_event,
+    };
+    // SAFETY: injects the standard Win+. shortcut as four balanced key events.
+    unsafe {
+        keybd_event(VK_LWIN.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
+        keybd_event(VK_OEM_PERIOD.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
+        keybd_event(VK_OEM_PERIOD.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+    }
+}
+
 /// The user's Screenshots folder (Pictures\Screenshots unless moved).
 pub fn screenshots_dir() -> Option<std::path::PathBuf> {
     // SAFETY: the returned string is freed with CoTaskMemFree after copying.

@@ -5,6 +5,7 @@
 mod app;
 mod config;
 mod diag;
+mod dook;
 #[cfg(feature = "debug-overlay")]
 mod overlay;
 mod settings;
@@ -110,8 +111,11 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
     use eframe::egui_wgpu::{SurfaceConfig, WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew};
     let mut setup = WgpuSetupCreateNew::without_display_handle();
     setup.instance_descriptor.backends = wgpu::Backends::DX12;
-    setup.instance_descriptor.backend_options.dx12.presentation_system =
-        wgpu::Dx12SwapchainKind::DxgiFromVisual;
+    setup
+        .instance_descriptor
+        .backend_options
+        .dx12
+        .presentation_system = wgpu::Dx12SwapchainKind::DxgiFromVisual;
     // The integrated GPU on hybrid laptops: a notch never needs the
     // discrete one, and waking it costs battery.
     setup.power_preference = wgpu::PowerPreference::LowPower;

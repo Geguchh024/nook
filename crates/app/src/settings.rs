@@ -25,12 +25,13 @@ const ROW: f32 = 28.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
-const BODY: [f32; 5] = [
+const BODY: [f32; 6] = [
     6.0 * ROW + 24.0,
     6.0 * ROW + 24.0,
     9.0 * ROW + 16.0,
     6.0 * ROW + 12.0,
     5.0 * ROW + 36.0,
+    10.0 * ROW + 20.0,
 ];
 /// Collapsible sections, in page order.
 const APPEARANCE: usize = 0;
@@ -38,6 +39,7 @@ const BEHAVIOR: usize = 1;
 const CUSTOMIZE: usize = 2;
 const MOTION: usize = 3;
 const ADVANCED: usize = 4;
+const DOOK: usize = 5;
 
 /// Which collapsible section is open (at most one at a time).
 fn open_section(ctx: &egui::Context) -> Option<usize> {
@@ -66,8 +68,8 @@ fn base_height(width: f32) -> f32 {
         + GAP
         + top_height(width, None)
         + GAP
-        + 5.0 * DISCLOSURE
-        + 4.0 * GAP
+        + 6.0 * DISCLOSURE
+        + 5.0 * GAP
 }
 
 /// Spring for a section's 0..1 reveal, tuned like the panel height so the
@@ -161,6 +163,8 @@ pub struct PageOutput {
     pub check_update: bool,
     /// The Update button was clicked.
     pub install_update: bool,
+    pub pick_dook_apps: bool,
+    pub remove_dook_app: Option<usize>,
 }
 
 /// The settings page, laid out in the expanded panel.
@@ -524,7 +528,7 @@ pub fn page(
 
             let open = open_section(&ctx);
             let mut y = top.max.y + GAP;
-            for section in [CUSTOMIZE, MOTION, ADVANCED] {
+            for section in [DOOK, CUSTOMIZE, MOTION, ADVANCED] {
                 let t = reveal(&ctx, section, open == Some(section));
                 let card = Rect::from_min_size(
                     pos2(panel.min.x, y),
@@ -534,6 +538,7 @@ pub fn page(
                 widgets::card(ui.painter(), card, theme);
                 let head = Rect::from_min_size(card.min, vec2(card.width(), DISCLOSURE));
                 let (glyph, title, summary) = match section {
+                    DOOK => (icons::LAYOUT, "Dook", dook_summary(cfg)),
                     CUSTOMIZE => (icons::PALETTE, "Customize", customize_summary(cfg)),
                     MOTION => (
                         icons::ARROW_CLOCKWISE,
@@ -570,6 +575,7 @@ pub fn page(
                     bui.set_clip_rect(card.intersect(ui.clip_rect()));
                     bui.multiply_opacity(fade * fade);
                     match section {
+                        DOOK => dook_body(&mut bui, body, theme, cfg, &mut out),
                         CUSTOMIZE => customize_body(&mut bui, body, theme, cfg, &mut out),
                         MOTION => motion_body(&mut bui, body, theme, cfg, &mut out),
                         _ => advanced_body(&mut bui, body, theme, cfg, &mut out),
@@ -663,6 +669,211 @@ fn customize_summary(cfg: &Config) -> String {
         format!("grain {}%", cfg.grain)
     };
     format!("{material} · {tint} · {grain}")
+}
+
+fn dook_summary(cfg: &Config) -> String {
+    if !cfg.dook.enabled {
+        return "Off · Windows taskbar unchanged".to_owned();
+    }
+    let position = match cfg.dook.position {
+        crate::config::DookPosition::Left => "Left",
+        crate::config::DookPosition::Center => "Center",
+        crate::config::DookPosition::Right => "Right",
+    };
+    format!(
+        "{} · {} · {}",
+        position,
+        if cfg.dook.oled { "OLED" } else { "Glass" },
+        if cfg.dook.hide_windows_taskbar {
+            "replaces taskbar"
+        } else {
+            "taskbar visible"
+        }
+    )
+}
+
+/// The Dook dock's live controls and appearance, arranged in two columns.
+fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut PageOutput) {
+    let inner = rect.shrink2(vec2(14.0, 6.0));
+    let gap = 20.0;
+    let col_w = (inner.width() - gap) * 0.5;
+    let mut left = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_size(inner.min, vec2(col_w, inner.height())))
+            .layout(Layout::top_down(Align::Min)),
+    );
+    let mut right = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_size(
+                pos2(inner.min.x + col_w + gap, inner.min.y),
+                vec2(col_w, inner.height()),
+            ))
+            .layout(Layout::top_down(Align::Min)),
+    );
+
+    let mut enabled = cfg.dook.enabled;
+    if row(&mut left, "Enable Dook", theme, |ui| {
+        widgets::toggle(ui, &mut enabled, theme)
+    }) {
+        cfg.dook.enabled = enabled;
+        out.changed = true;
+    }
+    let mut position = match cfg.dook.position {
+        crate::config::DookPosition::Left => 0,
+        crate::config::DookPosition::Center => 1,
+        crate::config::DookPosition::Right => 2,
+    };
+    if row(&mut left, "Position", theme, |ui| {
+        widgets::segmented(ui, &["Left", "Center", "Right"], &mut position, theme)
+    }) {
+        cfg.dook.position = [
+            crate::config::DookPosition::Left,
+            crate::config::DookPosition::Center,
+            crate::config::DookPosition::Right,
+        ][position];
+        out.changed = true;
+    }
+    let mut hide_taskbar = cfg.dook.hide_windows_taskbar;
+    if row(&mut left, "Hide Windows taskbar", theme, |ui| {
+        if !cfg.dook.enabled {
+            ui.disable();
+        }
+        widgets::toggle(ui, &mut hide_taskbar, theme)
+            .on_hover_text("Dook stays active while the Windows taskbar is hidden")
+    }) {
+        cfg.dook.hide_windows_taskbar = hide_taskbar;
+        out.changed = true;
+    }
+    let mut oled = cfg.dook.oled;
+    if row(&mut left, "OLED black", theme, |ui| {
+        widgets::toggle(ui, &mut oled, theme)
+    }) {
+        cfg.dook.oled = oled;
+        out.changed = true;
+    }
+    let mut radius = cfg.dook.radius.min(36) as f32 / 36.0;
+    if row(&mut left, "Corner radius", theme, |ui| {
+        let response = widgets::slider(ui, &mut radius, 110.0, 52, theme);
+        value_label(ui, &format!("{}", cfg.dook.radius), theme);
+        response
+    }) {
+        cfg.dook.radius = (radius * 36.0).round() as u8;
+        out.changed = true;
+    }
+    let mut button_radius = cfg.dook.button_radius.min(18) as f32 / 18.0;
+    if row(&mut left, "Button radius", theme, |ui| {
+        let response = widgets::slider(ui, &mut button_radius, 110.0, 54, theme);
+        value_label(ui, &format!("{}", cfg.dook.button_radius), theme);
+        response
+    }) {
+        cfg.dook.button_radius = (button_radius * 18.0).round() as u8;
+        out.changed = true;
+    }
+    let mut background =
+        parse_hex(&cfg.dook.background_hex).unwrap_or(Color32::from_rgb(24, 24, 28));
+    if row(&mut left, "Dock color", theme, |ui| {
+        egui::color_picker::color_edit_button_srgba(
+            ui,
+            &mut background,
+            egui::color_picker::Alpha::Opaque,
+        )
+    }) {
+        cfg.dook.background_hex = to_hex(background);
+        out.changed = true;
+    }
+    let mut icon_color = parse_hex(&cfg.dook.icon_hex).unwrap_or(theme.text);
+    if row(&mut left, "Icon color", theme, |ui| {
+        egui::color_picker::color_edit_button_srgba(
+            ui,
+            &mut icon_color,
+            egui::color_picker::Alpha::Opaque,
+        )
+    }) {
+        cfg.dook.icon_hex = to_hex(icon_color);
+        out.changed = true;
+    }
+
+    let mut logo = cfg.dook.show_logo;
+    if row(&mut right, "Nook logo", theme, |ui| {
+        widgets::toggle(ui, &mut logo, theme)
+    }) {
+        cfg.dook.show_logo = logo;
+        out.changed = true;
+    }
+    if row(&mut right, "App shortcuts", theme, |ui| {
+        let rect = Rect::from_center_size(ui.max_rect().center(), vec2(68.0, 24.0));
+        let response = ui.add_enabled_ui(cfg.dook.apps.len() < 6, |ui| {
+            nook_modules::kit::button(
+                ui,
+                rect,
+                if cfg.dook.apps.len() < 6 {
+                    "Add"
+                } else {
+                    "Full"
+                },
+                Some(icons::PLUS),
+                false,
+                theme,
+            )
+        });
+        response.inner
+    }) {
+        out.pick_dook_apps = true;
+    }
+    if !cfg.dook.apps.is_empty() {
+        row(&mut right, "Pinned", theme, |ui| {
+            let mut removed = None;
+            ui.horizontal(|ui| {
+                for (index, app) in cfg.dook.apps.iter().enumerate() {
+                    let short = app.label.chars().take(6).collect::<String>();
+                    if ui
+                        .small_button(format!("{short} ×"))
+                        .on_hover_text(format!("Remove {}", app.label))
+                        .clicked()
+                    {
+                        removed = Some(index);
+                    }
+                }
+            });
+            if let Some(index) = removed {
+                out.remove_dook_app = Some(index);
+            }
+            ui.allocate_response(egui::Vec2::ZERO, Sense::hover())
+        });
+    }
+    for label in [
+        "Clock",
+        "Date",
+        "Wi-Fi",
+        "Volume",
+        "Battery",
+        "Emoji picker",
+        "Monochrome icons",
+    ] {
+        let mut value = match label {
+            "Clock" => cfg.dook.show_clock,
+            "Date" => cfg.dook.show_date,
+            "Wi-Fi" => cfg.dook.show_wifi,
+            "Volume" => cfg.dook.show_volume,
+            "Battery" => cfg.dook.show_battery,
+            "Emoji picker" => cfg.dook.show_emoji,
+            _ => cfg.dook.monochrome_icons,
+        };
+        if row(&mut right, label, theme, |ui| {
+            widgets::toggle(ui, &mut value, theme)
+        }) {
+            match label {
+                "Clock" => cfg.dook.show_clock = value,
+                "Date" => cfg.dook.show_date = value,
+                "Wi-Fi" => cfg.dook.show_wifi = value,
+                "Volume" => cfg.dook.show_volume = value,
+                "Battery" => cfg.dook.show_battery = value,
+                "Emoji picker" => cfg.dook.show_emoji = value,
+                _ => cfg.dook.monochrome_icons = value,
+            }
+            out.changed = true;
+        }
+    }
 }
 
 fn advanced_summary(cfg: &Config) -> String {

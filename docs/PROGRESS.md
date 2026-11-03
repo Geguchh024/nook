@@ -1,8 +1,14 @@
 # Progress
 
+## Step 60 — Add the customizable Dook dock
+
+- Added a responsive Dook settings disclosure for its enable state, monitor-side alignment, OLED/background/icon colors, corner radius, monochrome glyphs, and independently visible system items.
+- Added a separate bottom dock viewport with live locale time/date and battery state, launchable pinned apps with their Windows shell icons, working Wi-Fi and sound settings actions, the Windows emoji picker, and the expandable emoji control.
+- Added an opt-in Windows taskbar replacement toggle that hides Explorer taskbars while Dook is active and restores them when disabled or when Nook exits.
+
 ## Step 59 — Keep the overlay frameless after tray menu activation
 
-- The window subclass now handles both forms of `WM_NCCALCSIZE` and suppresses non-client painting, preventing Windows from restoring a bright frame strip when a native tray menu changes activation.
+- The window subclass handles both forms of `WM_NCCALCSIZE`, suppresses non-client painting and activation redraws, and immediately removes frame bits when winit changes styles after tray interaction.
 
 ## Step 58 — Fade hover outline as the shell opens
 
