@@ -342,35 +342,42 @@ pub fn page(
                 MonitorMode::Primary => 0,
                 MonitorMode::Cursor => 1,
                 MonitorMode::Display => 2,
+                MonitorMode::SelectedDisplays => 3,
             };
             if row(&mut rui, "Monitor", theme, |ui| {
-                if ui.available_width() < 210.0 {
-                    egui::ComboBox::from_id_salt("nook-monitor-mode")
-                        .width(ui.available_width())
-                        .selected_text(["Primary", "Follow cursor", "Display"][mon_idx])
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut mon_idx, 0, "Primary");
-                            ui.selectable_value(&mut mon_idx, 1, "Follow cursor");
-                            ui.selectable_value(&mut mon_idx, 2, "Choose display…");
-                        })
-                        .response
-                } else {
-                    widgets::segmented(
-                        ui,
-                        &["Primary", "Follow cursor", "Display"],
-                        &mut mon_idx,
-                        theme,
+                egui::ComboBox::from_id_salt("nook-monitor-mode")
+                    .width(ui.available_width())
+                    .selected_text(
+                        [
+                            "Primary",
+                            "Follow cursor",
+                            "One display…",
+                            "Selected displays…",
+                        ][mon_idx],
                     )
-                }
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut mon_idx, 0, "Primary display");
+                        ui.selectable_value(&mut mon_idx, 1, "Follow cursor");
+                        ui.selectable_value(&mut mon_idx, 2, "Choose one display…");
+                        ui.selectable_value(&mut mon_idx, 3, "Choose displays…");
+                    })
+                    .response
             }) {
                 cfg.monitor = [
                     MonitorMode::Primary,
                     MonitorMode::Cursor,
                     MonitorMode::Display,
+                    MonitorMode::SelectedDisplays,
                 ][mon_idx];
+                if cfg.monitor == MonitorMode::SelectedDisplays && cfg.monitor_displays.is_empty() {
+                    cfg.monitor_displays.push(cfg.monitor_display);
+                }
                 out.changed = true;
             }
-            if cfg.monitor == MonitorMode::Display {
+            if matches!(
+                cfg.monitor,
+                MonitorMode::Display | MonitorMode::SelectedDisplays
+            ) {
                 let displays = nook_platform::monitor::all();
                 if !displays.is_empty() {
                     let mut display_idx = (cfg.monitor_display as usize).min(displays.len() - 1);
@@ -388,23 +395,68 @@ pub fn page(
                             )
                         })
                         .collect();
-                    row(&mut rui, "Choose display", theme, |ui| {
-                        egui::ComboBox::from_id_salt("nook-target-display")
-                            .width(ui.available_width())
-                            .selected_text(&names[display_idx])
-                            .show_ui(ui, |ui| {
-                                for (index, name) in names.iter().enumerate() {
-                                    ui.selectable_value(&mut display_idx, index, name);
-                                }
-                            })
-                            .response
-                    });
-                    if display_idx != cfg.monitor_display as usize {
-                        cfg.monitor_display = display_idx as u8;
-                        out.changed = true;
+                    if cfg.monitor == MonitorMode::Display {
+                        row(&mut rui, "Show on", theme, |ui| {
+                            egui::ComboBox::from_id_salt("nook-target-display")
+                                .width(ui.available_width())
+                                .selected_text(&names[display_idx])
+                                .show_ui(ui, |ui| {
+                                    for (index, name) in names.iter().enumerate() {
+                                        ui.selectable_value(&mut display_idx, index, name);
+                                    }
+                                })
+                                .response
+                        });
+                        if display_idx != cfg.monitor_display as usize {
+                            cfg.monitor_display = display_idx as u8;
+                            out.changed = true;
+                        }
+                    } else {
+                        if cfg.monitor_displays.is_empty() {
+                            cfg.monitor_displays.push(cfg.monitor_display);
+                            out.changed = true;
+                        }
+                        let mut selection = cfg.monitor_displays.clone();
+                        let mut selection_changed = false;
+                        row(&mut rui, "Displays", theme, |ui| {
+                            let count = selection.len();
+                            egui::ComboBox::from_id_salt("nook-target-displays")
+                                .width(ui.available_width())
+                                .selected_text(format!("{} selected · follows cursor", count))
+                                .show_ui(ui, |ui| {
+                                    ui.set_min_width(260.0);
+                                    ui.label("Follow the cursor on selected displays");
+                                    ui.separator();
+                                    egui::ScrollArea::vertical()
+                                        .max_height(220.0)
+                                        .show(ui, |ui| {
+                                            for (index, name) in names.iter().enumerate() {
+                                                let mut checked =
+                                                    selection.contains(&(index as u8));
+                                                if ui.checkbox(&mut checked, name).changed() {
+                                                    if checked {
+                                                        selection.push(index as u8);
+                                                    } else if selection.len() > 1 {
+                                                        selection.retain(|i| *i != index as u8);
+                                                    } else {
+                                                        continue;
+                                                    }
+                                                    selection_changed = true;
+                                                }
+                                            }
+                                        });
+                                })
+                                .response
+                        });
+                        if selection_changed {
+                            selection.sort_unstable();
+                            selection.dedup();
+                            cfg.monitor_displays = selection;
+                            out.changed = true;
+                        }
                     }
                 } else {
-                    hint(&mut rui, "No additional displays are connected", theme);
+                    hint(&mut rui, "No connected displays are available", theme);
                 }
             }
             let mut on_top = cfg.on_top;

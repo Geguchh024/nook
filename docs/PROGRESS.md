@@ -362,3 +362,9 @@
 - Appearance and Behavior now stack at compact panel widths, leaving the segmented settings and monitor controls their full card width. Wider panels retain the two-column layout.
 - The settings page height now accounts for the stacked cards, including the additional display selector row, instead of laying controls beyond a fixed-height card.
 - Verification: `cargo test --workspace --offline --quiet` passed; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 39 — Choose one or more target displays
+
+- Added a monitor picker with a checkbox for each connected display. One selected display pins the notch there; with multiple selected, the single notch follows the cursor only among the selected screens. The picker states this behavior explicitly.
+- Existing `primary`, `cursor`, and single `display` config values remain supported. The new `selected_displays` mode persists a sorted list of display indices and safely falls back if a selected screen disconnects.
+- Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

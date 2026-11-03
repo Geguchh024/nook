@@ -30,6 +30,8 @@ pub enum MonitorMode {
     Cursor,
     /// Use the connected display selected in Settings.
     Display,
+    /// Follow the cursor, but only on selected displays.
+    SelectedDisplays,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,6 +204,8 @@ pub struct Config {
     pub monitor: MonitorMode,
     /// Zero-based entry in the sorted connected-display list.
     pub monitor_display: u8,
+    /// Displays the notch may follow when `monitor` is `selected_displays`.
+    pub monitor_displays: Vec<u8>,
     pub material: Material,
     /// Glass opacity over the blurred backdrop, in percent (Glass material).
     pub glass_opacity: u8,
@@ -268,6 +272,7 @@ impl Default for Config {
             accent_hex: "#7C5CFF".into(),
             monitor: MonitorMode::Primary,
             monitor_display: 0,
+            monitor_displays: vec![0],
             material: Material::Acrylic,
             glass_opacity: DEFAULT_GLASS_OPACITY,
             background_hex: String::new(),
