@@ -1,5 +1,10 @@
 # Progress
 
+## Step 54 — Show connected displays in the Monitor picker
+
+- The Monitor popup now contains the connected-display checklist when Choose displays is selected, with each display's resolution and desktop coordinates and a scroll area for larger setups.
+- The selected mode reports the number of selected displays, and the previous second-level Displays popup was removed.
+
 ## Step 53 — Size clipboard history for four visible cards
 
 - The clipboard page now requests enough shell height to show up to four filtered history cards at once; further entries remain in the existing scroll area.

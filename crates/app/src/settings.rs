@@ -386,14 +386,62 @@ pub fn page(
                     MonitorMode::Cursor => 1,
                     MonitorMode::Display | MonitorMode::SelectedDisplays => 2,
                 };
+                let displays = nook_platform::monitor::all();
+                let names: Vec<String> = displays
+                    .iter()
+                    .enumerate()
+                    .map(|(index, display)| {
+                        format!(
+                            "Display {} · {}×{} · {}, {}",
+                            index + 1,
+                            display.bounds.width(),
+                            display.bounds.height(),
+                            display.bounds.left,
+                            display.bounds.top,
+                        )
+                    })
+                    .collect();
+                let mut selection = cfg.monitor_displays.clone();
+                let mut selection_changed = false;
                 if row(&mut rui, "Monitor", theme, |ui| {
                     egui::ComboBox::from_id_salt("nook-monitor-mode")
                         .width(ui.available_width())
-                        .selected_text(["Primary", "Follow cursor", "Choose displays…"][mon_idx])
+                        .selected_text(if mon_idx == 2 {
+                            format!("Choose displays · {} selected", selection.len())
+                        } else {
+                            ["Primary", "Follow cursor", "Choose displays…"][mon_idx].to_owned()
+                        })
                         .show_ui(ui, |ui| {
+                            ui.set_min_width(300.0);
                             ui.selectable_value(&mut mon_idx, 0, "Primary display");
                             ui.selectable_value(&mut mon_idx, 1, "Follow cursor");
                             ui.selectable_value(&mut mon_idx, 2, "Choose displays…");
+
+                            if mon_idx == 2 {
+                                ui.separator();
+                                ui.label("Connected displays · follow cursor on selected");
+                                if names.is_empty() {
+                                    ui.label("No connected displays found");
+                                } else {
+                                    egui::ScrollArea::vertical()
+                                        .id_salt("nook-connected-displays")
+                                        .max_height(220.0)
+                                        .show(ui, |ui| {
+                                            for (index, name) in names.iter().enumerate() {
+                                                let mut checked =
+                                                    selection.contains(&(index as u8));
+                                                if ui.checkbox(&mut checked, name).changed() {
+                                                    if checked {
+                                                        selection.push(index as u8);
+                                                    } else if selection.len() > 1 {
+                                                        selection.retain(|i| *i != index as u8);
+                                                    }
+                                                    selection_changed = true;
+                                                }
+                                            }
+                                        });
+                                }
+                            }
                         })
                         .response
                 }) {
@@ -409,27 +457,18 @@ pub fn page(
                     }
                     out.changed = true;
                 }
+                if selection_changed {
+                    selection.sort_unstable();
+                    selection.dedup();
+                    cfg.monitor_displays = selection;
+                    out.changed = true;
+                }
                 if matches!(
                     cfg.monitor,
                     MonitorMode::Display | MonitorMode::SelectedDisplays
                 ) {
-                    let displays = nook_platform::monitor::all();
                     if !displays.is_empty() {
                         let display_idx = (cfg.monitor_display as usize).min(displays.len() - 1);
-                        let names: Vec<String> = displays
-                            .iter()
-                            .enumerate()
-                            .map(|(index, display)| {
-                                format!(
-                                    "Display {} · {}×{} · {}, {}",
-                                    index + 1,
-                                    display.bounds.width(),
-                                    display.bounds.height(),
-                                    display.bounds.left,
-                                    display.bounds.top,
-                                )
-                            })
-                            .collect();
                         if cfg.monitor_displays.is_empty() {
                             cfg.monitor_displays.push(display_idx as u8);
                             out.changed = true;
@@ -437,47 +476,6 @@ pub fn page(
                         if cfg.monitor == MonitorMode::Display {
                             cfg.monitor = MonitorMode::SelectedDisplays;
                             out.changed = true;
-                        }
-                        {
-                            let mut selection = cfg.monitor_displays.clone();
-                            let mut selection_changed = false;
-                            row(&mut rui, "Displays", theme, |ui| {
-                                let count = selection.len();
-                                egui::ComboBox::from_id_salt("nook-target-displays")
-                                    .width(ui.available_width())
-                                    .selected_text(format!("{} selected · follows cursor", count))
-                                    .show_ui(ui, |ui| {
-                                        ui.set_min_width(260.0);
-                                        ui.label("Follow the cursor on selected displays");
-                                        ui.separator();
-                                        egui::ScrollArea::vertical().max_height(220.0).show(
-                                            ui,
-                                            |ui| {
-                                                for (index, name) in names.iter().enumerate() {
-                                                    let mut checked =
-                                                        selection.contains(&(index as u8));
-                                                    if ui.checkbox(&mut checked, name).changed() {
-                                                        if checked {
-                                                            selection.push(index as u8);
-                                                        } else if selection.len() > 1 {
-                                                            selection.retain(|i| *i != index as u8);
-                                                        } else {
-                                                            continue;
-                                                        }
-                                                        selection_changed = true;
-                                                    }
-                                                }
-                                            },
-                                        );
-                                    })
-                                    .response
-                            });
-                            if selection_changed {
-                                selection.sort_unstable();
-                                selection.dedup();
-                                cfg.monitor_displays = selection;
-                                out.changed = true;
-                            }
                         }
                     } else {
                         hint(&mut rui, "No connected displays are available", theme);
