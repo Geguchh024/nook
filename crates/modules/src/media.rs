@@ -12,7 +12,7 @@ use egui::{
     UiBuilder, pos2, vec2,
 };
 use nook_platform::media::{MediaCommand, MediaEvent, MediaWatcher, NowPlaying};
-use nook_ui::module::{Badge, BadgeArtwork, Module, TileCtx, TileSize};
+use nook_ui::module::{Badge, BadgeArtwork, Module, TileCtx, TileShape, TileSize};
 use nook_ui::theme::{SIZE_BODY, SIZE_LABEL, Theme, with_alpha};
 use nook_ui::{icons, paint, widgets};
 use std::sync::Arc;
@@ -138,6 +138,61 @@ fn rounded_image(ui: &Ui, rect: Rect, tex: egui::TextureId, radius: f32) {
     );
 }
 
+fn circular_image(ui: &Ui, rect: Rect, tex: egui::TextureId) {
+    let mut mesh = egui::epaint::Mesh::with_texture(tex);
+    let center = rect.center();
+    let center_index = mesh.vertices.len() as u32;
+    mesh.vertices.push(egui::epaint::Vertex {
+        pos: center,
+        uv: pos2(0.5, 0.5),
+        color: Color32::WHITE,
+    });
+    let segments = 40;
+    for i in 0..segments {
+        let angle = std::f32::consts::TAU * i as f32 / segments as f32;
+        let unit = vec2(angle.cos(), angle.sin());
+        let pos = center + unit * (rect.width().min(rect.height()) * 0.5);
+        let uv = pos2(
+            (pos.x - rect.left()) / rect.width(),
+            (pos.y - rect.top()) / rect.height(),
+        );
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos,
+            uv,
+            color: Color32::WHITE,
+        });
+    }
+    for i in 0..segments {
+        let current = center_index + 1 + i as u32;
+        let next = center_index + 1 + ((i + 1) % segments) as u32;
+        mesh.add_triangle(center_index, current, next);
+    }
+    ui.painter().add(mesh);
+}
+
+fn progress_ring(ui: &Ui, center: Pos2, radius: f32, progress: Option<f32>, theme: &Theme) {
+    ui.painter().circle_stroke(
+        center,
+        radius,
+        egui::Stroke::new(2.0, with_alpha(theme.text, 0.12)),
+    );
+    let Some(progress) = progress else {
+        return;
+    };
+    let segments = ((progress.clamp(0.0, 1.0) * 48.0).ceil() as usize).max(1);
+    let points = (0..=segments)
+        .map(|i| {
+            let angle = -std::f32::consts::FRAC_PI_2
+                + std::f32::consts::TAU * progress.clamp(0.0, 1.0) * i as f32 / segments as f32;
+            center + vec2(angle.cos(), angle.sin()) * radius
+        })
+        .collect::<Vec<_>>();
+    ui.painter().add(egui::Shape::line(
+        points,
+        egui::Stroke::new(2.0, theme.accent),
+    ));
+}
+
 impl Module for Media {
     fn id(&self) -> &'static str {
         "media"
@@ -238,6 +293,76 @@ impl Module for Media {
     fn ui_tile(&mut self, ui: &mut Ui, ctx: &mut TileCtx<'_>) {
         let theme = ctx.theme;
         let rect = ui.max_rect();
+        if ctx.shape == TileShape::Circle {
+            let whole = ui.interact(
+                rect,
+                ui.id().with("media-circle-page"),
+                egui::Sense::click(),
+            );
+            if whole.clicked() {
+                self.page_request = true;
+            }
+            let diameter = rect.width().min(rect.height());
+            let center = rect.center();
+            let art_diameter = (diameter * 0.62).min((diameter - 12.0).max(0.0)).max(0.0);
+            let art_rect = Rect::from_center_size(center, vec2(art_diameter, art_diameter));
+            if let Some(now) = self.now.clone() {
+                match self.art_texture(ui.ctx()) {
+                    Some(tex) => circular_image(ui, art_rect, tex),
+                    None => {
+                        ui.painter()
+                            .circle_filled(center, art_diameter * 0.5, theme.tile_top);
+                        paint::icon(
+                            ui.painter(),
+                            center,
+                            icons::MUSIC_NOTES,
+                            art_diameter * 0.42,
+                            theme.text_dim,
+                            false,
+                        );
+                    }
+                }
+                let progress = now
+                    .position()
+                    .map(|(position, duration)| (position / duration.max(1.0)) as f32);
+                progress_ring(ui, center, diameter * 0.46, progress, theme);
+                if now.can_toggle
+                    && button_at(
+                        ui,
+                        center,
+                        (diameter * 0.25).clamp(20.0, 30.0),
+                        if now.playing {
+                            icons::PAUSE
+                        } else {
+                            icons::PLAY
+                        },
+                        true,
+                        theme,
+                    )
+                    .on_hover_text(if now.playing { "Pause" } else { "Play" })
+                    .clicked()
+                {
+                    self.send(MediaCommand::PlayPause);
+                    if let Some(current) = &mut self.now {
+                        if let Some((position, duration)) = current.position() {
+                            current.timeline = Some((position, duration));
+                            current.captured = std::time::Instant::now();
+                        }
+                        current.playing = !current.playing;
+                    }
+                }
+            } else {
+                paint::icon(
+                    ui.painter(),
+                    center,
+                    icons::MUSIC_NOTES,
+                    (diameter * 0.36).clamp(20.0, 30.0),
+                    theme.text_dim,
+                    false,
+                );
+            }
+            return;
+        }
         let mode = tile_mode(rect.width(), rect.height());
         let compact = mode == MediaTileMode::Small;
         let medium = mode == MediaTileMode::Medium;

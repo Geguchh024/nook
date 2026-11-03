@@ -383,3 +383,8 @@
 
 - Quick Controls now checks the active Internet connection profile and exposes Mobile hotspot only when Windows reports tethering capability. Start/stop runs through WinRT on the existing worker, and operation failures are returned to its normal error path.
 - Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 43 — Make circular media tiles shape-aware
+
+- Circle-shaped media tiles now clip cover art to a true circle, draw a playback progress ring, and provide a centered play/pause action; tapping elsewhere opens the full media page. The idle state uses the same restrained glass treatment.
+- Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
