@@ -404,3 +404,19 @@
 
 - The shared wireless face now keys its icon-only state to the actual Small footprint rather than a fixed pixel threshold, so DPI scaling does not unexpectedly add labels to compact tiles.
 - Verification: `cargo test --workspace --offline --quiet` passed (180 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 47 — Make Settings sections responsive disclosures
+
+- Appearance and Behavior are now compact disclosure cards, closed by default. Opening either expands its controls and closes any other settings section.
+- The expanded settings form uses the full panel width, avoiding the narrow side-by-side controls and clipped layout shown in the screenshots.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed; Clippy passed.
+
+## Step 48 — Preserve independent tile corner radii
+
+- Corner normalization now fits only the pair of radii sharing an overfull edge, instead of scaling all four corners together. Added a regression test for unchanged unrelated corners.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed; Clippy passed.
+
+## Step 49 — Preview copied hex colors in Clipboard
+
+- Clipboard entries containing a standalone valid hex color now tint their row/card with that color, while preserving the existing copy and hover actions.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed; Clippy passed.

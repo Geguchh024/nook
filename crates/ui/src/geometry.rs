@@ -49,16 +49,19 @@ impl Corners {
                 1.0
             }
         };
-        let factor = scale(positive.tl, positive.tr, width)
-            .min(scale(positive.bl, positive.br, width))
-            .min(scale(positive.tl, positive.bl, height))
-            .min(scale(positive.tr, positive.br, height));
-        Self {
-            tl: positive.tl * factor,
-            tr: positive.tr * factor,
-            br: positive.br * factor,
-            bl: positive.bl * factor,
-        }
+        let mut result = positive;
+        // Normalize only the two corners sharing an overfull edge. A single
+        // oversized corner must not shrink its diagonal counterpart.
+        let fit_pair = |a: &mut f32, b: &mut f32, edge: f32| {
+            let factor = scale(*a, *b, edge);
+            *a *= factor;
+            *b *= factor;
+        };
+        fit_pair(&mut result.tl, &mut result.tr, width);
+        fit_pair(&mut result.bl, &mut result.br, width);
+        fit_pair(&mut result.tl, &mut result.bl, height);
+        fit_pair(&mut result.tr, &mut result.br, height);
+        result
     }
 }
 
@@ -501,6 +504,21 @@ mod tests {
         assert!(corners.tl + corners.tr <= 60.001);
         assert!((corners.bl + corners.tl - 50.0).abs() < 0.001);
         assert!((corners.br + corners.tr - 50.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn corner_normalization_preserves_unrelated_corners() {
+        let corners = Corners {
+            tl: 80.0,
+            tr: 8.0,
+            br: 12.0,
+            bl: 8.0,
+        }
+        .clamp_to(100.0, 100.0);
+        assert_eq!(corners.tr, 8.0);
+        assert_eq!(corners.br, 12.0);
+        assert_eq!(corners.bl, 8.0);
+        assert!(corners.tl <= 100.0);
     }
 
     #[test]
