@@ -661,7 +661,9 @@ impl NookApp {
         let m = self.shell.metrics;
         let want = match self.page {
             Page::Bento => return None,
-            Page::Settings => m.expanded + vec2(0.0, settings::extra_height(ctx, m.expanded.y)),
+            Page::Settings => {
+                m.expanded + vec2(0.0, settings::extra_height(ctx, m.expanded.y, m.expanded.x))
+            }
             Page::Module(id) => self.registry.all().find(|m| m.id() == id)?.page_size()?,
         };
         let fit = self.sys.monitor.map_or(want, |mon| {

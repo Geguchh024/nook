@@ -356,3 +356,9 @@
 - Nook broadcasts `WM_SETTINGCHANGE` with a bounded timeout after writing the preferences; broadcast failures are logged and do not stall the controls worker.
 - The toggle is unavailable when Windows has no readable preference value.
 - Verification: `cargo test --workspace --offline --quiet` passed (178 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.
+
+## Step 38 — Make Settings cards responsive
+
+- Appearance and Behavior now stack at compact panel widths, leaving the segmented settings and monitor controls their full card width. Wider panels retain the two-column layout.
+- The settings page height now accounts for the stacked cards, including the additional display selector row, instead of laying controls beyond a fixed-height card.
+- Verification: `cargo test --workspace --offline --quiet` passed; `cargo clippy --workspace --all-targets --offline -- -D warnings` passed.

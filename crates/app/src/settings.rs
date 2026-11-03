@@ -22,16 +22,16 @@ pub const SETTINGS_ID: &str = "settings";
 const GAP: f32 = 8.0;
 const HEADER: f32 = 28.0;
 const ROW: f32 = 28.0;
-/// Height of the Appearance and Behavior cards (title + four rows).
+/// Height of the Appearance and Behavior cards when shown side by side.
 const TOP_CARD: f32 = 232.0;
+/// At narrower widths, keep each card full-width so segmented controls and
+/// labels retain enough room to respond without clipping.
+const STACK_BREAKPOINT: f32 = 760.0;
+const STACKED_CARD: f32 = 232.0;
 /// Height of a collapsible card's clickable header.
 const DISCLOSURE: f32 = 44.0;
 /// Revealed height of each collapsible section's body.
 const BODY: [f32; 3] = [9.0 * ROW + 16.0, 6.0 * ROW + 12.0, 5.0 * ROW + 36.0];
-/// Page height with every section collapsed, panel padding included.
-const BASE: f32 =
-    2.0 * PANEL_PADDING + HEADER + GAP + TOP_CARD + GAP + 3.0 * DISCLOSURE + 2.0 * GAP;
-
 /// Collapsible sections, in page order.
 const CUSTOMIZE: usize = 0;
 const MOTION: usize = 1;
@@ -49,9 +49,25 @@ fn set_open_section(ctx: &egui::Context, section: Option<usize>) {
 
 /// How much taller than the regular panel (`regular`) the settings page
 /// is; follows the open section, so the panel springs along with it.
-pub fn extra_height(ctx: &egui::Context, regular: f32) -> f32 {
+pub fn extra_height(ctx: &egui::Context, regular: f32, panel_width: f32) -> f32 {
     let body = open_section(ctx).map_or(0.0, |i| BODY[i]);
-    (BASE + body - regular).max(0.0)
+    (base_height(panel_width) + body - regular).max(0.0)
+}
+
+fn stacked(width: f32) -> bool {
+    width < STACK_BREAKPOINT
+}
+
+fn top_height(width: f32) -> f32 {
+    if stacked(width) {
+        STACKED_CARD * 2.0 + GAP
+    } else {
+        TOP_CARD
+    }
+}
+
+fn base_height(width: f32) -> f32 {
+    2.0 * PANEL_PADDING + HEADER + GAP + top_height(width) + GAP + 3.0 * DISCLOSURE + 2.0 * GAP
 }
 
 /// Spring for a section's 0..1 reveal, tuned like the panel height so the
@@ -192,16 +208,30 @@ pub fn page(
 
             // Appearance and Behavior side by side, then the collapsible
             // Customize and Advanced cards.
+            let narrow = stacked(panel.width());
+            let card_height = if narrow { STACKED_CARD } else { TOP_CARD };
             let top = Rect::from_min_size(
                 pos2(panel.min.x, header.max.y + GAP),
-                vec2(panel.width(), TOP_CARD),
+                vec2(panel.width(), top_height(panel.width())),
             );
             let col_w = (top.width() - GAP) * 0.5;
-            let left = Rect::from_min_size(top.min, vec2(col_w, top.height()));
-            let right = Rect::from_min_size(
-                pos2(top.min.x + col_w + GAP, top.min.y),
-                vec2(col_w, top.height()),
-            );
+            let (left, right) = if narrow {
+                (
+                    Rect::from_min_size(top.min, vec2(top.width(), card_height)),
+                    Rect::from_min_size(
+                        pos2(top.min.x, top.min.y + card_height + GAP),
+                        vec2(top.width(), card_height),
+                    ),
+                )
+            } else {
+                (
+                    Rect::from_min_size(top.min, vec2(col_w, top.height())),
+                    Rect::from_min_size(
+                        pos2(top.min.x + col_w + GAP, top.min.y),
+                        vec2(col_w, top.height()),
+                    ),
+                )
+            };
 
             widgets::card(ui.painter(), left, theme);
             widgets::card(ui.painter(), right, theme);
