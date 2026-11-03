@@ -1,5 +1,9 @@
 # Progress
 
+## Step 58 — Fade hover outline as the shell opens
+
+- The shell's outer hover glow now fades with its opening progress, leaving the glass rim and top highlight without a separate straight accent stroke across the expanded panel.
+
 ## Step 57 — Keep layout editor controls visible on round tiles
 
 - The visibility minus/plus and resize arc now stay within each tile's safe clip bounds, including when a tile is resized to a circle. Their hit areas follow the visible controls.

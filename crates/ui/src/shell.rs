@@ -345,8 +345,12 @@ impl Shell {
         }
 
         let painter = ui.painter().clone();
-        if hovered && theme.hover_glow > 0.01 {
-            paint::glow(&painter, &shape, theme.accent, theme.hover_glow);
+        // The expanded shell already has its glass rim and top highlight. Fade
+        // the outer hover glow as it opens so its straight top stroke does
+        // not read as a separate blue bar across the panel.
+        let shell_glow = theme.hover_glow * (1.0 - progress.clamp(0.0, 1.0)).powi(2);
+        if hovered && shell_glow > 0.01 {
+            paint::glow(&painter, &shape, theme.accent, shell_glow);
         }
         paint::glass(
             &painter,
