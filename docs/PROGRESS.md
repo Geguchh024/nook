@@ -1,5 +1,10 @@
 # Progress
 
+## Step 55 — Keep brightness changes on the selected display
+
+- DDC/CI brightness continues to target the monitor under Nook. The WMI laptop-panel fallback now runs only when Windows reports one connected display and one active WMI brightness endpoint, preventing an external display selection from changing the laptop panel by mistake.
+- Added coverage for the single-display fallback rule. Multi-display setups without targetable DDC/CI now report brightness as unavailable.
+
 ## Step 54 — Show connected displays in the Monitor picker
 
 - The Monitor popup now contains the connected-display checklist when Choose displays is selected, with each display's resolution and desktop coordinates and a scroll area for larger setups.

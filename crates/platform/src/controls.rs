@@ -92,6 +92,16 @@ fn host_monitor() -> Option<windows::Win32::Graphics::Gdi::HMONITOR> {
     (raw != 0).then(|| crate::monitor::native_handle(Hwnd::from_raw(raw)))
 }
 
+fn wmi_fallback_allowed_for_monitor_count(count: usize) -> bool {
+    // WMI exposes laptop-panel brightness without a reliable mapping to the
+    // monitor under Nook. Use it only when that mapping is unambiguous.
+    count == 1
+}
+
+fn wmi_fallback_allowed() -> bool {
+    wmi_fallback_allowed_for_monitor_count(crate::monitor::all().len())
+}
+
 fn with_physical_monitors<T>(
     f: impl FnOnce(&[PHYSICAL_MONITOR]) -> Result<T>,
 ) -> Result<Option<T>> {
@@ -128,7 +138,7 @@ fn monitor_brightness(monitor: &PHYSICAL_MONITOR) -> Option<(u32, u32, u32)> {
 }
 
 fn read_brightness() -> Option<f32> {
-    with_physical_monitors(|monitors| {
+    let ddc = with_physical_monitors(|monitors| {
         Ok(monitors
             .iter()
             .find_map(monitor_brightness)
@@ -142,8 +152,8 @@ fn read_brightness() -> Option<f32> {
     })
     .ok()
     .flatten()
-    .flatten()
-    .or_else(read_wmi_brightness)
+    .flatten();
+    ddc.or_else(|| wmi_fallback_allowed().then(read_wmi_brightness).flatten())
 }
 
 fn run_wmi(script: &str) -> Result<std::process::Output> {
@@ -167,7 +177,7 @@ fn run_wmi(script: &str) -> Result<std::process::Output> {
 
 fn read_wmi_brightness() -> Option<f32> {
     let output = run_wmi(
-        "Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness | Where-Object Active | Select-Object -First 1 -ExpandProperty CurrentBrightness",
+        "$m = @(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness | Where-Object Active); if ($m.Count -ne 1) { exit 4 }; $m[0].CurrentBrightness",
     )
     .ok()?;
     if !output.status.success() {
@@ -184,13 +194,18 @@ fn read_wmi_brightness() -> Option<f32> {
 fn set_wmi_brightness(value: f32) -> Result<bool> {
     let level = (value.clamp(0.0, 1.0) * 100.0).round() as u8;
     let script = format!(
-        "$m = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods | Where-Object Active | Select-Object -First 1; if ($null -eq $m) {{ exit 2 }}; $r = Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness -Arguments @{{Timeout=0; Brightness={level}}}; if ($r.ReturnValue -ne 0) {{ exit 3 }}"
+        "$m = @(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods | Where-Object Active); if ($m.Count -eq 0) {{ exit 2 }}; if ($m.Count -ne 1) {{ exit 4 }}; $r = Invoke-CimMethod -InputObject $m[0] -MethodName WmiSetBrightness -Arguments @{{Timeout=0; Brightness={level}}}; if ($r.ReturnValue -ne 0) {{ exit 3 }}"
     );
     let output = run_wmi(&script)?;
     if output.status.success() {
         Ok(true)
     } else if output.status.code() == Some(2) {
         Ok(false)
+    } else if output.status.code() == Some(4) {
+        Err(PlatformError::Other(
+            "Windows reports multiple brightness endpoints; this display cannot be targeted safely"
+                .into(),
+        ))
     } else {
         let reason = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         Err(PlatformError::Other(if reason.is_empty() {
@@ -204,7 +219,20 @@ fn set_wmi_brightness(value: f32) -> Result<bool> {
 pub fn set_brightness(value: f32) -> Result<bool> {
     match set_ddc_brightness(value)? {
         Some(true) => Ok(true),
-        Some(false) | None => set_wmi_brightness(value),
+        Some(false) | None if wmi_fallback_allowed() => set_wmi_brightness(value),
+        Some(false) | None => Ok(false),
+    }
+}
+
+#[cfg(test)]
+mod brightness_tests {
+    use super::wmi_fallback_allowed_for_monitor_count;
+
+    #[test]
+    fn wmi_brightness_is_not_assumed_to_target_one_of_multiple_displays() {
+        assert!(wmi_fallback_allowed_for_monitor_count(1));
+        assert!(!wmi_fallback_allowed_for_monitor_count(2));
+        assert!(!wmi_fallback_allowed_for_monitor_count(0));
     }
 }
 
