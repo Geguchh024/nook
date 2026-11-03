@@ -1680,7 +1680,9 @@ impl eframe::App for NookApp {
             out.visible.then_some(out.outline.as_slice()),
             overlay_rect,
         );
-        self.dook.sync(&self.cfg.dook, self.sys.monitor);
+        let hide_taskbar_fullscreen = self.cfg.hide_in_fullscreen && self.sys.fullscreen;
+        self.dook
+            .sync(&self.cfg.dook, self.sys.monitor, hide_taskbar_fullscreen);
         let dook_action = dook::show(
             &mut self.dook,
             &ctx,
@@ -1688,6 +1690,7 @@ impl eframe::App for NookApp {
             &theme,
             self.sys.monitor,
             self.sys.battery,
+            hide_taskbar_fullscreen,
         );
         if let Some(action) = dook_action {
             self.page = match action {

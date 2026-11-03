@@ -79,8 +79,18 @@ pub enum DookPosition {
 #[serde(rename_all = "lowercase")]
 pub enum DookStyle {
     #[default]
-    Pill,
-    Notch,
+    #[serde(alias = "pill")]
+    Floating,
+    #[serde(alias = "notch")]
+    Bar,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DookEdge {
+    Top,
+    #[default]
+    Bottom,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +109,7 @@ pub struct DookConfig {
     pub hide_windows_taskbar: bool,
     pub auto_hide: bool,
     pub style: DookStyle,
+    pub edge: DookEdge,
     pub apps_position: DookPosition,
     pub oled: bool,
     pub monochrome_icons: bool,
@@ -111,6 +122,7 @@ pub struct DookConfig {
     pub quick_settings_target: DookTarget,
     pub show_start: bool,
     pub show_search: bool,
+    pub show_task_view: bool,
     pub show_quick_settings: bool,
     pub show_clock: bool,
     pub show_date: bool,
@@ -118,6 +130,8 @@ pub struct DookConfig {
     pub show_volume: bool,
     pub show_battery: bool,
     pub show_emoji: bool,
+    pub show_notifications: bool,
+    pub show_desktop: bool,
 }
 
 impl Default for DookConfig {
@@ -126,10 +140,11 @@ impl Default for DookConfig {
             enabled: false,
             hide_windows_taskbar: false,
             auto_hide: false,
-            style: DookStyle::Pill,
+            style: DookStyle::Floating,
+            edge: DookEdge::Bottom,
             apps_position: DookPosition::Center,
             oled: false,
-            monochrome_icons: true,
+            monochrome_icons: false,
             background_hex: "#17171A".into(),
             icon_hex: "#D7D7DE".into(),
             radius: 28,
@@ -139,6 +154,7 @@ impl Default for DookConfig {
             quick_settings_target: DookTarget::Windows,
             show_start: true,
             show_search: true,
+            show_task_view: true,
             show_quick_settings: true,
             show_clock: true,
             show_date: true,
@@ -146,6 +162,8 @@ impl Default for DookConfig {
             show_volume: true,
             show_battery: true,
             show_emoji: true,
+            show_notifications: true,
+            show_desktop: true,
         }
     }
 }
@@ -528,7 +546,15 @@ mod tests {
         assert!(!cfg.dook.enabled);
         assert!(cfg.dook.show_clock);
         assert_eq!(cfg.dook.apps_position, DookPosition::Center);
-        assert_eq!(cfg.dook.style, DookStyle::Pill);
+        assert_eq!(cfg.dook.style, DookStyle::Floating);
+    }
+
+    #[test]
+    fn legacy_dook_styles_migrate_to_floating_and_bar() {
+        let pill: DookConfig = toml::from_str("style = \"pill\"").expect("parse pill style");
+        let notch: DookConfig = toml::from_str("style = \"notch\"").expect("parse notch style");
+        assert_eq!(pill.style, DookStyle::Floating);
+        assert_eq!(notch.style, DookStyle::Bar);
     }
 
     #[test]

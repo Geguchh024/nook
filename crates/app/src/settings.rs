@@ -31,7 +31,7 @@ const BODY: [f32; 6] = [
     9.0 * ROW + 16.0,
     6.0 * ROW + 12.0,
     5.0 * ROW + 36.0,
-    12.0 * ROW + 20.0,
+    14.0 * ROW + 20.0,
 ];
 /// Collapsible sections, in page order.
 const APPEARANCE: usize = 0;
@@ -679,11 +679,16 @@ fn dook_summary(cfg: &Config) -> String {
         crate::config::DookPosition::Right => "Right",
     };
     format!(
-        "{} · {} · {} · {}",
-        if cfg.dook.style == crate::config::DookStyle::Notch {
-            "Notch"
+        "{} · {} · {} · {} · {}",
+        if cfg.dook.style == crate::config::DookStyle::Bar {
+            "Bar"
         } else {
-            "Pill"
+            "Floating"
+        },
+        if cfg.dook.edge == crate::config::DookEdge::Top {
+            "Top"
+        } else {
+            "Bottom"
         },
         position,
         if cfg.dook.oled { "OLED" } else { "Glass" },
@@ -717,20 +722,31 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
     );
 
     let mut enabled = cfg.dook.enabled;
-    if row(&mut left, "Nook taskbar", theme, |ui| {
+    if row(&mut left, "Enable", theme, |ui| {
         widgets::toggle(ui, &mut enabled, theme)
     }) {
         cfg.dook.enabled = enabled;
         out.changed = true;
     }
-    let mut style = usize::from(cfg.dook.style == crate::config::DookStyle::Notch);
+    let mut style = usize::from(cfg.dook.style == crate::config::DookStyle::Bar);
     if row(&mut left, "Style", theme, |ui| {
-        widgets::segmented(ui, &["Pill", "Notch"], &mut style, theme)
+        widgets::segmented(ui, &["Floating", "Bar"], &mut style, theme)
     }) {
         cfg.dook.style = if style == 1 {
-            crate::config::DookStyle::Notch
+            crate::config::DookStyle::Bar
         } else {
-            crate::config::DookStyle::Pill
+            crate::config::DookStyle::Floating
+        };
+        out.changed = true;
+    }
+    let mut edge = usize::from(cfg.dook.edge == crate::config::DookEdge::Bottom);
+    if row(&mut left, "Position", theme, |ui| {
+        widgets::segmented(ui, &["Top", "Bottom"], &mut edge, theme)
+    }) {
+        cfg.dook.edge = if edge == 0 {
+            crate::config::DookEdge::Top
+        } else {
+            crate::config::DookEdge::Bottom
         };
         out.changed = true;
     }
@@ -738,7 +754,7 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         crate::config::DookPosition::Center | crate::config::DookPosition::Right => 0,
         crate::config::DookPosition::Left => 1,
     };
-    if row(&mut left, "Apps position", theme, |ui| {
+    if row(&mut left, "App alignment", theme, |ui| {
         widgets::segmented(ui, &["Center", "Left"], &mut position, theme)
     }) {
         cfg.dook.apps_position = if position == 0 {
@@ -748,8 +764,15 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         };
         out.changed = true;
     }
+    let mut show_task_view = cfg.dook.show_task_view;
+    if row(&mut left, "Task View", theme, |ui| {
+        widgets::toggle(ui, &mut show_task_view, theme)
+    }) {
+        cfg.dook.show_task_view = show_task_view;
+        out.changed = true;
+    }
     let mut hide_taskbar = cfg.dook.hide_windows_taskbar;
-    if row(&mut left, "Hide Windows taskbar", theme, |ui| {
+    if row(&mut left, "Hide Win taskbar", theme, |ui| {
         if !cfg.dook.enabled {
             ui.disable();
         }
@@ -775,7 +798,7 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         out.changed = true;
     }
     let mut radius = cfg.dook.radius.min(40) as f32 / 40.0;
-    if row(&mut left, "Corner radius", theme, |ui| {
+    if row(&mut left, "Taskbar radius", theme, |ui| {
         let response = widgets::slider(ui, &mut radius, 110.0, 52, theme);
         value_label(ui, &format!("{}", cfg.dook.radius), theme);
         response
@@ -784,7 +807,7 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         out.changed = true;
     }
     let mut button_radius = cfg.dook.button_radius.min(20) as f32 / 20.0;
-    if row(&mut left, "Button radius", theme, |ui| {
+    if row(&mut left, "Icon radius", theme, |ui| {
         let response = widgets::slider(ui, &mut button_radius, 110.0, 54, theme);
         value_label(ui, &format!("{}", cfg.dook.button_radius), theme);
         response
@@ -794,7 +817,7 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
     }
     let mut background =
         parse_hex(&cfg.dook.background_hex).unwrap_or(Color32::from_rgb(24, 24, 28));
-    if row(&mut left, "Dock color", theme, |ui| {
+    if row(&mut left, "Taskbar color", theme, |ui| {
         egui::color_picker::color_edit_button_srgba(
             ui,
             &mut background,
@@ -816,7 +839,7 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         out.changed = true;
     }
     let mut monochrome = cfg.dook.monochrome_icons;
-    if row(&mut left, "Monochrome icons", theme, |ui| {
+    if row(&mut left, "Monochrome", theme, |ui| {
         widgets::toggle(ui, &mut monochrome, theme)
     }) {
         cfg.dook.monochrome_icons = monochrome;
@@ -824,12 +847,12 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
     }
 
     row(&mut right, "Pinned apps", theme, |ui| {
-        ui.label("All Windows taskbar pins");
+        ui.label("Windows pins");
         ui.allocate_response(egui::Vec2::ZERO, Sense::hover())
     });
     let mut start_target = usize::from(cfg.dook.start_target == crate::config::DookTarget::Windows);
     let mut show_start = cfg.dook.show_start;
-    if row(&mut right, "Start button", theme, |ui| {
+    if row(&mut right, "Start", theme, |ui| {
         let segmented = widgets::segmented(ui, &["Nook", "Windows"], &mut start_target, theme);
         ui.add_space(4.0);
         segmented | widgets::toggle(ui, &mut show_start, theme)
@@ -845,7 +868,7 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
     let mut search_target =
         usize::from(cfg.dook.search_target == crate::config::DookTarget::Windows);
     let mut show_search = cfg.dook.show_search;
-    if row(&mut right, "Search button", theme, |ui| {
+    if row(&mut right, "Search", theme, |ui| {
         let segmented = widgets::segmented(ui, &["Nook", "Windows"], &mut search_target, theme);
         ui.add_space(4.0);
         segmented | widgets::toggle(ui, &mut show_search, theme)
@@ -893,11 +916,20 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
         cfg.dook.show_date = show_date;
         out.changed = true;
     }
-    for label in ["Wi-Fi", "Volume", "Battery", "Emoji picker"] {
+    for label in [
+        "Wi-Fi",
+        "Volume",
+        "Battery",
+        "Emoji",
+        "Notifications",
+        "Desktop",
+    ] {
         let mut value = match label {
             "Wi-Fi" => cfg.dook.show_wifi,
             "Volume" => cfg.dook.show_volume,
             "Battery" => cfg.dook.show_battery,
+            "Notifications" => cfg.dook.show_notifications,
+            "Desktop" => cfg.dook.show_desktop,
             _ => cfg.dook.show_emoji,
         };
         if row(&mut right, label, theme, |ui| {
@@ -907,6 +939,8 @@ fn dook_body(ui: &mut Ui, rect: Rect, theme: &Theme, cfg: &mut Config, out: &mut
                 "Wi-Fi" => cfg.dook.show_wifi = value,
                 "Volume" => cfg.dook.show_volume = value,
                 "Battery" => cfg.dook.show_battery = value,
+                "Notifications" => cfg.dook.show_notifications = value,
+                "Desktop" => cfg.dook.show_desktop = value,
                 _ => cfg.dook.show_emoji = value,
             }
             out.changed = true;

@@ -16,37 +16,72 @@ use windows::core::PCWSTR;
 
 /// Opens the Windows emoji and symbols picker with its native shortcut.
 pub fn show_emoji_picker() {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_LWIN, VK_OEM_PERIOD, keybd_event,
-    };
-    // SAFETY: injects the standard Win+. shortcut as four balanced key events.
-    unsafe {
-        keybd_event(VK_LWIN.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
-        keybd_event(VK_OEM_PERIOD.0 as u8, 0, KEYBD_EVENT_FLAGS(0), 0);
-        keybd_event(VK_OEM_PERIOD.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-        keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-    }
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LWIN, VK_OEM_PERIOD};
+    send_key_chord(&[VK_LWIN, VK_OEM_PERIOD]);
 }
 
 /// Invokes a Windows shell shortcut using the user's existing key bindings.
 pub fn windows_shortcut(key: u8) {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, VK_LWIN, keybd_event};
-    // SAFETY: sends one balanced Windows-key + letter shortcut.
-    unsafe {
-        keybd_event(VK_LWIN.0 as u8, 0, Default::default(), 0);
-        keybd_event(key, 0, Default::default(), 0);
-        keybd_event(key, 0, KEYEVENTF_KEYUP, 0);
-        keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-    }
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_LWIN};
+    send_key_chord(&[VK_LWIN, VIRTUAL_KEY(u16::from(key))]);
 }
 
 /// Opens the Windows Start menu without pressing a second key.
 pub fn show_start_menu() {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, VK_LWIN, keybd_event};
-    // SAFETY: emits a balanced tap of the Windows key.
-    unsafe {
-        keybd_event(VK_LWIN.0 as u8, 0, Default::default(), 0);
-        keybd_event(VK_LWIN.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_LWIN;
+    send_key_chord(&[VK_LWIN]);
+}
+
+/// Opens Windows Task View.
+pub fn show_task_view() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LWIN, VK_TAB};
+    send_key_chord(&[VK_LWIN, VK_TAB]);
+}
+
+/// Opens the Windows notifications and calendar flyout.
+pub fn show_notifications() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_LWIN};
+    send_key_chord(&[VK_LWIN, VIRTUAL_KEY(u16::from(b'N'))]);
+}
+
+/// Shows or hides the desktop using the native Windows shortcut.
+pub fn toggle_desktop() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_LWIN};
+    send_key_chord(&[VK_LWIN, VIRTUAL_KEY(u16::from(b'D'))]);
+}
+
+fn send_key_chord(keys: &[windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY]) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput,
+    };
+    let mut events = Vec::with_capacity(keys.len() * 2);
+    events.extend(keys.iter().copied().map(|key| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: key,
+                ..Default::default()
+            },
+        },
+    }));
+    events.extend(keys.iter().rev().copied().map(|key| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: key,
+                dwFlags: KEYEVENTF_KEYUP,
+                ..Default::default()
+            },
+        },
+    }));
+    // SAFETY: all events are initialized keyboard inputs and each pressed key
+    // receives a matching release in reverse chord order.
+    let sent = unsafe { SendInput(&events, std::mem::size_of::<INPUT>() as i32) };
+    if sent != events.len() as u32 {
+        tracing::debug!(
+            "SendInput accepted {sent} of {} keyboard events",
+            events.len()
+        );
     }
 }
 

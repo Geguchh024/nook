@@ -1,5 +1,13 @@
 # Progress
 
+## Step 64 — Replace the dock mockup with taskbar surfaces
+
+- Rebuilt the single-monitor taskbar as one floating glass capsule or a full-width AppBar, with top/bottom placement, DPI-scaled 56/48 px heights, per-style corner geometry, a clipped pin scroller, and separate left/right control groups. The full-width style reserves work area and releases it when hidden or disabled.
+- Styled the secondary viewport with Nook's no-activate/tool-window and frameless helpers to remove the opaque white client strip. Pinned shortcuts now request icon-only shell images and use a neutral Nook glyph while loading/failing instead of drawing initials.
+- Added Start, Search, Task View, Quick settings, clock/date, notifications, and Show desktop actions using balanced `SendInput` key chords. The taskbar also follows the existing hide-in-fullscreen setting.
+- Added legacy Pill/Notch style migration to Floating/Bar and focused geometry/config tests. Monitor sets, running-window tracking, ordered pin management, and live radio/audio popovers remain in later phases; no controls for those are presented as complete.
+- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed (188 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings`, targeted rustfmt check, and `git diff --check` passed. Nook was not launched for live visual verification, per request.
+
 ## Step 63 — Audit the taskbar brief and acceptance plan
 
 - Audited the current Dook viewport, theme/widgets, shell window setup, taskbar pin reader, monitor watcher, and recent taskbar commits against the supplied implementation brief.
