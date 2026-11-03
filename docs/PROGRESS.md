@@ -1,5 +1,10 @@
 # Progress
 
+## Step 62 — Close the dock when quitting from the tray
+
+- The tray Quit command now closes Dook's separate native viewport before closing the primary Nook window, prevents the dock from being recreated during shutdown, and restores any Windows taskbar Dook had hidden.
+- Verification: `cargo check --workspace --offline`, isolated-AppData `cargo test --workspace --offline --quiet`, and `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. Nook was not launched for runtime verification.
+
 ## Step 61 — Rebuild Dook as a taskbar
 
 - Replaced the six-entry custom launcher with a live list of the current user's Explorer taskbar pins. Shortcuts are rescanned and their shell icons load asynchronously; the horizontal strip remains scrollable when all pins do not fit.

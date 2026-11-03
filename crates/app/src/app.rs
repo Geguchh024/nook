@@ -460,7 +460,10 @@ impl NookApp {
                 self.apply_startup();
             }
             TrayCommand::Update => self.updater.install(),
-            TrayCommand::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            TrayCommand::Quit => {
+                self.dook.shutdown(ctx);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
     }
 

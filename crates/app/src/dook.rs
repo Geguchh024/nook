@@ -61,6 +61,7 @@ pub struct Runtime {
     icon_rx: Receiver<IconResult>,
     auto_hidden: bool,
     left_since: Option<Instant>,
+    quitting: bool,
 }
 
 impl Default for Runtime {
@@ -79,12 +80,17 @@ impl Default for Runtime {
             icon_rx,
             auto_hidden: false,
             left_since: None,
+            quitting: false,
         }
     }
 }
 
 impl Runtime {
     pub fn sync(&mut self, cfg: &DookConfig, monitor: Option<Monitor>) {
+        if self.quitting {
+            self.restore_taskbar();
+            return;
+        }
         let target = monitor.filter(|_| cfg.enabled && cfg.hide_windows_taskbar);
         if let Some(target) = target {
             if self.taskbar_requested == Some(true) && self.taskbar_monitor == Some(target.id) {
@@ -121,6 +127,18 @@ impl Runtime {
         if let Some(snapshot) = self.taskbars.take() {
             nook_platform::taskbar::restore(snapshot);
         }
+    }
+
+    /// Closes the dock viewport before the primary Nook viewport exits.
+    pub fn shutdown(&mut self, ctx: &Context) {
+        self.quitting = true;
+        self.restore_taskbar();
+        self.taskbar_requested = Some(false);
+        self.taskbar_monitor = None;
+        ctx.send_viewport_cmd_to(
+            ViewportId::from_hash_of(TITLE),
+            egui::ViewportCommand::Close,
+        );
     }
 
     fn refresh_pins(&mut self, ctx: &Context) {
@@ -257,7 +275,7 @@ pub fn show(
     monitor: Option<Monitor>,
     battery: Option<Battery>,
 ) -> Option<Action> {
-    if !cfg.enabled {
+    if runtime.quitting || !cfg.enabled {
         runtime.auto_hidden = false;
         return None;
     }
