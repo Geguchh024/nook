@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-const LATEST_URL: &str = "https://api.github.com/repos/Geguchh024/nook/releases/latest";
-pub const RELEASES_PAGE: &str = "https://github.com/Geguchh024/nook/releases/latest";
+const LATEST_URL: &str = "https://api.github.com/repos/ashoka-2/nook-notch/releases/latest";
+pub const RELEASES_PAGE: &str = "https://github.com/ashoka-2/nook-notch/releases/latest";
 const FIRST_CHECK: Duration = Duration::from_secs(20);
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");

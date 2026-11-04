@@ -17,7 +17,7 @@ the website (Nook downloads it from GitHub).
 ## Download
 
 Get `Nook-Setup-<version>.exe` from
-[GitHub Releases](https://github.com/Geguchh024/nook/releases/latest) and run
+[GitHub Releases](https://github.com/ashoka-2/nook-notch/releases/latest) and run
 it. Windows 10 or 11, 64-bit; no admin rights needed. The installer isn't
 code-signed yet, so SmartScreen may say "Windows protected your PC": click
 **More info**, then **Run anyway**.
