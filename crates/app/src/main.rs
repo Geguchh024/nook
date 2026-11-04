@@ -5,7 +5,6 @@
 mod app;
 mod config;
 mod diag;
-mod dook;
 #[cfg(feature = "debug-overlay")]
 mod overlay;
 mod settings;

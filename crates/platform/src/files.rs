@@ -26,7 +26,7 @@ use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     BHID_DataObject, ILCreateFromPathW, ILFree, IShellItemArray, IShellItemImageFactory,
     SHCreateItemFromParsingName, SHCreateShellItemArrayFromIDLists, SHDoDragDrop, SIIGBF,
-    SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
+    SIIGBF_BIGGERSIZEOK, SIIGBF_RESIZETOFIT,
 };
 use windows::core::{HSTRING, PCWSTR};
 
@@ -152,13 +152,6 @@ pub fn init_thumbnail_thread() {
 /// with [`init_thumbnail_thread`].
 pub fn thumbnail(path: &Path, size: i32) -> Result<(u32, u32, Vec<u8>)> {
     shell_image(path, size, SIIGBF_RESIZETOFIT | SIIGBF_BIGGERSIZEOK)
-}
-
-/// Extracts the actual application icon for an executable or shell shortcut.
-/// Use this for taskbar pins; [`thumbnail`] intentionally returns content
-/// previews for images and documents.
-pub fn icon(path: &Path, size: i32) -> Result<(u32, u32, Vec<u8>)> {
-    shell_image(path, size, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK)
 }
 
 fn shell_image(path: &Path, size: i32, flags: SIIGBF) -> Result<(u32, u32, Vec<u8>)> {

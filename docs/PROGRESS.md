@@ -1,49 +1,10 @@
 # Progress
 
-## Step 66 — Request taskbar icons at display resolution
+## Step 60 — Remove Dook
 
-- Pinned shortcut icons now request the actual physical display size derived from monitor DPI and the button geometry, instead of always loading 64 px images. Textures use nearest sampling at the matching logical size to avoid unnecessary blur.
-- The icon cache is invalidated when DPI changes, and late worker results from an old DPI are discarded so a monitor-scale change cannot repopulate it with stale-sized images.
-- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed (190 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings`, targeted rustfmt check, and `git diff --check` passed. Nook was not launched, per the prior request.
-
-## Step 65 — Add the four taskbar silhouettes
-
-- Replaced the two-way Floating/Bar choice with Gooey Notch, Flat Notch, Pill, and Segmented Pills. Legacy `floating`, `bar`, `pill`, and `notch` config values migrate to Pill or Flat Notch without breaking old config files.
-- Gooey Notch uses separate attached center and right surfaces; Flat Notch is an edge-to-edge surface; Pill remains a single floating capsule; Segmented Pills separates the centered app group from the right status group. Maximized-window space reservation is now an explicit opt-in for Flat Notch.
-- Updated style summaries, the four-choice Settings selector, and the manual acceptance checklist. The weather/left pill and per-pill controls are not rendered yet because Nook currently has no weather data source; those are tracked for the weather phase rather than shown as a fake widget.
-- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed (190 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings`, targeted rustfmt check, and `git diff --check` passed. Nook was not launched, per the prior request.
-
-## Step 64 — Replace the dock mockup with taskbar surfaces
-
-- Rebuilt the single-monitor taskbar as one floating glass capsule or a full-width AppBar, with top/bottom placement, DPI-scaled 56/48 px heights, per-style corner geometry, a clipped pin scroller, and separate left/right control groups. The full-width style reserves work area and releases it when hidden or disabled.
-- Styled the secondary viewport with Nook's no-activate/tool-window and frameless helpers to remove the opaque white client strip. Pinned shortcuts now request icon-only shell images and use a neutral Nook glyph while loading/failing instead of drawing initials.
-- Added Start, Search, Task View, Quick settings, clock/date, notifications, and Show desktop actions using balanced `SendInput` key chords. The taskbar also follows the existing hide-in-fullscreen setting.
-- Added legacy Pill/Notch style migration to Floating/Bar and focused geometry/config tests. Monitor sets, running-window tracking, ordered pin management, and live radio/audio popovers remain in later phases; no controls for those are presented as complete.
-- Verification: isolated-AppData `cargo test --workspace --offline --quiet` passed (188 passed, 7 ignored); `cargo clippy --workspace --all-targets --offline -- -D warnings`, targeted rustfmt check, and `git diff --check` passed. Nook was not launched for live visual verification, per request.
-
-## Step 63 — Audit the taskbar brief and acceptance plan
-
-- Audited the current Dook viewport, theme/widgets, shell window setup, taskbar pin reader, monitor watcher, and recent taskbar commits against the supplied implementation brief.
-- Current baseline is one 84 px bottom viewport with Pill/Notch modes, initial-letter fallback for missing shortcut icons, no running-window list or AppBar, and no monitor-set selection. Secondary viewport transparency and its native styles need correction before visual polish; the expanded settings body is also too dense for the intended One UI treatment.
-- Added `docs/TASKBAR_TESTING.md` as the living manual acceptance checklist and recorded the implementation phases there. Continue in dependency order: native viewport and responsive visuals, live windows, shortcut icons/pin management, real status controls, AppBar and safe taskbar restore, then settings and polish.
-
-## Step 62 — Close the dock when quitting from the tray
-
-- The tray Quit command now closes Dook's separate native viewport before closing the primary Nook window, prevents the dock from being recreated during shutdown, and restores any Windows taskbar Dook had hidden.
-- Verification: `cargo check --workspace --offline`, isolated-AppData `cargo test --workspace --offline --quiet`, and `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. Nook was not launched for runtime verification.
-
-## Step 61 — Rebuild Dook as a taskbar
-
-- Replaced the six-entry custom launcher with a live list of the current user's Explorer taskbar pins. Shortcuts are rescanned and their shell icons load asynchronously; the horizontal strip remains scrollable when all pins do not fit.
-- Added Pill and bottom-connected Notch styles, app alignment, separate dock and app-button radii, OLED/color and monochrome controls, auto-hide, and taskbar replacement scoped to the monitor where Dook is shown.
-- Added working Nook/Windows Start, Search, and Quick Settings targets plus independently visible clock/date, Wi-Fi, volume, battery, and emoji actions.
-- Verification: `cargo check --workspace --offline`, isolated-AppData `cargo test --workspace --offline --quiet`, and `cargo clippy --workspace --all-targets --offline -- -D warnings` passed. Nook was not launched for live visual verification.
-
-## Step 60 — Add the customizable Dook dock
-
-- Added a responsive Dook settings disclosure for its enable state, monitor-side alignment, OLED/background/icon colors, corner radius, monochrome glyphs, and independently visible system items.
-- Added a separate bottom dock viewport with live locale time/date and battery state, launchable pinned apps with their Windows shell icons, working Wi-Fi and sound settings actions, the Windows emoji picker, and the expandable emoji control.
-- Added an opt-in Windows taskbar replacement toggle that hides Explorer taskbars while Dook is active and restores them when disabled or when Nook exits.
+- Removed the Dook viewport, taskbar settings, taskbar-specific platform wrappers, and its persisted config field. Existing notch rendering and settings are unchanged.
+- Older config files may still contain a `[dook]` table; it is ignored during load and is omitted when the current config is saved.
+- Verification: `cargo check --workspace --offline`, `cargo clippy --workspace --all-targets --offline -- -D warnings`, targeted rustfmt check, and `git diff --check` passed. Tests were not run.
 
 ## Step 59 — Keep the overlay frameless after tray menu activation
 

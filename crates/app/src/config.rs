@@ -66,122 +66,6 @@ pub enum ShellStyle {
     Notch,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DookPosition {
-    Left,
-    #[default]
-    Center,
-    Right,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DookStyle {
-    #[default]
-    #[serde(alias = "floating")]
-    Pill,
-    #[serde(alias = "bar", alias = "notch", alias = "flat_notch")]
-    NotchFlat,
-    NotchGooey,
-    Segmented,
-}
-
-impl DookStyle {
-    pub const fn is_notch(self) -> bool {
-        matches!(self, Self::NotchGooey | Self::NotchFlat)
-    }
-
-    pub const fn is_floating(self) -> bool {
-        matches!(self, Self::Pill | Self::Segmented)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DookEdge {
-    Top,
-    #[default]
-    Bottom,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DookTarget {
-    #[default]
-    Nook,
-    Windows,
-}
-
-/// A compact, user-configurable dock that can replace the Windows taskbar.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DookConfig {
-    pub enabled: bool,
-    pub hide_windows_taskbar: bool,
-    pub auto_hide: bool,
-    pub reserve_work_area: bool,
-    pub style: DookStyle,
-    pub edge: DookEdge,
-    pub apps_position: DookPosition,
-    pub oled: bool,
-    pub monochrome_icons: bool,
-    pub background_hex: String,
-    pub icon_hex: String,
-    pub radius: u8,
-    pub button_radius: u8,
-    pub start_target: DookTarget,
-    pub search_target: DookTarget,
-    pub quick_settings_target: DookTarget,
-    pub show_start: bool,
-    pub show_search: bool,
-    pub show_task_view: bool,
-    pub show_quick_settings: bool,
-    pub show_clock: bool,
-    pub show_date: bool,
-    pub show_wifi: bool,
-    pub show_volume: bool,
-    pub show_battery: bool,
-    pub show_emoji: bool,
-    pub show_notifications: bool,
-    pub show_desktop: bool,
-}
-
-impl Default for DookConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            hide_windows_taskbar: false,
-            auto_hide: false,
-            reserve_work_area: false,
-            style: DookStyle::Pill,
-            edge: DookEdge::Bottom,
-            apps_position: DookPosition::Center,
-            oled: false,
-            monochrome_icons: false,
-            background_hex: "#17171A".into(),
-            icon_hex: "#D7D7DE".into(),
-            radius: 28,
-            button_radius: 12,
-            start_target: DookTarget::Nook,
-            search_target: DookTarget::Windows,
-            quick_settings_target: DookTarget::Windows,
-            show_start: true,
-            show_search: true,
-            show_task_view: true,
-            show_quick_settings: true,
-            show_clock: true,
-            show_date: true,
-            show_wifi: true,
-            show_volume: true,
-            show_battery: true,
-            show_emoji: true,
-            show_notifications: true,
-            show_desktop: true,
-        }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotchSize {
@@ -315,7 +199,6 @@ fn default_layout_gap() -> u8 {
 #[serde(default)]
 pub struct Config {
     pub shell_style: ShellStyle,
-    pub dook: DookConfig,
     pub notch_size: NotchSize,
     pub clock_style: ClockStyle,
     pub clipboard_retention: RetentionPeriod,
@@ -386,7 +269,6 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             shell_style: ShellStyle::Pill,
-            dook: DookConfig::default(),
             notch_size: NotchSize::Standard,
             clock_style: ClockStyle::Classic,
             clipboard_retention: RetentionPeriod::Never,
@@ -557,21 +439,14 @@ mod tests {
         assert_eq!(cfg.hover_delay_ms, 120);
         assert_eq!(cfg.placement, Placement::Center);
         assert!(cfg.on_top);
-        assert!(!cfg.dook.enabled);
-        assert!(cfg.dook.show_clock);
-        assert_eq!(cfg.dook.apps_position, DookPosition::Center);
-        assert_eq!(cfg.dook.style, DookStyle::Pill);
     }
 
     #[test]
-    fn legacy_dook_styles_migrate_to_floating_and_bar() {
-        let pill: DookConfig = toml::from_str("style = \"floating\"").expect("parse pill style");
-        let notch: DookConfig = toml::from_str("style = \"bar\"").expect("parse notch style");
-        let legacy_notch: DookConfig =
-            toml::from_str("style = \"notch\"").expect("parse legacy notch style");
-        assert_eq!(pill.style, DookStyle::Pill);
-        assert_eq!(notch.style, DookStyle::NotchFlat);
-        assert_eq!(legacy_notch.style, DookStyle::NotchFlat);
+    fn obsolete_dook_config_is_ignored() {
+        let cfg: Config = toml::from_str("[dook]\nenabled = true\nstyle = \"notch\"")
+            .expect("obsolete Dook settings are ignored");
+        let saved = toml::to_string_pretty(&cfg).expect("serialize current config");
+        assert!(!saved.contains("[dook]"));
     }
 
     #[test]

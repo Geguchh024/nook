@@ -3,7 +3,6 @@
 //! with what the shell draws.
 
 use crate::config::{AccentSource, Config, Material};
-use crate::dook::{self, Runtime as DookRuntime};
 use crate::settings::{self, SETTINGS_ID, SettingsTile};
 use crate::stats::{self, Stats};
 use crate::tray::{Tray, TrayCommand};
@@ -106,7 +105,6 @@ pub struct NookApp {
     editing: bool,
     pinned_before_edit: bool,
     tray: Option<Tray>,
-    dook: DookRuntime,
     tray_rx: Receiver<TrayCommand>,
     hotkeys: Option<Hotkeys>,
     sys: SystemState,
@@ -287,7 +285,6 @@ impl NookApp {
             editing: false,
             pinned_before_edit: false,
             tray,
-            dook: DookRuntime::default(),
             tray_rx,
             hotkeys,
             sys,
@@ -461,7 +458,6 @@ impl NookApp {
             }
             TrayCommand::Update => self.updater.install(),
             TrayCommand::Quit => {
-                self.dook.shutdown(ctx);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
@@ -1680,27 +1676,6 @@ impl eframe::App for NookApp {
             out.visible.then_some(out.outline.as_slice()),
             overlay_rect,
         );
-        let hide_taskbar_fullscreen = self.cfg.hide_in_fullscreen && self.sys.fullscreen;
-        self.dook
-            .sync(&self.cfg.dook, self.sys.monitor, hide_taskbar_fullscreen);
-        let dook_action = dook::show(
-            &mut self.dook,
-            &ctx,
-            &self.cfg.dook,
-            &theme,
-            self.sys.monitor,
-            self.sys.battery,
-            hide_taskbar_fullscreen,
-        );
-        if let Some(action) = dook_action {
-            self.page = match action {
-                dook::Action::Start => Page::Bento,
-                dook::Action::Search => Page::Module("clipboard"),
-                dook::Action::QuickSettings => Page::Module("controls"),
-            };
-            self.shell.state.set_pinned(true, Self::now(&ctx));
-        }
-
         // Reveal the window once real frames have been presented.
         self.frames = self.frames.saturating_add(1);
         if self.frames == 3 {
